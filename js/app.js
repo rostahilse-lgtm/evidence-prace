@@ -180,7 +180,8 @@ const app = Vue.createApp({
       }
       this.loading = false;
     },
-saveShiftState() {
+    
+    saveShiftState() {
       const state = { 
         timeStart: this.shiftForm.timeStart, 
         timeEnd: this.shiftForm.timeEnd, 
@@ -310,7 +311,8 @@ saveShiftState() {
       this.showMessage('✓ Obnoveno výchozí URL');
     }
   },
-computed: {
+
+  computed: {
     contractOptions() {
       return this.contracts.map(c => ({ label: `${c[0]} - ${c[1]}`, value: c[0] }));
     },
@@ -360,7 +362,7 @@ computed: {
     'adminDayView'() { if (this.isAdmin) this.loadDayRecords(); },
     'selectedDate'() { if (this.isAdmin) this.loadDayRecords(); }
   },
-  
+
   template: `
     <div v-if="!isLoggedIn" class="login-container">
       <div class="login-card">
@@ -664,31 +666,3 @@ computed: {
 
 app.use(Quasar);
 app.mount('#app');
-```
-
----
-
-# 📋 PODROBNÝ NÁVOD NA NAHRÁNÍ
-
-## **Možnosti hostingu ZDARMA:**
-
-1. **Vercel** ⭐ (Doporučuji - nejjednodušší)
-2. **GitHub Pages**
-3. **Firebase Hosting**
-4. **Netlify (nový účet)**
-
----
-
-## **VARIANTA 1: VERCEL (NEJJEDNODUŠŠÍ) ⭐**
-
-### **Krok 1: Vytvoření struktury souborů**
-Na vašem počítači vytvořte složku např. `evidence-prace` a v ní tyto soubory:
-```
-evidence-prace/
-├── index.html
-├── styles.css
-└── js/
-    ├── config.js
-    ├── api.js
-    ├── utils.js
-    └── app.js
