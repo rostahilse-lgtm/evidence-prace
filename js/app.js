@@ -312,6 +312,19 @@ const app = Vue.createApp({
     }
   },
 
+ // === UTILITY FUNKCE PRO ŠABLONU ===
+    // Přidejte tyto řádky na konec sekce methods: { ... zde }
+    
+    formatTime,
+    formatShortDateTime,
+    formatTimeRange,
+    getTodayDate,
+    getMonthStart,
+    parseDateString,
+    formatDateForInput,
+    formatDateFromInput 
+   },
+                          
   computed: {
     contractOptions() {
       return this.contracts.map(c => ({ label: `${c[0]} - ${c[1]}`, value: c[0] }));
@@ -666,3 +679,4 @@ const app = Vue.createApp({
 
 app.use(Quasar);
 app.mount('#app');
+
