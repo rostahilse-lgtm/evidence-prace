@@ -7,12 +7,11 @@ async function apiCall(action, params = {}) {
       url.searchParams.append(key, params[key]);
     }
   });
-  
   try {
     const response = await fetch(url);
     const data = await response.json();
     return data;
   } catch (error) {
-    return { code: '999', error: 'Chyba připojení: ' + error.message };
+    return { code: '999', error: 'Chyba: ' + error.message };
   }
 }
