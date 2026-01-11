@@ -309,7 +309,7 @@ const app = Vue.createApp({
       this.apiUrl = DEFAULT_API_URL;
       localStorage.setItem('apiUrl', DEFAULT_API_URL);
       this.showMessage('✓ Obnoveno výchozí URL');
-  },
+  ,
 
  // === UTILITY FUNKCE PRO ŠABLONU ===
     // Přidejte tyto řádky na konec sekce methods: { ... zde }
@@ -678,5 +678,6 @@ const app = Vue.createApp({
 
 app.use(Quasar);
 app.mount('#app');
+
 
 
