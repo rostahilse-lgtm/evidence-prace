@@ -292,6 +292,14 @@ const app = Vue.createApp({
       } else this.showMessage('Chyba: ' + res.error);
       this.loading = false;
     },
+
+     // VLOŽTE TADY:
+    formatTime(t) { return formatTime(t); },
+    formatShortDateTime(t) { return formatShortDateTime(t); },
+    formatTimeRange(f, t) { return formatTimeRange(f, t); },
+    getTodayDate() { return getTodayDate(); },
+    formatDateForInput(s) { return formatDateForInput(s); },
+    formatDateFromInput(i) { return formatDateFromInput(i); },
     
     showMessage(msg) {
       this.message = msg;
@@ -666,6 +674,7 @@ const app = Vue.createApp({
 
 app.use(Quasar);
 app.mount('#app');
+
 
 
 
