@@ -292,8 +292,7 @@ const app = Vue.createApp({
       } else this.showMessage('Chyba: ' + res.error);
       this.loading = false;
     },
-
-     // VLOŽTE TADY:
+    
     formatTime(t) { return formatTime(t); },
     formatShortDateTime(t) { return formatShortDateTime(t); },
     formatTimeRange(f, t) { return formatTimeRange(f, t); },
@@ -317,10 +316,10 @@ const app = Vue.createApp({
       this.apiUrl = DEFAULT_API_URL;
       localStorage.setItem('apiUrl', DEFAULT_API_URL);
       this.showMessage('✓ Obnoveno výchozí URL');
-    }  
+    }
   },
-                          
-  computed: {
+
+computed: {
     contractOptions() {
       return this.contracts.map(c => ({ label: `${c[0]} - ${c[1]}`, value: c[0] }));
     },
@@ -622,6 +621,17 @@ const app = Vue.createApp({
             </div>
           </div>
         </div>
+
+        <div v-if="currentView === 'settings'" class="tab-content">
+          <div class="q-pa-md">
+            <h6 class="q-mt-none">Nastavení API</h6>
+            <q-input v-model="apiUrl" label="Apps Script URL" outlined class="q-mb-md">
+              <template v-slot:append><q-icon name="link"/></template>
+            </q-input>
+            <q-btn @click="saveApiUrl" label="Uložit URL" color="primary" class="full-width q-mb-sm"/>
+            <q-btn @click="resetApiUrl" label="Výchozí URL" flat color="grey-7" class="full-width"/>
+          </div>
+        </div>
       </q-page-container>
 
       <q-footer style="background: white; border-top: 1px solid #e0e0e0;">
@@ -629,6 +639,7 @@ const app = Vue.createApp({
           <q-tab name="home" icon="work" label="Domů"/>
           <q-tab name="summary" icon="analytics" label="Přehledy"/>
           <q-tab v-if="isAdmin" name="admin" icon="admin_panel_settings" label="Admin"/>
+          <q-tab name="settings" icon="settings" label="Nastavení"/>
         </q-tabs>
       </q-footer>
 
@@ -673,11 +684,4 @@ const app = Vue.createApp({
 });
 
 app.use(Quasar);
-app.mount('#app');
-
-
-
-
-
-
-
+app.mount('#app');  
