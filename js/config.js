@@ -1,1 +1,1 @@
-const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbxjp-DAwhJSerkTRXxDrtt_WlMRbJA--ZID5iJy17gISvG3jrjT5Uv5UWAStjK9_FXh/exec';
+const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbyBBHj7mrpPBuxQWcWcFeoGNp49TyGbSxgQwPvoqV15oW5PaJuOlbK1R0R-ivIwkW-B/exec';
