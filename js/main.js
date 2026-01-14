@@ -1,4 +1,4 @@
-// Vytvoření Vue aplikace - MUSÍ BÝT PŘED načtením komponent!
+// Vytvoření Vue aplikace
 window.app = Vue.createApp({
   data() {
     return {
@@ -9,16 +9,12 @@ window.app = Vue.createApp({
       loading: false,
       message: '',
       showMessageDialog: false,
-      
-      // Data pro uživatele
       contracts: [],
       jobs: [],
-      summary: null,
+      summary: { totalEarnings: 0, totalPaid: 0, balance: 0 },
       records: [],
       advances: [],
       lunches: [],
-      
-      // Data pro admina
       allSummary: [],
       allRecords: [],
       allAdvances: []
@@ -35,182 +31,158 @@ window.app = Vue.createApp({
       }, 4000);
     },
     
-    async handleLogin(code) {
-      this.loading = true;
-      try {
-        // Načtení všech pracovníků
-        const response = await apiCall('get', { type: 'workers' });
-        
-        if (response.success && response.data) {
-          // Najít pracovníka podle kódu
-          const worker = response.data.find(w => String(w[0]) === String(code));
-          
-          if (worker) {
-            this.currentUser = {
-              id: worker[0],
-              name: worker[1],
-              active: worker[2] === 'Y',
-              admin: worker[3] === 'Y'
-            };
-            this.isLoggedIn = true;
-            this.isAdmin = this.currentUser.admin;
-            
-            localStorage.setItem('userCode', code);
-            
-            // Načtení dat
-            await this.loadUserData();
-            if (this.isAdmin) {
-              await this.loadAdminData();
-            }
-            
-            this.showMessage('Přihlášení: ' + this.currentUser.name);
-          } else {
-            this.showMessage('Neplatný kód pracovníka');
-          }
-        } else {
-          this.showMessage('Chyba při načítání dat');
-        }
-      } catch (error) {
-        console.error('Login error:', error);
-        this.showMessage('Chyba při přihlašování');
-      } finally {
-        this.loading = false;
-      }
+    async handleLogin(worker) {
+      this.currentUser = {
+        id: worker[0],
+        name: worker[1],
+        active: worker[2] === 'Y',
+        admin: worker[3] === 'Y'
+      };
+      this.isLoggedIn = true;
+      this.isAdmin = this.currentUser.admin;
+      localStorage.setItem('workerId', this.currentUser.id);
+      await this.loadUserData();
+      if (this.isAdmin) await this.loadAdminData();
+      this.showMessage('Přihlášen: ' + this.currentUser.name);
     },
     
     async loadUserData() {
-      if (!this.currentUser) return;
-      
       this.loading = true;
-      try {
-        // Načtení smluv
-        const contractsRes = await apiCall('get', { type: 'contracts' });
-        if (contractsRes.success && contractsRes.data) {
-          this.contracts = contractsRes.data.map(c => ({
-            id: c[0],
-            name: c[1]
-          }));
-        }
-        
-        // Načtení prací
-        const jobsRes = await apiCall('get', { type: 'jobs' });
-        if (jobsRes.success && jobsRes.data) {
-          this.jobs = jobsRes.data.map(j => ({
-            id: j[0],
-            name: j[1]
-          }));
-        }
-        
-        // Načtení souhrnu financí
-        const summaryRes = await apiCall('getsummary', { 
-          workerId: this.currentUser.id 
-        });
-        if (summaryRes.success) {
-          this.summary = summaryRes.data;
-        }
-        
-        // Načtení záznamů
-        const recordsRes = await apiCall('getrecords', { 
-          workerId: this.currentUser.id 
-        });
-        if (recordsRes.success) {
-          this.records = recordsRes.data || [];
-        }
-        
-        // Načtení záloh
-        const advancesRes = await apiCall('getadvances', { 
-          workerId: this.currentUser.id 
-        });
-        if (advancesRes.success) {
-          this.advances = advancesRes.data || [];
-        }
-        
-        // Načtení obědů (pokud existuje akce)
-        // const lunchesRes = await apiCall('getlunches', { 
-        //   workerId: this.currentUser.id 
-        // });
-        // if (lunchesRes.success) {
-        //   this.lunches = lunchesRes.data || [];
-        // }
-        
-      } catch (error) {
-        console.error('Error loading user data:', error);
-        this.showMessage('Chyba při načítání dat');
-      } finally {
-        this.loading = false;
+      const [c, j, s, r, a] = await Promise.all([
+        apiCall('get', { type: 'contracts' }),
+        apiCall('get', { type: 'jobs' }),
+        apiCall('getsummary', { id_worker: this.currentUser.id }),
+        apiCall('getrecords', { id_worker: this.currentUser.id }),
+        apiCall('getadvances', { id_worker: this.currentUser.id })
+      ]);
+      if (c.data) this.contracts = c.data;
+      if (j.data) this.jobs = j.data;
+      if (s.data) this.summary = s.data;
+      if (r.data) this.records = r.data;
+      if (a.data) {
+        this.advances = a.data.filter(adv => adv[5] !== 'oběd');
+        this.lunches = a.data.filter(adv => adv[5] === 'oběd');
       }
+      this.loading = false;
     },
     
     async loadAdminData() {
-      if (!this.isAdmin) return;
-      
       this.loading = true;
-      try {
-        // Načtení všech souhrnů
-        const summaryRes = await apiCall('getallsummary');
-        if (summaryRes.success) {
-          this.allSummary = summaryRes.data || [];
-        }
-        
-        // Načtení všech záznamů
-        const recordsRes = await apiCall('getallrecords');
-        if (recordsRes.success) {
-          this.allRecords = recordsRes.data || [];
-        }
-        
-        // Načtení všech záloh
-        const advancesRes = await apiCall('getalladvances');
-        if (advancesRes.success) {
-          this.allAdvances = advancesRes.data || [];
-        }
-        
-      } catch (error) {
-        console.error('Error loading admin data:', error);
-        this.showMessage('Chyba při načítání admin dat');
-      } finally {
-        this.loading = false;
-      }
+      const [summary, records, advances] = await Promise.all([
+        apiCall('getallsummary'),
+        apiCall('getallrecords'),
+        apiCall('getalladvances')
+      ]);
+      if (summary.data) this.allSummary = summary.data;
+      if (records.data) this.allRecords = records.data;
+      if (advances.data) this.allAdvances = advances.data;
+      this.loading = false;
     },
     
     logout() {
       this.isLoggedIn = false;
       this.currentUser = null;
       this.isAdmin = false;
-      this.currentView = 'home';
-      this.contracts = [];
-      this.jobs = [];
-      this.summary = null;
-      this.records = [];
-      this.advances = [];
-      this.lunches = [];
-      this.allSummary = [];
-      this.allRecords = [];
-      this.allAdvances = [];
-      
-      localStorage.removeItem('userCode');
-      this.showMessage('Odhlášení úspěšné');
+      localStorage.removeItem('workerId');
+      this.showMessage('Odhlášen');
     }
   },
   
   async mounted() {
-    // Auto-login z localStorage
-    const savedCode = localStorage.getItem('userCode');
-    if (savedCode) {
-      await this.handleLogin(savedCode);
+    const savedId = localStorage.getItem('workerId');
+    if (savedId) {
+      this.loading = true;
+      const res = await apiCall('get', { type: 'workers' });
+      if (res.code === '000' && res.data) {
+        const worker = res.data.find(w => String(w[0]) === String(savedId));
+        if (worker) await this.handleLogin(worker);
+        else localStorage.removeItem('workerId');
+      }
+      this.loading = false;
     }
-  }
+  },
+
+  // PŘIDÁN TEMPLATE
+  template: `
+    <q-layout view="hHh lpR fFf">
+      <q-header v-if="isLoggedIn" class="bg-primary text-white">
+        <q-toolbar>
+          <q-toolbar-title>{{ currentUser.name }}</q-toolbar-title>
+          <span v-if="isAdmin" class="admin-badge q-ml-sm">ADMIN</span>
+          <q-btn flat round dense icon="logout" @click="logout" />
+        </q-toolbar>
+      </q-header>
+
+      <q-page-container>
+        <q-page padding>
+          <div v-if="loading" class="flex flex-center q-pa-xl">
+            <q-spinner color="primary" size="3em" />
+          </div>
+
+          <login-component 
+            v-if="!isLoggedIn && !loading"
+            :loading="loading"
+            @login="handleLogin"
+            @message="showMessage"
+          />
+
+          <home-component
+            v-if="isLoggedIn && currentView === 'home' && !loading"
+            :current-user="currentUser"
+            :contracts="contracts"
+            :jobs="jobs"
+            :loading="loading"
+            @message="showMessage"
+            @reload="loadUserData"
+          />
+
+          <summary-component
+            v-if="isLoggedIn && currentView === 'summary' && !loading"
+            :summary="summary"
+            :records="records"
+            :advances="advances"
+            :lunches="lunches"
+          />
+
+          <admin-component
+            v-if="isLoggedIn && isAdmin && currentView === 'admin' && !loading"
+            :all-summary="allSummary"
+            :all-records="allRecords"
+            :all-advances="allAdvances"
+            :contracts="contracts"
+            :jobs="jobs"
+            :loading="loading"
+            @message="showMessage"
+            @reload="loadAdminData"
+          />
+
+          <settings-component
+            v-if="isLoggedIn && currentView === 'settings' && !loading"
+            @message="showMessage"
+          />
+        </q-page>
+      </q-page-container>
+
+      <q-footer v-if="isLoggedIn" class="bg-white text-grey-8">
+        <q-tabs v-model="currentView" dense align="justify" active-color="primary">
+          <q-tab name="home" icon="home" label="Domů" />
+          <q-tab name="summary" icon="assessment" label="Přehledy" />
+          <q-tab v-if="isAdmin" name="admin" icon="admin_panel_settings" label="Admin" />
+          <q-tab name="settings" icon="settings" label="Nastavení" />
+        </q-tabs>
+      </q-footer>
+
+      <q-dialog v-model="showMessageDialog" position="bottom">
+        <q-card style="width: 350px">
+          <q-card-section>{{ message }}</q-card-section>
+        </q-card>
+      </q-dialog>
+    </q-layout>
+  `
 });
 
-// Mount aplikace až po načtení všech komponent
-// Čekáme až se načtou všechny komponenty
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => {
-    window.app.use(Quasar);
-    window.app.mount('#app');
-  });
-} else {
+// Inicializace až po načtení všech komponent
+setTimeout(() => {
   window.app.use(Quasar);
   window.app.mount('#app');
-}
-
-
+}, 100);
