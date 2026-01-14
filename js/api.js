@@ -15,7 +15,7 @@ async function apiCall(action, data = {}) {
   const targetUrl = `${apiUrl}?${params.toString()}`;
 
   // Proxy pro obejití CORS
-  const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
+  const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
 
   console.log('Volám přes proxy:', proxyUrl);
 
@@ -48,3 +48,4 @@ async function apiCall(action, data = {}) {
     return { success: false, message: 'Chyba přes proxy: ' + error.message };
   }
 }
+
