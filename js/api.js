@@ -1,26 +1,33 @@
 async function apiCall(action, data = {}) {
-  const apiUrl = localStorage.getItem('apiUrl') || DEFAULT_API_URL;
+  let apiUrl = localStorage.getItem('apiUrl');
 
   if (!apiUrl) {
     return { success: false, message: 'Nastavte URL v Nastavení!' };
   }
+
+  apiUrl = apiUrl.trim().replace(/\/$/, '');
 
   const params = new URLSearchParams({
     action: action,
     ...data
   });
 
-  const fullUrl = `${apiUrl}?${params.toString()}`;
+  const targetUrl = `${apiUrl}?${params.toString()}`;
 
-  // Použij proxy pro obejití CORS
-  const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(fullUrl)}`;
+  // Proxy pro obejití CORS
+  const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
 
   console.log('Volám přes proxy:', proxyUrl);
 
   try {
     const proxyResponse = await fetch(proxyUrl);
     const proxyData = await proxyResponse.json();
-    const text = proxyData.contents; // obsah z proxy
+
+    if (!proxyData.contents) {
+      throw new Error('Proxy vrátil prázdný obsah');
+    }
+
+    const text = proxyData.contents;
     console.log('Proxy RAW odpověď:', text.substring(0, 200));
 
     const result = JSON.parse(text);
