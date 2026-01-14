@@ -1,5 +1,5 @@
-
-app.component('day-view-component', {
+// Komponenta pro přehled dne
+window.app.component('day-view-component', {
   props: ['allRecords', 'contracts', 'jobs', 'loading'],
   emits: ['message', 'reload'],
   
@@ -11,206 +11,202 @@ app.component('day-view-component', {
       editDialog: false,
       editingRecord: null,
       editForm: {
+        date: '',
+        startTime: '',
+        endTime: '',
         contractId: null,
-        jobId: null,
-        timeFr: null,
-        timeTo: null,
-        note: ''
+        jobId: null
       }
     }
   },
   
-  mounted() {
-    this.loadDayRecords();
-  },
-  
-  watch: {
-    adminDayView() {
-      this.loadDayRecords();
+  computed: {
+    displayDate() {
+      if (this.adminDayView === 'today') {
+        return getTodayDate();
+      } else if (this.adminDayView === 'yesterday') {
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        return yesterday.toISOString().split('T')[0];
+      } else {
+        return this.selectedDate;
+      }
     },
-    selectedDate() {
-      this.loadDayRecords();
+    
+    filteredRecords() {
+      return this.allRecords.filter(r => r.date === this.displayDate);
     }
   },
   
   methods: {
-    async loadDayRecords() {
-      const date = this.adminDayView === 'today' ? getTodayDate() : this.selectedDate;
-      const res = await apiCall('getdayrecords', { date });
-      if (res.data) {
-        this.dayRecords = res.data.sort((a, b) => a[4] - b[4]);
-      }
-    },
-    
-    openEditDialog(record, index) {
-      this.editingRecord = { data: record, index: index };
-      const contract = this.contracts.find(c => c.label.includes(record[0]));
-      const job = this.jobs.find(j => j.label === record[3]);
-      
+    openEditDialog(record) {
+      this.editingRecord = record;
       this.editForm = {
-        contractId: contract ? contract.value : null,
-        jobId: job ? job.value : null,
-        timeFr: record[4],
-        timeTo: record[5],
-        note: record[8]
+        date: record.date,
+        startTime: record.startTime,
+        endTime: record.endTime,
+        contractId: record.contractId,
+        jobId: record.jobId
       };
       this.editDialog = true;
     },
     
     async saveEdit() {
-      if (!this.editForm.contractId || !this.editForm.jobId || 
-          !this.editForm.timeFr || !this.editForm.timeTo) {
-        this.$emit('message', 'Vyplňte všechna pole');
-        return;
+      if (!this.editingRecord) return;
+      
+      try {
+        const response = await apiCall('updateRecord', {
+          recordId: this.editingRecord.id,
+          ...this.editForm
+        });
+        
+        if (response.success) {
+          this.$emit('message', 'Záznam upraven');
+          this.$emit('reload');
+          this.editDialog = false;
+        } else {
+          this.$emit('message', response.message || 'Chyba při úpravě záznamu');
+        }
+      } catch (error) {
+        console.error('Update record error:', error);
+        this.$emit('message', 'Chyba při úpravě záznamu');
       }
+    },
+    
+    async deleteRecord(recordId) {
+      if (!confirm('Opravdu smazat tento záznam?')) return;
       
-      const res = await apiCall('updaterecord', {
-        row_index: this.editingRecord.index,
-        id_contract: this.editForm.contractId,
-        id_job: this.editForm.jobId,
-        time_fr: this.editForm.timeFr,
-        time_to: this.editForm.timeTo,
-        note: this.editForm.note
-      });
-      
-      if (res.code === '000') {
-        this.$emit('message', '✓ Záznam upraven');
-        this.editDialog = false;
-        await this.loadDayRecords();
-        this.$emit('reload');
-      } else {
-        this.$emit('message', 'Chyba: ' + res.error);
+      try {
+        const response = await apiCall('deleteRecord', { recordId });
+        
+        if (response.success) {
+          this.$emit('message', 'Záznam smazán');
+          this.$emit('reload');
+        } else {
+          this.$emit('message', response.message || 'Chyba při mazání záznamu');
+        }
+      } catch (error) {
+        console.error('Delete record error:', error);
+        this.$emit('message', 'Chyba při mazání záznamu');
       }
     }
   },
   
   template: `
-    <div class="q-pt-md">
-      <div class="row q-gutter-sm q-mb-md">
-        <q-btn 
-          :color="adminDayView === 'today' ? 'primary' : 'grey-5'" 
-          label="Dnes" 
-          @click="adminDayView = 'today'" 
-          class="col"
-        />
-        <q-btn 
-          :color="adminDayView === 'date' ? 'primary' : 'grey-5'" 
-          label="Datum" 
-          @click="adminDayView = 'date'" 
-          class="col"
-        />
-      </div>
-
-      <div v-if="adminDayView === 'date'" class="q-mb-md">
-        <q-input 
-          v-model="selectedDate" 
-          label="Vyberte datum" 
-          type="date" 
-          outlined 
-          :model-value="formatDateForInput(selectedDate)" 
-          @update:model-value="selectedDate = formatDateFromInput($event)"
-        />
-      </div>
-
-      <div class="text-h6 q-mb-md">
-        {{ adminDayView === 'today' ? getTodayDate() : selectedDate }}
-      </div>
-
-      <div v-if="dayRecords.length === 0" class="text-center text-grey-7 q-mt-lg">
-        Žádné záznamy pro tento den
-      </div>
-      
-      <div v-for="(record, idx) in dayRecords" :key="idx" class="record-card">
-        <div class="row items-center">
-          <div class="col">
-            <div class="text-bold">{{ record[6] }}</div>
-            <div class="text-caption">{{ record[0] }} • {{ record[3] }}</div>
-          </div>
-          <div class="text-right">
-            <div class="text-bold text-primary">{{ record[7].toFixed(2) }} hod</div>
-          </div>
-          <q-icon 
-            name="edit" 
-            class="edit-icon q-ml-sm" 
-            @click="openEditDialog(record, idx)"
+    <div>
+      <!-- Výběr dne -->
+      <q-card class="q-mb-md">
+        <q-card-section>
+          <q-btn-toggle
+            v-model="adminDayView"
+            spread
+            toggle-color="primary"
+            :options="[
+              {label: 'Dnes', value: 'today'},
+              {label: 'Včera', value: 'yesterday'},
+              {label: 'Vlastní datum', value: 'custom'}
+            ]"
           />
-        </div>
-        <div class="text-caption text-grey-7 q-mt-sm">
-          {{ formatTimeRange(record[4], record[5]) }}
-        </div>
-        <div v-if="record[8]" class="note-display">💬 {{ record[8] }}</div>
-      </div>
-
-      <!-- EDIT DIALOG -->
+          
+          <q-input
+            v-if="adminDayView === 'custom'"
+            v-model="selectedDate"
+            type="date"
+            label="Vyberte datum"
+            outlined
+            class="q-mt-md"
+          />
+        </q-card-section>
+      </q-card>
+      
+      <!-- Seznam záznamů -->
+      <q-card>
+        <q-card-section>
+          <div class="text-h6">{{ displayDate }}</div>
+        </q-card-section>
+        
+        <q-list bordered separator v-if="filteredRecords.length">
+          <q-item v-for="record in filteredRecords" :key="record.id">
+            <q-item-section>
+              <q-item-label>{{ record.workerName }}</q-item-label>
+              <q-item-label caption>{{ record.contractName }} - {{ record.jobName }}</q-item-label>
+              <q-item-label caption>{{ formatTime(record.startTime) }} - {{ formatTime(record.endTime) }}</q-item-label>
+            </q-item-section>
+            <q-item-section side>
+              <q-item-label>{{ record.hours }} h</q-item-label>
+              <q-item-label caption>{{ record.earnings }} Kč</q-item-label>
+            </q-item-section>
+            <q-item-section side>
+              <q-btn flat round icon="edit" @click="openEditDialog(record)" />
+              <q-btn flat round icon="delete" color="negative" @click="deleteRecord(record.id)" />
+            </q-item-section>
+          </q-item>
+        </q-list>
+        
+        <q-card-section v-else>
+          <div class="text-center text-grey">Žádné záznamy pro tento den</div>
+        </q-card-section>
+      </q-card>
+      
+      <!-- Edit Dialog -->
       <q-dialog v-model="editDialog">
         <q-card style="min-width: 350px">
           <q-card-section>
             <div class="text-h6">Upravit záznam</div>
           </q-card-section>
-
-          <q-card-section class="q-pt-none">
-            <q-select 
-              v-model="editForm.contractId" 
-              :options="contracts" 
-              label="Zakázka" 
-              emit-value 
-              map-options 
-              outlined 
-              class="q-mb-md"
-            />
-            <q-select 
-              v-model="editForm.jobId" 
-              :options="jobs" 
-              label="Práce" 
-              emit-value 
-              map-options 
-              outlined 
+          
+          <q-card-section>
+            <q-input
+              v-model="editForm.date"
+              type="date"
+              label="Datum"
+              outlined
               class="q-mb-md"
             />
             
-            <div class="row q-gutter-sm q-mb-md">
-              <div class="col">
-                <q-input 
-                  v-model="editForm.timeFr" 
-                  label="Čas od" 
-                  type="datetime-local" 
-                  outlined 
-                  dense 
-                  :model-value="new Date(editForm.timeFr).toISOString().slice(0, 16)" 
-                  @update:model-value="editForm.timeFr = new Date($event).getTime()"
-                />
-              </div>
-              <div class="col">
-                <q-input 
-                  v-model="editForm.timeTo" 
-                  label="Čas do" 
-                  type="datetime-local" 
-                  outlined 
-                  dense 
-                  :model-value="new Date(editForm.timeTo).toISOString().slice(0, 16)" 
-                  @update:model-value="editForm.timeTo = new Date($event).getTime()"
-                />
-              </div>
-            </div>
-
-            <q-input 
-              v-model="editForm.note" 
-              label="Poznámka" 
-              outlined 
-              type="textarea" 
-              rows="2"
+            <q-input
+              v-model="editForm.startTime"
+              type="time"
+              label="Začátek"
+              outlined
+              class="q-mb-md"
+            />
+            
+            <q-input
+              v-model="editForm.endTime"
+              type="time"
+              label="Konec"
+              outlined
+              class="q-mb-md"
+            />
+            
+            <q-select
+              v-model="editForm.contractId"
+              :options="contracts"
+              option-value="id"
+              option-label="name"
+              emit-value
+              map-options
+              label="Smlouva"
+              outlined
+              class="q-mb-md"
+            />
+            
+            <q-select
+              v-model="editForm.jobId"
+              :options="jobs"
+              option-value="id"
+              option-label="name"
+              emit-value
+              map-options
+              label="Práce"
+              outlined
             />
           </q-card-section>
-
+          
           <q-card-actions align="right">
-            <q-btn flat label="Storno" color="red" v-close-popup/>
-            <q-btn 
-              flat 
-              label="Přepsat" 
-              color="green" 
-              @click="saveEdit" 
-              :loading="loading"
-            />
+            <q-btn flat label="Zrušit" v-close-popup />
+            <q-btn color="primary" label="Uložit" @click="saveEdit" />
           </q-card-actions>
         </q-card>
       </q-dialog>
