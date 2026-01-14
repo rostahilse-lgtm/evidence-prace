@@ -1,11 +1,9 @@
 async function apiCall(action, data = {}) {
-  let apiUrl = localStorage.getItem('apiUrl');
+  const apiUrl = localStorage.getItem('apiUrl') || DEFAULT_API_URL;
 
   if (!apiUrl) {
-    return { success: false, message: 'Nejdřív nastavte URL v Nastavení!' };
+    return { success: false, message: 'Nastavte URL v Nastavení!' };
   }
-
-  apiUrl = apiUrl.trim().replace(/\/$/, '');
 
   const params = new URLSearchParams({
     action: action,
@@ -14,32 +12,18 @@ async function apiCall(action, data = {}) {
 
   const fullUrl = `${apiUrl}?${params.toString()}`;
 
-  console.log('Volám API:', fullUrl);
-  console.log('Data v požadavku:', data);
+  // Použij proxy pro obejití CORS
+  const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(fullUrl)}`;
+
+  console.log('Volám přes proxy:', proxyUrl);
 
   try {
-    const response = await fetch(fullUrl, {
-      method: 'GET',
-      redirect: 'follow',
-      mode: 'cors',
-      headers: {
-        'Accept': 'application/json'
-      }
-    });
+    const proxyResponse = await fetch(proxyUrl);
+    const proxyData = await proxyResponse.json();
+    const text = proxyData.contents; // obsah z proxy
+    console.log('Proxy RAW odpověď:', text.substring(0, 200));
 
-    console.log('HTTP status:', response.status);
-
-    const text = await response.text();
-    console.log('RAW odpověď od serveru:', text.substring(0, 500)); // ukáže začátek odpovědi
-
-    let result;
-    try {
-      result = JSON.parse(text);
-      console.log('Parsovaný JSON:', result);
-    } catch (parseErr) {
-      console.error('Chyba parsování JSON:', parseErr);
-      return { success: false, message: 'Server vrátil neplatný JSON: ' + text.substring(0, 100) };
-    }
+    const result = JSON.parse(text);
 
     if (result.code === '000' || result.success === true) {
       return {
@@ -49,14 +33,11 @@ async function apiCall(action, data = {}) {
     } else {
       return {
         success: false,
-        message: result.error || result.message || 'Neznámá chyba z API'
+        message: result.error || 'Neznámá chyba'
       };
     }
   } catch (error) {
-    console.error('Chyba fetch:', error);
-    return {
-      success: false,
-      message: 'Chyba spojení s API: ' + error.message
-    };
+    console.error('Proxy error:', error);
+    return { success: false, message: 'Chyba přes proxy: ' + error.message };
   }
 }
