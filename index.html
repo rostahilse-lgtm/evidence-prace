@@ -10,111 +10,28 @@
   <link href="styles.css" rel="stylesheet">
 </head>
 <body>
-  <div id="app">
-    <q-layout view="hHh lpR fFf">
-      <!-- Header -->
-      <q-header elevated class="bg-primary text-white">
-        <q-toolbar>
-          <q-toolbar-title>Evidence práce 2026</q-toolbar-title>
-          <q-btn v-if="isLoggedIn" flat round dense icon="logout" @click="logout" />
-        </q-toolbar>
-        
-        <!-- Tabs pro přihlášeného uživatele -->
-        <q-tabs v-if="isLoggedIn" v-model="currentView" dense align="justify">
-          <q-tab name="home" icon="home" label="Domů" />
-          <q-tab name="summary" icon="assessment" label="Přehledy" />
-          <q-tab v-if="isAdmin" name="admin" icon="admin_panel_settings" label="Admin" />
-          <q-tab name="settings" icon="settings" label="Nastavení" />
-        </q-tabs>
-      </q-header>
+  <!-- Jen prázdný div - vše se renderuje z main.js -->
+  <div id="app"></div>
 
-      <!-- Obsah -->
-      <q-page-container>
-        <q-page padding>
-          <!-- Loading indikátor -->
-          <div v-if="loading" class="flex flex-center q-pa-xl">
-            <q-spinner color="primary" size="3em" />
-          </div>
-
-          <!-- Komponenty -->
-          <login-component 
-            v-if="!isLoggedIn && !loading"
-            :loading="loading"
-            @login="handleLogin"
-            @message="showMessage"
-          />
-
-          <home-component
-            v-if="isLoggedIn && currentView === 'home' && !loading"
-            :current-user="currentUser"
-            :contracts="contracts"
-            :jobs="jobs"
-            :loading="loading"
-            @message="showMessage"
-            @reload="loadUserData"
-          />
-
-          <summary-component
-            v-if="isLoggedIn && currentView === 'summary' && !loading"
-            :summary="summary"
-            :records="records"
-            :advances="advances"
-            :lunches="lunches"
-            @message="showMessage"
-          />
-
-          <admin-component
-            v-if="isLoggedIn && isAdmin && currentView === 'admin' && !loading"
-            :all-summary="allSummary"
-            :all-records="allRecords"
-            :all-advances="allAdvances"
-            :contracts="contracts"
-            :jobs="jobs"
-            :loading="loading"
-            @message="showMessage"
-            @reload="loadAdminData"
-          />
-
-          <settings-component
-            v-if="isLoggedIn && currentView === 'settings' && !loading"
-            @message="showMessage"
-          />
-        </q-page>
-      </q-page-container>
-    </q-layout>
-
-    <!-- Message Dialog -->
-    <q-dialog v-model="showMessageDialog" position="bottom">
-      <q-card style="width: 350px">
-        <q-card-section class="row items-center no-wrap">
-          <div>{{ message }}</div>
-        </q-card-section>
-      </q-card>
-    </q-dialog>
-  </div>
-
-  <!-- 1. KNIHOVNY (Vue, Quasar) -->
+  <!-- 1. KNIHOVNY -->
   <script src="https://cdn.jsdelivr.net/npm/vue@3.3.4/dist/vue.global.prod.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/quasar@2.12.0/dist/quasar.umd.prod.js"></script>
 
-  <!-- 2. UTILITY A KONFIGURACE -->
+  <!-- 2. UTILITY -->
   <script src="js/config.js"></script>
   <script src="js/utils.js"></script>
   <script src="js/api.js"></script>
 
-  <!-- 3. VYTVOŘENÍ VUE APP (MUSÍ BÝT PŘED KOMPONENTAMI!) -->
+  <!-- 3. MAIN (vytvoří app) -->
   <script src="js/main.js"></script>
 
-  <!-- 4. KOMPONENTY (načtou se po vytvoření app) -->
+  <!-- 4. KOMPONENTY -->
   <script src="js/components/login.js"></script>
   <script src="js/components/home.js"></script>
   <script src="js/components/summary.js"></script>
   <script src="js/components/settings.js"></script>
-  
-  <!-- 5. ADMIN KOMPONENTY (jen pokud je uživatel admin) -->
-  <script src="js/components/admin/admin.js"></script>
   <script src="js/components/admin/worker-detail.js"></script>
   <script src="js/components/admin/day-view.js"></script>
-
+  <script src="js/components/admin/admin.js"></script>
 </body>
 </html>
