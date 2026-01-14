@@ -25,28 +25,6 @@ window.app = Vue.createApp({
     }
   },
 
-  // Import Google Script funkcí
-import { testujAPI, posliDataDoGoogleScript } from '../src/services/googlescript.js';
-
-// Test tlačítko
-document.addEventListener('DOMContentLoaded', () => {
-  // Vytvoř testovací tlačítko
-  const testButton = document.createElement('button');
-  testButton.textContent = '🧪 Test Google API';
-  testButton.style.cssText = 'position:fixed;bottom:20px;right:20px;padding:10px 20px;background:#4CAF50;color:white;border:none;border-radius:5px;cursor:pointer;z-index:9999';
-  document.body.appendChild(testButton);
-  
-  testButton.addEventListener('click', async () => {
-    try {
-      console.log('Spouštím test...');
-      const result = await testujAPI();
-      alert('✅ API funguje!\n\n' + JSON.stringify(result, null, 2));
-    } catch (error) {
-      alert('❌ Chyba: ' + error.message);
-      console.error(error);
-    }
-  });
-});
   methods: {
     showMessage(msg) {
       this.message = msg;
@@ -234,4 +212,5 @@ if (document.readyState === 'loading') {
   window.app.use(Quasar);
   window.app.mount('#app');
 }
+
 
