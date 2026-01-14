@@ -38,24 +38,37 @@ window.app = Vue.createApp({
     async handleLogin(code) {
       this.loading = true;
       try {
-        const response = await apiCall('login', { code });
+        // Načtení všech pracovníků
+        const response = await apiCall('get', { type: 'workers' });
         
-        if (response.success && response.user) {
-          this.currentUser = response.user;
-          this.isLoggedIn = true;
-          this.isAdmin = response.user.isAdmin || false;
+        if (response.success && response.data) {
+          // Najít pracovníka podle kódu
+          const worker = response.data.find(w => String(w[0]) === String(code));
           
-          localStorage.setItem('userCode', code);
-          
-          // Načtení dat
-          await this.loadUserData();
-          if (this.isAdmin) {
-            await this.loadAdminData();
+          if (worker) {
+            this.currentUser = {
+              id: worker[0],
+              name: worker[1],
+              active: worker[2] === 'Y',
+              admin: worker[3] === 'Y'
+            };
+            this.isLoggedIn = true;
+            this.isAdmin = this.currentUser.admin;
+            
+            localStorage.setItem('userCode', code);
+            
+            // Načtení dat
+            await this.loadUserData();
+            if (this.isAdmin) {
+              await this.loadAdminData();
+            }
+            
+            this.showMessage('Přihlášení: ' + this.currentUser.name);
+          } else {
+            this.showMessage('Neplatný kód pracovníka');
           }
-          
-          this.showMessage('Přihlášení úspěšné!');
         } else {
-          this.showMessage('Neplatný přihlašovací kód');
+          this.showMessage('Chyba při načítání dat');
         }
       } catch (error) {
         console.error('Login error:', error);
@@ -70,36 +83,55 @@ window.app = Vue.createApp({
       
       this.loading = true;
       try {
-        // Načtení smluv a prací
-        const contractsRes = await apiCall('getContracts');
-        this.contracts = contractsRes.contracts || [];
+        // Načtení smluv
+        const contractsRes = await apiCall('get', { type: 'contracts' });
+        if (contractsRes.success && contractsRes.data) {
+          this.contracts = contractsRes.data.map(c => ({
+            id: c[0],
+            name: c[1]
+          }));
+        }
         
-        const jobsRes = await apiCall('getJobs');
-        this.jobs = jobsRes.jobs || [];
+        // Načtení prací
+        const jobsRes = await apiCall('get', { type: 'jobs' });
+        if (jobsRes.success && jobsRes.data) {
+          this.jobs = jobsRes.data.map(j => ({
+            id: j[0],
+            name: j[1]
+          }));
+        }
         
-        // Načtení souhrnu
-        const summaryRes = await apiCall('getSummary', { 
+        // Načtení souhrnu financí
+        const summaryRes = await apiCall('getsummary', { 
           workerId: this.currentUser.id 
         });
-        this.summary = summaryRes.summary || null;
+        if (summaryRes.success) {
+          this.summary = summaryRes.data;
+        }
         
         // Načtení záznamů
-        const recordsRes = await apiCall('getRecords', { 
+        const recordsRes = await apiCall('getrecords', { 
           workerId: this.currentUser.id 
         });
-        this.records = recordsRes.records || [];
+        if (recordsRes.success) {
+          this.records = recordsRes.data || [];
+        }
         
         // Načtení záloh
-        const advancesRes = await apiCall('getAdvances', { 
+        const advancesRes = await apiCall('getadvances', { 
           workerId: this.currentUser.id 
         });
-        this.advances = advancesRes.advances || [];
+        if (advancesRes.success) {
+          this.advances = advancesRes.data || [];
+        }
         
-        // Načtení obědů
-        const lunchesRes = await apiCall('getLunches', { 
-          workerId: this.currentUser.id 
-        });
-        this.lunches = lunchesRes.lunches || [];
+        // Načtení obědů (pokud existuje akce)
+        // const lunchesRes = await apiCall('getlunches', { 
+        //   workerId: this.currentUser.id 
+        // });
+        // if (lunchesRes.success) {
+        //   this.lunches = lunchesRes.data || [];
+        // }
         
       } catch (error) {
         console.error('Error loading user data:', error);
@@ -115,16 +147,22 @@ window.app = Vue.createApp({
       this.loading = true;
       try {
         // Načtení všech souhrnů
-        const summaryRes = await apiCall('getAllSummary');
-        this.allSummary = summaryRes.summary || [];
+        const summaryRes = await apiCall('getallsummary');
+        if (summaryRes.success) {
+          this.allSummary = summaryRes.data || [];
+        }
         
         // Načtení všech záznamů
-        const recordsRes = await apiCall('getAllRecords');
-        this.allRecords = recordsRes.records || [];
+        const recordsRes = await apiCall('getallrecords');
+        if (recordsRes.success) {
+          this.allRecords = recordsRes.data || [];
+        }
         
         // Načtení všech záloh
-        const advancesRes = await apiCall('getAllAdvances');
-        this.allAdvances = advancesRes.advances || [];
+        const advancesRes = await apiCall('getalladvances');
+        if (advancesRes.success) {
+          this.allAdvances = advancesRes.data || [];
+        }
         
       } catch (error) {
         console.error('Error loading admin data:', error);
