@@ -1,16 +1,14 @@
 // API volání na Google Apps Script – opravená verze
 async function apiCall(action, data = {}) {
-  // Získáme URL z localStorage (uživatel si ji uloží v nastavení)
+  // Získáme URL z localStorage (uživatel ji uloží v nastavení)
   let apiUrl = localStorage.getItem('apiUrl');
 
-  // Pokud není uložená → fallback na default (ale lepší donutit uživatele zadat ji)
   if (!apiUrl) {
-    alert('Nastavte URL Apps Scriptu v nastavení!');
-    return { success: false, message: 'Chybí URL API' };
+    return { success: false, message: 'Nejdřív nastavte URL v Nastavení!' };
   }
 
-  // Zajistíme, že URL končí /exec a nemá duplicitní ?
-  apiUrl = apiUrl.trim().replace(/\/$/, ''); // odstraní koncové lomítko pokud je
+  // Zajistíme správný formát URL
+  apiUrl = apiUrl.trim().replace(/\/$/, ''); // odstraní koncové lomítko
 
   const params = new URLSearchParams({
     action: action,
@@ -19,13 +17,13 @@ async function apiCall(action, data = {}) {
 
   const fullUrl = `${apiUrl}?${params.toString()}`;
 
-  console.log('Volám API:', fullUrl); // diagnostika – uvidíš v konzoli
+  console.log('Volám API:', fullUrl); // diagnostika v konzoli
 
   try {
     const response = await fetch(fullUrl, {
       method: 'GET',
       redirect: 'follow',
-      mode: 'cors', // nutné pro CORS
+      mode: 'cors',
       headers: {
         'Accept': 'application/json'
       }
@@ -36,11 +34,10 @@ async function apiCall(action, data = {}) {
     }
 
     const text = await response.text();
-    console.log('Odpověď od serveru:', text.substring(0, 200)); // diagnostika
+    console.log('Odpověď:', text.substring(0, 200)); // diagnostika
 
     const result = JSON.parse(text);
 
-    // Kontrola podle tvého formátu (code '000' = success)
     if (result.code === '000') {
       return {
         success: true,
