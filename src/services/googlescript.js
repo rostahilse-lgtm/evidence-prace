@@ -1,6 +1,6 @@
 // URL vašeho Google Apps Script
 // NAHRAĎTE tuto URL vaší skutečnou URL z nasazení!
-const SCRIPT_URL = 'https://script.google.com/macros/s/VASE_URL_ZDE/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyzV9tm9id26Z-ZsLJOt8XDZTp5QQtphfxowvMIHGd118q1iFRROxaN6rhdngW0JOD8/exec';
 
 /**
  * Odešle data do Google Apps Script
