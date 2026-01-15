@@ -1,40 +1,32 @@
-// API volání na Google Apps Script
-async function apiCall(action, data = {}) {
+async function apiCall(action, params = {}) {
   const apiUrl = localStorage.getItem('apiUrl') || DEFAULT_API_URL;
+  const url = new URL(apiUrl);
+  url.searchParams.append('action', action);
   
-  // Vytvoření URL s parametry (pro doGet)
-  const params = new URLSearchParams({
-    action: action,
-    ...data
+  Object.keys(params).forEach(key => {
+    if (params[key] !== null && params[key] !== undefined) {
+      url.searchParams.append(key, params[key]);
+    }
   });
   
-  const url = `${apiUrl}?${params.toString()}`;
-  
   try {
-    const response = await fetch(url, {
-      method: 'GET',
-      redirect: 'follow'
-    });
+    const response = await fetch(url);
+    const data = await response.json();
     
-    const result = await response.json();
-    
-    // Kontrola odpovědi podle vašeho formátu
-    if (result.code === '000') {
-      return {
-        success: true,
-        ...result.data
-      };
+    // Přidat success flag pro kompatibilitu
+    if (data.code === '000') {
+      data.success = true;
     } else {
-      return {
-        success: false,
-        message: result.error || 'Neznámá chyba'
-      };
+      data.success = false;
     }
+    
+    return data;
   } catch (error) {
-    console.error('API call error:', error);
-    return {
+    return { 
+      code: '999', 
+      error: 'Chyba připojení: ' + error.message,
       success: false,
-      message: 'Chyba spojení s API'
+      data: null
     };
   }
 }
