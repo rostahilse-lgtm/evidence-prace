@@ -1,41 +1,28 @@
+// API volání na Google Apps Script
 async function apiCall(action, data = {}) {
-  let apiUrl = localStorage.getItem('apiUrl');
-
-  if (!apiUrl) {
-    return { success: false, message: 'Nastavte URL v Nastavení!' };
-  }
-
-  apiUrl = apiUrl.trim().replace(/\/$/, '');
-
+  const apiUrl = localStorage.getItem('apiUrl') || DEFAULT_API_URL;
+  
+  // Vytvoření URL s parametry (pro doGet)
   const params = new URLSearchParams({
     action: action,
     ...data
   });
-
-  const targetUrl = `${apiUrl}?${params.toString()}`;
-
-  // Proxy pro obejití CORS
-  const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
-
-  console.log('Volám přes proxy:', proxyUrl);
-
+  
+  const url = `${apiUrl}?${params.toString()}`;
+  
   try {
-    const proxyResponse = await fetch(proxyUrl);
-    const proxyData = await proxyResponse.json();
-
-    if (!proxyData.contents) {
-      throw new Error('Proxy vrátil prázdný obsah');
-    }
-
-    const text = proxyData.contents;
-    console.log('Proxy RAW odpověď:', text.substring(0, 200));
-
-    const result = JSON.parse(text);
-
-    if (result.code === '000' || result.success === true) {
+    const response = await fetch(url, {
+      method: 'GET',
+      redirect: 'follow'
+    });
+    
+    const result = await response.json();
+    
+    // Kontrola odpovědi podle vašeho formátu
+    if (result.code === '000') {
       return {
         success: true,
-        data: result.data || result
+        ...result.data
       };
     } else {
       return {
@@ -44,8 +31,10 @@ async function apiCall(action, data = {}) {
       };
     }
   } catch (error) {
-    console.error('Proxy error:', error);
-    return { success: false, message: 'Chyba přes proxy: ' + error.message };
+    console.error('API call error:', error);
+    return {
+      success: false,
+      message: 'Chyba spojení s API'
+    };
   }
 }
-
