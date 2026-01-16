@@ -1,2 +1,1 @@
-// Konfigurace API
-const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbzc2buXSkhDOSNfsrCyUqS7OtmAJElgiU5t4UP-uGaOtX8lcYDa4eVlqO9wIcINXXRT/exec';
+const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbwHdF9caoid6oCgrSYgTFjhrOmY0IOR2xtkCY7zXfYXmk1OAFSnPcZee_FTwSQaa9Ik/exec';
