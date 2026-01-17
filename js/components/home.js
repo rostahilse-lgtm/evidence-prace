@@ -1,5 +1,5 @@
 // Komponenta pro domovskou stránku (Směna, Oběd, Záloha)
-window.app.component('home-component', {
+app.component('home-component', {
   props: ['currentUser', 'contracts', 'jobs', 'loading'],
   emits: ['message', 'reload'],
   
@@ -7,270 +7,316 @@ window.app.component('home-component', {
     return {
       currentTab: 'shift',
       
-      // Formulář směny
+      // Formulář směny - PŮVODNÍ LOGIKA
       shiftForm: {
         contractId: null,
         jobId: null,
+        timeStart: null,
+        timeEnd: null,
+        note: ''
       },
-      activeShift: null,
-      
-      // Formulář oběda
-      lunchDate: getTodayDate(),
       
       // Formulář zálohy
-      advanceAmount: null,
-      advanceNote: ''
+      advanceForm: {
+        amount: null,
+        reason: ''
+      }
+    }
+  },
+  
+  computed: {
+    contractOptions() {
+      return this.contracts.map(c => ({ label: `${c[0]} - ${c[1]}`, value: c[0] }));
+    },
+    jobOptions() {
+      return this.jobs.map(j => ({ label: j[1], value: j[0] }));
     }
   },
   
   methods: {
-    async startShift() {
-      if (!this.shiftForm.contractId || !this.shiftForm.jobId) {
-        this.$emit('message', 'Vyberte smlouvu a práci');
+    // === SMĚNA - PŮVODNÍ LOGIKA ===
+    
+    setArrival() {
+      this.shiftForm.timeStart = Date.now();
+      this.saveShiftState();
+      this.$emit('message', 'Příchod: ' + formatTime(this.shiftForm.timeStart));
+    },
+    
+    setDeparture() {
+      if (!this.shiftForm.timeStart) {
+        this.$emit('message', 'Nejdříve zaznamenejte příchod');
+        return;
+      }
+      this.shiftForm.timeEnd = Date.now();
+      this.saveShiftState();
+      this.$emit('message', 'Odchod: ' + formatTime(this.shiftForm.timeEnd));
+    },
+    
+    async saveShift() {
+      // VALIDACE - PŮVODNÍ
+      if (!this.shiftForm.contractId || !this.shiftForm.jobId || !this.shiftForm.timeStart || !this.shiftForm.timeEnd) {
+        this.$emit('message', 'Vyplňte všechna pole');
+        return;
+      }
+      
+      // VALIDACE POZNÁMKY - TOTO CHYBĚLO!
+      if (!this.shiftForm.note || this.shiftForm.note.trim() === '') {
+        this.$emit('message', 'Poznámka je povinná');
         return;
       }
       
       try {
-        const response = await apiCall('startShift', {
-          workerId: this.currentUser.id,
-          contractId: this.shiftForm.contractId,
-          jobId: this.shiftForm.jobId
+        const res = await apiCall('saverecord', {
+          id_contract: this.shiftForm.contractId,
+          id_worker: this.currentUser.id,
+          id_job: this.shiftForm.jobId,
+          time_fr: this.shiftForm.timeStart,
+          time_to: this.shiftForm.timeEnd,
+          note: this.shiftForm.note
         });
         
-        if (response.success) {
-          this.activeShift = response.shift;
-          this.$emit('message', 'Směna zahájena');
+        if (res.code === '000') {
+          this.$emit('message', '✓ Směna uložena');
+          this.clearShiftState();
           this.$emit('reload');
         } else {
-          this.$emit('message', response.message || 'Chyba při zahájení směny');
+          this.$emit('message', 'Chyba: ' + res.error);
         }
       } catch (error) {
-        console.error('Start shift error:', error);
-        this.$emit('message', 'Chyba při zahájení směny');
+        console.error('Save shift error:', error);
+        this.$emit('message', 'Chyba při ukládání směny');
       }
     },
     
-    async endShift() {
-      if (!this.activeShift) return;
-      
+    // === LOCALSTORAGE - PŮVODNÍ LOGIKA ===
+    
+    saveShiftState() {
+      const state = {
+        timeStart: this.shiftForm.timeStart,
+        timeEnd: this.shiftForm.timeEnd,
+        contractId: this.shiftForm.contractId,
+        jobId: this.shiftForm.jobId,
+        note: this.shiftForm.note,
+        date: getTodayDate()
+      };
+      localStorage.setItem('shiftState_' + this.currentUser.id, JSON.stringify(state));
+    },
+    
+    loadShiftState() {
+      const saved = localStorage.getItem('shiftState_' + this.currentUser.id);
+      if (saved) {
+        const state = JSON.parse(saved);
+        if (state.date === getTodayDate()) {
+          this.shiftForm.timeStart = state.timeStart;
+          this.shiftForm.timeEnd = state.timeEnd;
+          this.shiftForm.contractId = state.contractId;
+          this.shiftForm.jobId = state.jobId;
+          this.shiftForm.note = state.note;
+        } else {
+          this.clearShiftState();
+        }
+      }
+    },
+    
+    clearShiftState() {
+      localStorage.removeItem('shiftState_' + this.currentUser.id);
+      this.shiftForm = {
+        contractId: null,
+        jobId: null,
+        timeStart: null,
+        timeEnd: null,
+        note: ''
+      };
+    },
+    
+    // === OBĚD - PŮVODNÍ LOGIKA ===
+    
+    async saveLunch() {
       try {
-        const response = await apiCall('endShift', {
-          shiftId: this.activeShift.id
+        const res = await apiCall('savelunch', {
+          id_worker: this.currentUser.id,
+          name_worker: this.currentUser.name,
+          time: Date.now()
         });
         
-        if (response.success) {
-          this.activeShift = null;
-          this.$emit('message', 'Směna ukončena');
+        if (res.code === '000') {
+          this.$emit('message', '✓ Oběd uložen');
           this.$emit('reload');
         } else {
-          this.$emit('message', response.message || 'Chyba při ukončení směny');
+          this.$emit('message', 'Chyba: ' + res.error);
         }
       } catch (error) {
-        console.error('End shift error:', error);
-        this.$emit('message', 'Chyba při ukončení směny');
+        console.error('Save lunch error:', error);
+        this.$emit('message', 'Chyba při ukládání oběda');
       }
     },
     
-    async addLunch() {
-      if (!this.lunchDate) {
-        this.$emit('message', 'Vyberte datum');
+    // === ZÁLOHA - PŮVODNÍ LOGIKA ===
+    
+    async saveAdvance() {
+      if (!this.advanceForm.amount || !this.advanceForm.reason) {
+        this.$emit('message', 'Vyplňte částku a důvod');
         return;
       }
       
       try {
-        const response = await apiCall('addLunch', {
-          workerId: this.currentUser.id,
-          date: this.lunchDate
+        const res = await apiCall('saveadvance', {
+          id_worker: this.currentUser.id,
+          name_worker: this.currentUser.name,
+          time: Date.now(),
+          payment: this.advanceForm.amount,
+          payment_reason: this.advanceForm.reason
         });
         
-        if (response.success) {
-          this.$emit('message', 'Oběd přidán');
+        if (res.code === '000') {
+          this.$emit('message', '✓ Záloha uložena');
+          this.advanceForm.amount = null;
+          this.advanceForm.reason = '';
           this.$emit('reload');
-          this.lunchDate = getTodayDate();
         } else {
-          this.$emit('message', response.message || 'Chyba při přidání oběda');
+          this.$emit('message', 'Chyba: ' + res.error);
         }
       } catch (error) {
-        console.error('Add lunch error:', error);
-        this.$emit('message', 'Chyba při přidání oběda');
-      }
-    },
-    
-    async addAdvance() {
-      if (!this.advanceAmount || this.advanceAmount <= 0) {
-        this.$emit('message', 'Zadejte platnou částku');
-        return;
-      }
-      
-      try {
-        const response = await apiCall('addAdvance', {
-          workerId: this.currentUser.id,
-          amount: this.advanceAmount,
-          note: this.advanceNote
-        });
-        
-        if (response.success) {
-          this.$emit('message', 'Záloha přidána');
-          this.$emit('reload');
-          this.advanceAmount = null;
-          this.advanceNote = '';
-        } else {
-          this.$emit('message', response.message || 'Chyba při přidání zálohy');
-        }
-      } catch (error) {
-        console.error('Add advance error:', error);
-        this.$emit('message', 'Chyba při přidání zálohy');
-      }
-    },
-    
-    async checkActiveShift() {
-      try {
-        const response = await apiCall('getActiveShift', {
-          workerId: this.currentUser.id
-        });
-        
-        if (response.success && response.shift) {
-          this.activeShift = response.shift;
-        }
-      } catch (error) {
-        console.error('Check active shift error:', error);
+        console.error('Save advance error:', error);
+        this.$emit('message', 'Chyba při ukládání zálohy');
       }
     }
   },
   
-  mounted() {
-    this.checkActiveShift();
+  // === WATCH - PŮVODNÍ LOGIKA ===
+  watch: {
+    'shiftForm.contractId'() { this.saveShiftState(); },
+    'shiftForm.jobId'() { this.saveShiftState(); },
+    'shiftForm.note'() { this.saveShiftState(); }
   },
   
+  mounted() {
+    this.loadShiftState();
+  },
+  
+  // === TEMPLATE - PŮVODNÍ DESIGN ===
   template: `
     <div>
-      <q-tabs v-model="currentTab" dense align="justify" class="q-mb-md">
-        <q-tab name="shift" icon="schedule" label="Směna" />
-        <q-tab name="lunch" icon="restaurant" label="Oběd" />
-        <q-tab name="advance" icon="payments" label="Záloha" />
+      <q-tabs v-model="currentTab" dense align="justify" class="text-primary">
+        <q-tab name="shift" label="Směna"/>
+        <q-tab name="lunch" label="Oběd"/>
+        <q-tab name="advance" label="Záloha"/>
       </q-tabs>
-      
-      <!-- Směna -->
-      <div v-if="currentTab === 'shift'">
-        <q-card v-if="!activeShift">
-          <q-card-section>
-            <div class="text-h6">Zahájit směnu</div>
-          </q-card-section>
-          
-          <q-card-section>
-            <q-select
-              v-model="shiftForm.contractId"
-              :options="contracts"
-              option-value="id"
-              option-label="name"
-              emit-value
-              map-options
-              label="Smlouva"
-              outlined
-              class="q-mb-md"
-            />
-            
-            <q-select
-              v-model="shiftForm.jobId"
-              :options="jobs"
-              option-value="id"
-              option-label="name"
-              emit-value
-              map-options
-              label="Práce"
-              outlined
-            />
-          </q-card-section>
-          
-          <q-card-actions align="right">
-            <q-btn
-              color="primary"
-              label="Zahájit"
-              @click="startShift"
-              :disable="!shiftForm.contractId || !shiftForm.jobId"
-              unelevated
-            />
-          </q-card-actions>
-        </q-card>
+
+      <!-- SMĚNA -->
+      <div v-if="currentTab === 'shift'" class="q-pt-md">
+        <q-btn 
+          @click="setArrival" 
+          color="green" 
+          icon="login" 
+          label="PŘÍCHOD" 
+          class="full-width q-mb-md time-btn" 
+          :disabled="shiftForm.timeStart"
+        />
         
-        <q-card v-else class="bg-green-1">
-          <q-card-section>
-            <div class="text-h6">Aktivní směna</div>
-            <div class="text-subtitle2">Začátek: {{ formatTime(activeShift.startTime) }}</div>
-          </q-card-section>
-          
-          <q-card-actions align="right">
-            <q-btn
-              color="negative"
-              label="Ukončit směnu"
-              @click="endShift"
-              unelevated
-            />
-          </q-card-actions>
-        </q-card>
+        <div v-if="shiftForm.timeStart" class="q-mb-md q-pa-sm" style="background: #e8f5e9; border-radius: 4px;">
+          <div class="text-bold text-green-8">✓ Příchod zaznamenán</div>
+          <div>{{ formatShortDateTime(shiftForm.timeStart) }}</div>
+        </div>
+        
+        <q-btn 
+          @click="setDeparture" 
+          color="orange" 
+          icon="logout" 
+          label="ODCHOD" 
+          class="full-width q-mb-md time-btn" 
+          :disabled="!shiftForm.timeStart || shiftForm.timeEnd"
+        />
+        
+        <div v-if="shiftForm.timeEnd" class="q-mb-md q-pa-sm" style="background: #fff3e0; border-radius: 4px;">
+          <div class="text-bold text-orange-8">✓ Odchod zaznamenán</div>
+          <div>{{ formatShortDateTime(shiftForm.timeEnd) }}</div>
+          <div class="text-primary text-bold q-mt-sm">
+            Odpracováno: {{ ((shiftForm.timeEnd - shiftForm.timeStart) / 3600000).toFixed(2) }} hod
+          </div>
+        </div>
+        
+        <q-select 
+          v-model="shiftForm.contractId" 
+          :options="contractOptions" 
+          label="Zakázka *" 
+          emit-value 
+          map-options 
+          outlined 
+          class="q-mb-md"
+        />
+        
+        <q-select 
+          v-model="shiftForm.jobId" 
+          :options="jobOptions" 
+          label="Práce *" 
+          emit-value 
+          map-options 
+          outlined 
+          class="q-mb-md"
+        />
+        
+        <q-input 
+          v-model="shiftForm.note" 
+          label="Poznámka *" 
+          outlined 
+          class="q-mb-md" 
+          type="textarea" 
+          rows="3"
+        />
+        
+        <q-btn 
+          @click="saveShift" 
+          label="Uložit směnu" 
+          color="primary" 
+          :loading="loading" 
+          class="full-width" 
+          size="lg"
+        />
       </div>
-      
-      <!-- Oběd -->
-      <div v-if="currentTab === 'lunch'">
-        <q-card>
-          <q-card-section>
-            <div class="text-h6">Přidat oběd</div>
-          </q-card-section>
-          
-          <q-card-section>
-            <q-input
-              v-model="lunchDate"
-              type="date"
-              label="Datum"
-              outlined
-            />
-          </q-card-section>
-          
-          <q-card-actions align="right">
-            <q-btn
-              color="primary"
-              label="Přidat"
-              @click="addLunch"
-              :disable="!lunchDate"
-              unelevated
-            />
-          </q-card-actions>
-        </q-card>
+
+      <!-- OBĚD -->
+      <div v-if="currentTab === 'lunch'" class="q-pt-md">
+        <div class="text-center q-mb-md">
+          <q-icon name="restaurant" size="4rem" color="orange"/>
+          <div class="text-h6 q-mt-md">{{ getTodayDate() }}</div>
+        </div>
+        <q-btn 
+          @click="saveLunch" 
+          label="Uložit oběd" 
+          color="orange" 
+          :loading="loading" 
+          class="full-width" 
+          size="lg" 
+          icon="restaurant"
+        />
       </div>
-      
-      <!-- Záloha -->
-      <div v-if="currentTab === 'advance'">
-        <q-card>
-          <q-card-section>
-            <div class="text-h6">Přidat zálohu</div>
-          </q-card-section>
-          
-          <q-card-section>
-            <q-input
-              v-model.number="advanceAmount"
-              type="number"
-              label="Částka (Kč)"
-              outlined
-              class="q-mb-md"
-            />
-            
-            <q-input
-              v-model="advanceNote"
-              label="Poznámka (volitelné)"
-              outlined
-            />
-          </q-card-section>
-          
-          <q-card-actions align="right">
-            <q-btn
-              color="primary"
-              label="Přidat"
-              @click="addAdvance"
-              :disable="!advanceAmount || advanceAmount <= 0"
-              unelevated
-            />
-          </q-card-actions>
-        </q-card>
+
+      <!-- ZÁLOHA -->
+      <div v-if="currentTab === 'advance'" class="q-pt-md">
+        <q-input 
+          v-model.number="advanceForm.amount" 
+          label="Částka (Kč) *" 
+          type="number" 
+          outlined 
+          class="q-mb-md"
+        />
+        <q-input 
+          v-model="advanceForm.reason" 
+          label="Důvod *" 
+          outlined 
+          class="q-mb-md" 
+          type="textarea" 
+          rows="2"
+        />
+        <q-btn 
+          @click="saveAdvance" 
+          label="Uložit zálohu" 
+          color="primary" 
+          :loading="loading" 
+          class="full-width" 
+          size="lg"
+        />
       </div>
     </div>
   `
