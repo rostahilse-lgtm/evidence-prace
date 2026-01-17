@@ -7,6 +7,7 @@ app.component('home-component', {
     return {
       currentTab: 'shift',
       
+      // Formulář směny - PŮVODNÍ LOGIKA
       shiftForm: {
         contractId: null,
         jobId: null,
@@ -15,6 +16,7 @@ app.component('home-component', {
         note: ''
       },
       
+      // Formulář zálohy
       advanceForm: {
         amount: null,
         reason: ''
@@ -32,6 +34,8 @@ app.component('home-component', {
   },
   
   methods: {
+    // === SMĚNA - PŮVODNÍ LOGIKA ===
+    
     setArrival() {
       this.shiftForm.timeStart = Date.now();
       this.saveShiftState();
@@ -49,11 +53,13 @@ app.component('home-component', {
     },
     
     async saveShift() {
+      // VALIDACE - PŮVODNÍ
       if (!this.shiftForm.contractId || !this.shiftForm.jobId || !this.shiftForm.timeStart || !this.shiftForm.timeEnd) {
         this.$emit('message', 'Vyplňte všechna pole');
         return;
       }
       
+      // VALIDACE POZNÁMKY - TOTO CHYBĚLO!
       if (!this.shiftForm.note || this.shiftForm.note.trim() === '') {
         this.$emit('message', 'Poznámka je povinná');
         return;
@@ -81,6 +87,8 @@ app.component('home-component', {
         this.$emit('message', 'Chyba při ukládání směny');
       }
     },
+    
+    // === LOCALSTORAGE - PŮVODNÍ LOGIKA ===
     
     saveShiftState() {
       const state = {
@@ -121,6 +129,8 @@ app.component('home-component', {
       };
     },
     
+    // === OBĚD - PŮVODNÍ LOGIKA ===
+    
     async saveLunch() {
       try {
         const res = await apiCall('savelunch', {
@@ -140,6 +150,8 @@ app.component('home-component', {
         this.$emit('message', 'Chyba při ukládání oběda');
       }
     },
+    
+    // === ZÁLOHA - PŮVODNÍ LOGIKA ===
     
     async saveAdvance() {
       if (!this.advanceForm.amount || !this.advanceForm.reason) {
@@ -168,13 +180,10 @@ app.component('home-component', {
         console.error('Save advance error:', error);
         this.$emit('message', 'Chyba při ukládání zálohy');
       }
-    },
-    
-    formatTime(t) { return formatTime(t); },
-    formatShortDateTime(t) { return formatShortDateTime(t); },
-    getTodayDate() { return getTodayDate(); }
+    }
   },
   
+  // === WATCH - PŮVODNÍ LOGIKA ===
   watch: {
     'shiftForm.contractId'() { this.saveShiftState(); },
     'shiftForm.jobId'() { this.saveShiftState(); },
@@ -185,6 +194,7 @@ app.component('home-component', {
     this.loadShiftState();
   },
   
+  // === TEMPLATE - PŮVODNÍ DESIGN ===
   template: `
     <div>
       <q-tabs v-model="currentTab" dense align="justify" class="text-primary">
@@ -193,6 +203,7 @@ app.component('home-component', {
         <q-tab name="advance" label="Záloha"/>
       </q-tabs>
 
+      <!-- SMĚNA -->
       <div v-if="currentTab === 'shift'" class="q-pt-md">
         <q-btn 
           @click="setArrival" 
@@ -264,6 +275,7 @@ app.component('home-component', {
         />
       </div>
 
+      <!-- OBĚD -->
       <div v-if="currentTab === 'lunch'" class="q-pt-md">
         <div class="text-center q-mb-md">
           <q-icon name="restaurant" size="4rem" color="orange"/>
@@ -280,6 +292,7 @@ app.component('home-component', {
         />
       </div>
 
+      <!-- ZÁLOHA -->
       <div v-if="currentTab === 'advance'" class="q-pt-md">
         <q-input 
           v-model.number="advanceForm.amount" 
