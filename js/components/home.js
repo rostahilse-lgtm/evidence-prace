@@ -183,6 +183,12 @@ app.component('home-component', {
     }
   },
   
+  formatTime(t) { return formatTime(t); },
+  formatShortDateTime(t) { return formatShortDateTime(t); },
+  getTodayDate() { return getTodayDate(); }
+},
+  
+  watch: {
   // === WATCH - PŮVODNÍ LOGIKA ===
   watch: {
     'shiftForm.contractId'() { this.saveShiftState(); },
