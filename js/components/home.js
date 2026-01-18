@@ -307,3 +307,18 @@ app.component('home-component', {
     </div>
   `
 });
+
+// GLOBÁLNÍ FUNKCE (na konci souboru)
+function formatTime(ts) {
+  return new Date(ts).toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatShortDateTime(ts) {
+  const d = new Date(ts);
+  return `${d.getDate()}.${d.getMonth()+1}.${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+
+function getTodayDate() {
+  const d = new Date();
+  return `${String(d.getDate()).padStart(2,'0')}. ${String(d.getMonth()+1).padStart(2,'0')}. ${d.getFullYear()}`;
+}
