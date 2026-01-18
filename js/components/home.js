@@ -7,7 +7,6 @@ app.component('home-component', {
     return {
       currentTab: 'shift',
       
-      // Formulář směny - PŮVODNÍ LOGIKA
       shiftForm: {
         contractId: null,
         jobId: null,
@@ -16,7 +15,6 @@ app.component('home-component', {
         note: ''
       },
       
-      // Formulář zálohy
       advanceForm: {
         amount: null,
         reason: ''
@@ -34,8 +32,6 @@ app.component('home-component', {
   },
   
   methods: {
-    // === SMĚNA - PŮVODNÍ LOGIKA ===
-    
     setArrival() {
       this.shiftForm.timeStart = Date.now();
       this.saveShiftState();
@@ -53,13 +49,11 @@ app.component('home-component', {
     },
     
     async saveShift() {
-      // VALIDACE - PŮVODNÍ
       if (!this.shiftForm.contractId || !this.shiftForm.jobId || !this.shiftForm.timeStart || !this.shiftForm.timeEnd) {
         this.$emit('message', 'Vyplňte všechna pole');
         return;
       }
       
-      // VALIDACE POZNÁMKY - TOTO CHYBĚLO!
       if (!this.shiftForm.note || this.shiftForm.note.trim() === '') {
         this.$emit('message', 'Poznámka je povinná');
         return;
@@ -87,8 +81,6 @@ app.component('home-component', {
         this.$emit('message', 'Chyba při ukládání směny');
       }
     },
-    
-    // === LOCALSTORAGE - PŮVODNÍ LOGIKA ===
     
     saveShiftState() {
       const state = {
@@ -129,8 +121,6 @@ app.component('home-component', {
       };
     },
     
-    // === OBĚD - PŮVODNÍ LOGIKA ===
-    
     async saveLunch() {
       try {
         const res = await apiCall('savelunch', {
@@ -150,8 +140,6 @@ app.component('home-component', {
         this.$emit('message', 'Chyba při ukládání oběda');
       }
     },
-    
-    // === ZÁLOHA - PŮVODNÍ LOGIKA ===
     
     async saveAdvance() {
       if (!this.advanceForm.amount || !this.advanceForm.reason) {
@@ -183,7 +171,6 @@ app.component('home-component', {
     }
   },
   
-  // === WATCH - PŮVODNÍ LOGIKA ===
   watch: {
     'shiftForm.contractId'() { this.saveShiftState(); },
     'shiftForm.jobId'() { this.saveShiftState(); },
@@ -194,7 +181,6 @@ app.component('home-component', {
     this.loadShiftState();
   },
   
-  // === TEMPLATE - PŮVODNÍ DESIGN ===
   template: `
     <div>
       <q-tabs v-model="currentTab" dense align="justify" class="text-primary">
