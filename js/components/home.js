@@ -188,7 +188,6 @@ app.component('home-component', {
   getTodayDate() { return getTodayDate(); }
 },
   
-  watch: {
   // === WATCH - PŮVODNÍ LOGIKA ===
   watch: {
     'shiftForm.contractId'() { this.saveShiftState(); },
