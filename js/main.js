@@ -6,6 +6,8 @@ window.app = Vue.createApp({
       currentUser: null,
       isAdmin: false,
       currentView: 'home',
+      showKilometers: false,
+      showStatistics: false,
       loading: false,
       message: '',
       showMessageDialog: false,
@@ -156,6 +158,20 @@ window.app = Vue.createApp({
             @reload="loadAdminData"
           />
 
+          <statistics-component
+            v-if="isLoggedIn && isAdmin && currentView === 'statistics'"
+  :all-records="allRecords"
+  :all-advances="allAdvances"
+  :contracts="contracts"
+  :jobs="jobs"
+/>
+
+<kilometers-component
+  v-if="isLoggedIn && currentView === 'kilometers'"
+  :current-user="currentUser"
+  @message="showMessage"
+  @reload="loadUserData"
+/>
           <settings-component
             v-if="isLoggedIn && currentView === 'settings' && !loading"
             @message="showMessage"
@@ -168,6 +184,8 @@ window.app = Vue.createApp({
           <q-tab name="home" icon="home" label="Domů" />
           <q-tab name="summary" icon="assessment" label="Přehledy" />
           <q-tab v-if="isAdmin" name="admin" icon="admin_panel_settings" label="Admin" />
+          <q-tab v-if="isAdmin" name="statistics" icon="bar_chart" label="Statistiky"/>
+          <q-tab name="kilometers" icon="directions_car" label="Kilometry"/>
           <q-tab name="settings" icon="settings" label="Nastavení" />
         </q-tabs>
       </q-footer>
@@ -186,4 +204,5 @@ setTimeout(() => {
   window.app.use(Quasar);
   window.app.mount('#app');
 }, 100);
+
 
