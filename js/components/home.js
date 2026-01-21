@@ -9,13 +9,7 @@ window.app.component('home-component', {
       timeStart: null,
       timeEnd: null,
       note: '',
-      working: false,
-      contractKm: 0,
-      kmManual: false,
-      kmManualValue: null,
-      kmRoundTrip: true,
-      todayTripExists: false,
-      todayTripInfo: null
+      working: false
     }
   },
   
@@ -36,45 +30,10 @@ window.app.component('home-component', {
     jobName() {
       const j = this.jobs.find(x => x[0] === this.selectedJob);
       return j ? j[1] : '';
-    },
-    
-    calculatedKm() {
-      if (this.kmManual && this.kmManualValue) {
-        return this.kmRoundTrip ? this.kmManualValue * 2 : this.kmManualValue;
-      }
-      if (this.contractKm > 0) {
-        return this.kmRoundTrip ? this.contractKm * 2 : this.contractKm;
-      }
-      return 0;
     }
   },
   
   methods: {
-    async loadContractKm() {
-      if (!this.isAdmin || !this.selectedContract) {
-        this.contractKm = 0;
-        return;
-      }
-      
-      try {
-        const res = await apiCall('getcontractkm', { id_contract: this.selectedContract });
-        if (res.code === '000' && res.data) {
-          this.contractKm = res.data.km || 0;
-          
-          const tripCheck = await apiCall('checktodaytrip', { id_contract: this.selectedContract });
-          if (tripCheck.code === '000' && tripCheck.data && tripCheck.data.exists) {
-            this.todayTripExists = true;
-            this.todayTripInfo = tripCheck.data;
-          } else {
-            this.todayTripExists = false;
-            this.todayTripInfo = null;
-          }
-        }
-      } catch (error) {
-        console.error('Chyba načítání km:', error);
-      }
-    },
-    
     async startWork() {
       if (!this.selectedContract || !this.selectedJob) {
         this.$emit('message', '❌ Vyber zakázku a práci');
@@ -101,7 +60,7 @@ window.app.component('home-component', {
       }
       
       try {
-        const payload = {
+        const res = await apiCall('saverecord', {
           id_worker: this.currentUser.id,
           name_worker: this.currentUser.name,
           id_contract: this.selectedContract,
@@ -111,19 +70,10 @@ window.app.component('home-component', {
           time_fr: this.timeStart,
           time_to: this.timeEnd,
           note: this.note
-        };
-        
-        if (this.isAdmin && this.calculatedKm > 0) {
-          payload.km_jednosmer = this.kmManual ? (this.kmManualValue || 0) : this.contractKm;
-          payload.km_celkem = this.calculatedKm;
-          payload.km_rucne = this.kmManual ? 'Y' : 'N';
-        }
-        
-        const res = await apiCall('saverecord', payload);
+        });
         
         if (res.code === '000') {
-          const kmText = this.calculatedKm > 0 ? ` (${this.calculatedKm} km)` : '';
-          this.$emit('message', `✓ Směna ukončena: ${hours}h${kmText}`);
+          this.$emit('message', `✓ Směna ukončena: ${hours}h`);
           this.resetForm();
           this.$emit('reload');
         } else {
@@ -141,20 +91,6 @@ window.app.component('home-component', {
       this.timeEnd = null;
       this.note = '';
       this.working = false;
-      this.contractKm = 0;
-      this.kmManual = false;
-      this.kmManualValue = null;
-      this.kmRoundTrip = true;
-      this.todayTripExists = false;
-      this.todayTripInfo = null;
-    }
-  },
-  
-  watch: {
-    selectedContract() {
-      if (this.isAdmin) {
-        this.loadContractKm();
-      }
     }
   },
   
@@ -195,50 +131,6 @@ window.app.component('home-component', {
             :disable="working"
             class="q-mb-md"
           />
-          
-          <div v-if="isAdmin && contractKm > 0" class="q-mb-md">
-            <q-card flat bordered>
-              <q-card-section>
-                <div class="text-subtitle2">🚗 Kilometry</div>
-                
-                <q-banner v-if="todayTripExists" class="bg-orange-2 q-mt-sm" dense rounded>
-                  ⚠️ Dnes už tam jel: {{ todayTripInfo.worker }} ({{ todayTripInfo.km }} km)
-                </q-banner>
-                
-                <div class="q-mt-sm">
-                  <div class="text-caption text-grey-7">
-                    Místo: {{ contractName }} • {{ contractKm }} km jedna cesta
-                  </div>
-                  
-                  <q-checkbox 
-                    v-model="kmRoundTrip" 
-                    label="Tam a zpět (×2)"
-                    class="q-mt-sm"
-                  />
-                  
-                  <div class="text-bold text-primary q-mt-xs">
-                    Celkem: {{ calculatedKm }} km
-                  </div>
-                  
-                  <q-checkbox 
-                    v-model="kmManual" 
-                    label="Zadat km ručně"
-                    class="q-mt-sm"
-                  />
-                  
-                  <q-input
-                    v-if="kmManual"
-                    v-model.number="kmManualValue"
-                    label="Počet km"
-                    type="number"
-                    outlined
-                    dense
-                    class="q-mt-sm"
-                  />
-                </div>
-              </q-card-section>
-            </q-card>
-          </div>
           
           <div v-if="working" class="q-mb-md">
             <q-banner class="bg-blue-2" dense rounded>
