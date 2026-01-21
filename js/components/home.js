@@ -1,27 +1,21 @@
-app.component('home-component', {
-  props: ['currentUser', 'contracts', 'jobs', 'loading'],
+window.app.component('home-component', {
+  props: ['currentUser', 'isAdmin', 'contracts', 'jobs', 'loading'],
   emits: ['message', 'reload'],
   
   data() {
     return {
-      currentTab: 'shift',
-      shiftForm: {
-        contractId: null,
-        jobId: null,
-        timeStart: null,
-        timeEnd: null,
-        note: ''
-      },
-      advanceForm: {
-        amount: null,
-        reason: ''
+      selectedContract: null,
+      selectedJob: null,
+      timeStart: null,
+      timeEnd: null,
+      note: '',
+      working: false,
       contractKm: 0,
       kmManual: false,
       kmManualValue: null,
       kmRoundTrip: true,
       todayTripExists: false,
-      todayTripInfo: null  
-      }
+      todayTripInfo: null
     }
   },
   
@@ -29,73 +23,33 @@ app.component('home-component', {
     contractOptions() {
       return this.contracts.map(c => ({ label: c[0] + ' - ' + c[1], value: c[0] }));
     },
+    
     jobOptions() {
       return this.jobs.map(j => ({ label: j[1], value: j[0] }));
     },
-    formattedStartTime() {
-      return this.shiftForm.timeStart ? formatShortDateTime(this.shiftForm.timeStart) : '';
+    
+    contractName() {
+      const c = this.contracts.find(x => x[0] === this.selectedContract);
+      return c ? c[1] : '';
     },
-    formattedEndTime() {
-      return this.shiftForm.timeEnd ? formatShortDateTime(this.shiftForm.timeEnd) : '';
+    
+    jobName() {
+      const j = this.jobs.find(x => x[0] === this.selectedJob);
+      return j ? j[1] : '';
     },
-    workedHours() {
-      if (this.shiftForm.timeStart && this.shiftForm.timeEnd) {
-        return ((this.shiftForm.timeEnd - this.shiftForm.timeStart) / 3600000).toFixed(2);
+    
+    calculatedKm() {
+      if (this.kmManual && this.kmManualValue) {
+        return this.kmRoundTrip ? this.kmManualValue * 2 : this.kmManualValue;
       }
-      return '0.00';
-    },
-    todayDate() {
-      return getTodayDate();
+      if (this.contractKm > 0) {
+        return this.kmRoundTrip ? this.contractKm * 2 : this.contractKm;
+      }
+      return 0;
     }
   },
   
   methods: {
-    setArrival() {
-      this.shiftForm.timeStart = Date.now();
-      this.saveShiftState();
-      this.$emit('message', 'Příchod: ' + formatTime(this.shiftForm.timeStart));
-    },
-    
-    setDeparture() {
-      if (!this.shiftForm.timeStart) {
-        this.$emit('message', 'Nejdříve zaznamenejte příchod');
-        return;
-      }
-      this.shiftForm.timeEnd = Date.now();
-      this.saveShiftState();
-      this.$emit('message', 'Odchod: ' + formatTime(this.shiftForm.timeEnd));
-    },
-    
-    async saveShift() {
-      if (!this.shiftForm.contractId || !this.shiftForm.jobId || !this.shiftForm.timeStart || !this.shiftForm.timeEnd) {
-        this.$emit('message', 'Vyplňte všechna pole');
-        return;
-      }
-      if (!this.shiftForm.note || this.shiftForm.note.trim() === '') {
-        this.$emit('message', 'Poznámka je povinná');
-        return;
-      }
-      try {
-        const res = await apiCall('saverecord', {
-          id_contract: this.shiftForm.contractId,
-          id_worker: this.currentUser.id,
-          id_job: this.shiftForm.jobId,
-          time_fr: this.shiftForm.timeStart,
-          time_to: this.shiftForm.timeEnd,
-          note: this.shiftForm.note
-        });
-        if (res.code === '000') {
-          this.$emit('message', '✓ Směna uložena');
-          this.clearShiftState();
-          this.$emit('reload');
-        } else {
-          this.$emit('message', 'Chyba: ' + res.error);
-        }
-      } catch (error) {
-        console.error('Save shift error:', error);
-        this.$emit('message', 'Chyba při ukládání směny');
-
-       // PŘIDAT metodu pro načtení km ze zakázky:
     async loadContractKm() {
       if (!this.isAdmin || !this.selectedContract) {
         this.contractKm = 0;
@@ -103,126 +57,223 @@ app.component('home-component', {
       }
       
       try {
-        const res = await apiCall('getcontractkm', { 
-          id_contract: this.selectedContract 
-        });
-        
-        if (res.code === '000') {
-          this.contractKm = res.km || 0;
+        const res = await apiCall('getcontractkm', { id_contract: this.selectedContract });
+        if (res.code === '000' && res.data) {
+          this.contractKm = res.data.km || 0;
           
-          // Zkontrolovat, jestli dnes už někdo jel
-          const tripCheck = await apiCall('checktodaytrip', {
-            id_contract: this.selectedContract
-          });
-          
-          if (tripCheck.code === '000' && tripCheck.exists) {
+          const tripCheck = await apiCall('checktodaytrip', { id_contract: this.selectedContract });
+          if (tripCheck.code === '000' && tripCheck.data && tripCheck.data.exists) {
             this.todayTripExists = true;
-            this.todayTripInfo = tripCheck;
+            this.todayTripInfo = tripCheck.data;
           } else {
             this.todayTripExists = false;
             this.todayTripInfo = null;
           }
         }
       } catch (error) {
-        console.error('Chyba při načítání km:', error); 
+        console.error('Chyba načítání km:', error);
       }
     },
     
-    saveShiftState() {
-      const state = {
-        timeStart: this.shiftForm.timeStart,
-        timeEnd: this.shiftForm.timeEnd,
-        contractId: this.shiftForm.contractId,
-        jobId: this.shiftForm.jobId,
-        note: this.shiftForm.note,
-        date: getTodayDate()
-      };
-      localStorage.setItem('shiftState_' + this.currentUser.id, JSON.stringify(state));
-    },
-    
-    loadShiftState() {
-      const saved = localStorage.getItem('shiftState_' + this.currentUser.id);
-      if (saved) {
-        const state = JSON.parse(saved);
-        if (state.date === getTodayDate()) {
-          this.shiftForm.timeStart = state.timeStart;
-          this.shiftForm.timeEnd = state.timeEnd;
-          this.shiftForm.contractId = state.contractId;
-          this.shiftForm.jobId = state.jobId;
-          this.shiftForm.note = state.note;
-        } else {
-          this.clearShiftState();
-        }
-      }
-    },
-    
-    clearShiftState() {
-      localStorage.removeItem('shiftState_' + this.currentUser.id);
-      this.shiftForm = {
-        contractId: null,
-        jobId: null,
-        timeStart: null,
-        timeEnd: null,
-        note: ''
-      };
-    },
-    
-    async saveLunch() {
-      try {
-        const res = await apiCall('savelunch', {
-          id_worker: this.currentUser.id,
-          name_worker: this.currentUser.name,
-          time: Date.now()
-        });
-        if (res.code === '000') {
-          this.$emit('message', '✓ Oběd uložen');
-          this.$emit('reload');
-        } else {
-          this.$emit('message', 'Chyba: ' + res.error);
-        }
-      } catch (error) {
-        console.error('Save lunch error:', error);
-        this.$emit('message', 'Chyba při ukládání oběda');
-      }
-    },
-    
-    async saveAdvance() {
-      if (!this.advanceForm.amount || !this.advanceForm.reason) {
-        this.$emit('message', 'Vyplňte částku a důvod');
+    async startWork() {
+      if (!this.selectedContract || !this.selectedJob) {
+        this.$emit('message', '❌ Vyber zakázku a práci');
         return;
       }
+      
+      this.timeStart = Date.now();
+      this.working = true;
+      this.$emit('message', '✓ Směna zahájena');
+    },
+    
+    async stopWork() {
+      if (!this.working || !this.timeStart) {
+        this.$emit('message', '❌ Nejdřív zahaj směnu');
+        return;
+      }
+      
+      this.timeEnd = Date.now();
+      const hours = ((this.timeEnd - this.timeStart) / 3600000).toFixed(2);
+      
+      if (hours < 0.1) {
+        this.$emit('message', '❌ Směna je příliš krátká');
+        return;
+      }
+      
       try {
-        const res = await apiCall('saveadvance', {
+        const payload = {
           id_worker: this.currentUser.id,
           name_worker: this.currentUser.name,
-          time: Date.now(),
-          payment: this.advanceForm.amount,
-          payment_reason: this.advanceForm.reason
-        });
+          id_contract: this.selectedContract,
+          name_contract: this.contractName,
+          id_job: this.selectedJob,
+          name_job: this.jobName,
+          time_fr: this.timeStart,
+          time_to: this.timeEnd,
+          note: this.note
+        };
+        
+        if (this.isAdmin && this.calculatedKm > 0) {
+          payload.km_jednosmer = this.kmManual ? (this.kmManualValue || 0) : this.contractKm;
+          payload.km_celkem = this.calculatedKm;
+          payload.km_rucne = this.kmManual ? 'Y' : 'N';
+        }
+        
+        const res = await apiCall('saverecord', payload);
+        
         if (res.code === '000') {
-          this.$emit('message', '✓ Záloha uložena');
-          this.advanceForm.amount = null;
-          this.advanceForm.reason = '';
+          const kmText = this.calculatedKm > 0 ? ` (${this.calculatedKm} km)` : '';
+          this.$emit('message', `✓ Směna ukončena: ${hours}h${kmText}`);
+          this.resetForm();
           this.$emit('reload');
         } else {
-          this.$emit('message', 'Chyba: ' + res.error);
+          this.$emit('message', '❌ Chyba: ' + res.error);
         }
       } catch (error) {
-        console.error('Save advance error:', error);
-        this.$emit('message', 'Chyba při ukládání zálohy');
+        this.$emit('message', '❌ Chyba při ukládání');
       }
+    },
+    
+    resetForm() {
+      this.selectedContract = null;
+      this.selectedJob = null;
+      this.timeStart = null;
+      this.timeEnd = null;
+      this.note = '';
+      this.working = false;
+      this.contractKm = 0;
+      this.kmManual = false;
+      this.kmManualValue = null;
+      this.kmRoundTrip = true;
+      this.todayTripExists = false;
+      this.todayTripInfo = null;
     }
   },
   
   watch: {
-    'shiftForm.contractId': function() { this.saveShiftState(); },
-    'shiftForm.jobId': function() { this.saveShiftState(); },
-    'shiftForm.note': function() { this.saveShiftState(); }
+    selectedContract() {
+      if (this.isAdmin) {
+        this.loadContractKm();
+      }
+    }
   },
   
-  mounted() {
-    this.loadShiftState();
-  },
-  
-  template: '<div><q-tabs v-model="currentTab" dense align="justify" class="text-primary"><q-tab name="shift" label="Směna"/><q-tab name="lunch" label="Oběd"/><q-tab name="advance" label="Záloha"/></q-tabs><div v-if="currentTab===\'shift\'" class="q-pt-md"><q-btn @click="setArrival" color="green" icon="login" label="PŘÍCHOD" class="full-width q-mb-md" :disabled="shiftForm.timeStart"/><div v-if="shiftForm.timeStart" class="q-mb-md q-pa-sm" style="background:#e8f5e9;border-radius:4px"><div class="text-bold text-green-8">✓ Příchod zaznamenán</div><div>{{formattedStartTime}}</div></div><q-btn @click="setDeparture" color="orange" icon="logout" label="ODCHOD" class="full-width q-mb-md" :disabled="!shiftForm.timeStart||shiftForm.timeEnd"/><div v-if="shiftForm.timeEnd" class="q-mb-md q-pa-sm" style="background:#fff3e0;border-radius:4px"><div class="text-bold text-orange-8">✓ Odchod zaznamenán</div><div>{{formattedEndTime}}</div><div class="text-primary text-bold q-mt-sm">Odpracováno: {{workedHours}} hod</div></div><q-select v-model="shiftForm.contractId" :options="contractOptions" label="Zakázka *" emit-value map-options outlined class="q-mb-md"/><q-select v-model="shiftForm.jobId" :options="jobOptions" label="Práce *" emit-value map-options outlined class="q-mb-md"/><q-input v-model="shiftForm.note" label="Poznámka *" outlined class="q-mb-md" type="textarea" rows="3"/><q-btn @click="saveShift" label="Uložit směnu" color="primary" :loading="loading" class="full-width" size="lg"/></div><div v-if="currentTab===\'lunch\'" class="q-pt-md"><div class="text-center q-mb-md"><q-icon name="restaurant" size="4rem" color="orange"/><div class="text-h6 q-mt-md">{{todayDate}}</div></div><q-btn @click="saveLunch" label="Uložit oběd" color="orange" :loading="loading" class="full-width" size="lg" icon="restaurant"/></div><div v-if="currentTab===\'advance\'" class="q-pt-md"><q-input v-model.number="advanceForm.amount" label="Částka (Kč) *" type="number" outlined class="q-mb-md"/><q-input v-model="advanceForm.reason" label="Důvod *" outlined class="q-mb-md" type="textarea" rows="2"/><q-btn @click="saveAdvance" label="Uložit zálohu" color="primary" :loading="loading" class="full-width" size="lg"/></div></div>'
+  template: `
+    <div class="q-pa-md">
+      <div class="text-h5 q-mb-md">👷 Nová směna</div>
+      
+      <q-card>
+        <q-card-section>
+          <q-select
+            v-model="selectedContract"
+            :options="contractOptions"
+            label="Zakázka *"
+            emit-value
+            map-options
+            outlined
+            :disable="working"
+            class="q-mb-md"
+          />
+          
+          <q-select
+            v-model="selectedJob"
+            :options="jobOptions"
+            label="Práce *"
+            emit-value
+            map-options
+            outlined
+            :disable="working"
+            class="q-mb-md"
+          />
+          
+          <q-input
+            v-model="note"
+            label="Poznámka"
+            outlined
+            type="textarea"
+            rows="2"
+            :disable="working"
+            class="q-mb-md"
+          />
+          
+          <div v-if="isAdmin && contractKm > 0" class="q-mb-md">
+            <q-card flat bordered>
+              <q-card-section>
+                <div class="text-subtitle2">🚗 Kilometry</div>
+                
+                <q-banner v-if="todayTripExists" class="bg-orange-2 q-mt-sm" dense rounded>
+                  ⚠️ Dnes už tam jel: {{ todayTripInfo.worker }} ({{ todayTripInfo.km }} km)
+                </q-banner>
+                
+                <div class="q-mt-sm">
+                  <div class="text-caption text-grey-7">
+                    Místo: {{ contractName }} • {{ contractKm }} km jedna cesta
+                  </div>
+                  
+                  <q-checkbox 
+                    v-model="kmRoundTrip" 
+                    label="Tam a zpět (×2)"
+                    class="q-mt-sm"
+                  />
+                  
+                  <div class="text-bold text-primary q-mt-xs">
+                    Celkem: {{ calculatedKm }} km
+                  </div>
+                  
+                  <q-checkbox 
+                    v-model="kmManual" 
+                    label="Zadat km ručně"
+                    class="q-mt-sm"
+                  />
+                  
+                  <q-input
+                    v-if="kmManual"
+                    v-model.number="kmManualValue"
+                    label="Počet km"
+                    type="number"
+                    outlined
+                    dense
+                    class="q-mt-sm"
+                  />
+                </div>
+              </q-card-section>
+            </q-card>
+          </div>
+          
+          <div v-if="working" class="q-mb-md">
+            <q-banner class="bg-blue-2" dense rounded>
+              ⏱️ Pracuješ na: {{ contractName }} - {{ jobName }}
+              <br>
+              <span class="text-caption">Začátek: {{ new Date(timeStart).toLocaleTimeString('cs-CZ') }}</span>
+            </q-banner>
+          </div>
+          
+          <div class="row q-gutter-sm">
+            <q-btn
+              v-if="!working"
+              @click="startWork"
+              label="Zahájit směnu"
+              color="green"
+              icon="play_arrow"
+              class="col"
+              size="lg"
+              unelevated
+              :disable="!selectedContract || !selectedJob"
+            />
+            
+            <q-btn
+              v-if="working"
+              @click="stopWork"
+              label="Ukončit směnu"
+              color="red"
+              icon="stop"
+              class="col"
+              size="lg"
+              unelevated
+            />
+          </div>
+        </q-card-section>
+      </q-card>
+    </div>
+  `
 });
