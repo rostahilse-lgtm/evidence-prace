@@ -185,7 +185,7 @@ window.app = Vue.createApp({
           <q-tab name="summary" icon="assessment" label="Přehledy" />
           <q-tab v-if="isAdmin" name="admin" icon="admin_panel_settings" label="Admin" />
           <q-tab v-if="isAdmin" name="statistics" icon="bar_chart" label="Statistiky"/>
-          <q-tab name="kilometers" icon="directions_car" label="Kilometry"/>
+          <q-tab v-if="isAdmin" name="kilometers" icon="directions_car" label="Kilometry"/>
           <q-tab name="settings" icon="settings" label="Nastavení" />
         </q-tabs>
       </q-footer>
@@ -204,5 +204,6 @@ setTimeout(() => {
   window.app.use(Quasar);
   window.app.mount('#app');
 }, 100);
+
 
 
