@@ -15,6 +15,12 @@ app.component('home-component', {
       advanceForm: {
         amount: null,
         reason: ''
+      contractKm: 0,
+      kmManual: false,
+      kmManualValue: null,
+      kmRoundTrip: true,
+      todayTripExists: false,
+      todayTripInfo: null  
       }
     }
   },
@@ -88,6 +94,37 @@ app.component('home-component', {
       } catch (error) {
         console.error('Save shift error:', error);
         this.$emit('message', 'Chyba při ukládání směny');
+
+       // PŘIDAT metodu pro načtení km ze zakázky:
+    async loadContractKm() {
+      if (!this.isAdmin || !this.selectedContract) {
+        this.contractKm = 0;
+        return;
+      }
+      
+      try {
+        const res = await apiCall('getcontractkm', { 
+          id_contract: this.selectedContract 
+        });
+        
+        if (res.code === '000') {
+          this.contractKm = res.km || 0;
+          
+          // Zkontrolovat, jestli dnes už někdo jel
+          const tripCheck = await apiCall('checktodaytrip', {
+            id_contract: this.selectedContract
+          });
+          
+          if (tripCheck.code === '000' && tripCheck.exists) {
+            this.todayTripExists = true;
+            this.todayTripInfo = tripCheck;
+          } else {
+            this.todayTripExists = false;
+            this.todayTripInfo = null;
+          }
+        }
+      } catch (error) {
+        console.error('Chyba při načítání km:', error); 
       }
     },
     
