@@ -1,4 +1,3 @@
-// Vytvoření Vue aplikace
 window.app = Vue.createApp({
   data() {
     return {
@@ -6,8 +5,6 @@ window.app = Vue.createApp({
       currentUser: null,
       isAdmin: false,
       currentView: 'home',
-      showKilometers: false,
-      showStatistics: false,
       loading: false,
       message: '',
       showMessageDialog: false,
@@ -104,7 +101,6 @@ window.app = Vue.createApp({
     }
   },
 
-  // PŘIDÁN TEMPLATE
   template: `
     <q-layout view="hHh lpR fFf">
       <q-header v-if="isLoggedIn" class="bg-primary text-white">
@@ -131,6 +127,7 @@ window.app = Vue.createApp({
           <home-component
             v-if="isLoggedIn && currentView === 'home' && !loading"
             :current-user="currentUser"
+            :is-admin="isAdmin"
             :contracts="contracts"
             :jobs="jobs"
             :loading="loading"
@@ -159,19 +156,21 @@ window.app = Vue.createApp({
           />
 
           <statistics-component
-            v-if="isLoggedIn && isAdmin && currentView === 'statistics'"
-  :all-records="allRecords"
-  :all-advances="allAdvances"
-  :contracts="contracts"
-  :jobs="jobs"
-/>
+            v-if="isLoggedIn && isAdmin && currentView === 'statistics' && !loading"
+            :all-records="allRecords"
+            :all-advances="allAdvances"
+            :contracts="contracts"
+            :jobs="jobs"
+            @message="showMessage"
+          />
 
-<kilometers-component
-  v-if="isLoggedIn && currentView === 'kilometers'"
-  :current-user="currentUser"
-  @message="showMessage"
-  @reload="loadUserData"
-/>
+          <stavebni-denik-component
+            v-if="isLoggedIn && isAdmin && currentView === 'denik' && !loading"
+            :all-records="allRecords"
+            :contracts="contracts"
+            @message="showMessage"
+          />
+
           <settings-component
             v-if="isLoggedIn && currentView === 'settings' && !loading"
             @message="showMessage"
@@ -184,8 +183,8 @@ window.app = Vue.createApp({
           <q-tab name="home" icon="home" label="Domů" />
           <q-tab name="summary" icon="assessment" label="Přehledy" />
           <q-tab v-if="isAdmin" name="admin" icon="admin_panel_settings" label="Admin" />
-          <q-tab v-if="isAdmin" name="statistics" icon="bar_chart" label="Statistiky"/>
-          <q-tab v-if="isAdmin" name="kilometers" icon="directions_car" label="Kilometry"/>
+          <q-tab v-if="isAdmin" name="statistics" icon="bar_chart" label="Statistiky" />
+          <q-tab v-if="isAdmin" name="denik" icon="description" label="Deník" />
           <q-tab name="settings" icon="settings" label="Nastavení" />
         </q-tabs>
       </q-footer>
@@ -199,11 +198,7 @@ window.app = Vue.createApp({
   `
 });
 
-// Inicializace až po načtení všech komponent
 setTimeout(() => {
   window.app.use(Quasar);
   window.app.mount('#app');
 }, 100);
-
-
-
