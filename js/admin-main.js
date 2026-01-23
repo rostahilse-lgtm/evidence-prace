@@ -1,4 +1,4 @@
-window.adminApp = Vue.createApp({
+window.app = Vue.createApp({
   data() {
     return {
       isLoggedIn: false,
@@ -210,6 +210,6 @@ window.adminApp = Vue.createApp({
 });
 
 setTimeout(() => {
-  window.adminApp.use(Quasar);
-  window.adminApp.mount('#admin-app');
+  window.app.use(Quasar);
+  window.app.mount('#admin-app');
 }, 100);
