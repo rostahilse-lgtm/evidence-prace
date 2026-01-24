@@ -127,6 +127,7 @@ window.app = Vue.createApp({
           <home-component
             v-if="isLoggedIn && currentView === 'home' && !loading"
             :current-user="currentUser"
+            :is-admin="isAdmin"
             :contracts="contracts"
             :jobs="jobs"
             :loading="loading"
@@ -183,3 +184,4 @@ setTimeout(() => {
   window.app.use(Quasar);
   window.app.mount('#app');
 }, 100);
+
