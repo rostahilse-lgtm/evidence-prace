@@ -1,21 +1,16 @@
 async function apiCall(action, params = {}) {
   const apiUrl = localStorage.getItem('apiUrl') || DEFAULT_API_URL;
+  const url = new URL(apiUrl);
+  url.searchParams.append('action', action);
   
-  // Připravit data pro POST request
-  const payload = {
-    action: action,
-    ...params
-  };
+  Object.keys(params).forEach(key => {
+    if (params[key] !== null && params[key] !== undefined) {
+      url.searchParams.append(key, params[key]);
+    }
+  });
   
   try {
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload)
-    });
-    
+    const response = await fetch(url);
     const data = await response.json();
     
     // Přidat success flag pro kompatibilitu
@@ -35,3 +30,4 @@ async function apiCall(action, params = {}) {
     };
   }
 }
+
