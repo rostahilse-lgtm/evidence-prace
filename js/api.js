@@ -30,4 +30,3 @@ async function apiCall(action, params = {}) {
     };
   }
 }
-
