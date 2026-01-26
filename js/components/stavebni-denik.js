@@ -1,5 +1,3 @@
-// js/components/stavebni-denik.js
-
 window.app.component('stavebni-denik-component', {
   props: ['allRecords', 'contracts'],
   emits: ['message'],
@@ -16,44 +14,46 @@ window.app.component('stavebni-denik-component', {
         showNames: false,
         showHours: true,
         includeMe: true
-      }
+      },
+      importedRecords: [],
+      showImportDialog: false
     }
   },
   
   computed: {
-    // Dostupné zakázky
+    allRecordsWithImported() {
+      return [...this.allRecords, ...this.importedRecords];
+    },
+    
     availableContracts() {
       const unique = new Set();
-      this.allRecords.forEach(r => {
-        if (r[3]) unique.add(r[3]); // name_contract
+      this.allRecordsWithImported.forEach(r => {
+        if (r[0]) unique.add(r[0]);
       });
       return Array.from(unique).sort();
     },
     
-    // Filtrovaná data podle období a zakázek
     filteredRecords() {
       const from = parseDateString(this.dateFrom);
       const to = parseDateString(this.dateTo);
       to.setHours(23, 59, 59);
       
-      return this.allRecords.filter(r => {
-        const recordDate = new Date(r[6]); // time_fr
+      return this.allRecordsWithImported.filter(r => {
+        const recordDate = new Date(r[4]);
         const inDateRange = recordDate >= from && recordDate <= to;
         
         const inSelectedContracts = this.selectedContracts.length === 0 || 
-                                    this.selectedContracts.includes(r[3]);
+                                    this.selectedContracts.includes(r[0]);
         
         return inDateRange && inSelectedContracts;
       });
     },
     
-    // Denní souhrn
     dailySummary() {
       const summary = {};
       
-      // Agregace dat podle dnů
       this.filteredRecords.forEach(r => {
-        const date = new Date(r[6]);
+        const date = new Date(r[4]);
         const dateStr = formatDate(date);
         
         if (!summary[dateStr]) {
@@ -66,12 +66,11 @@ window.app.component('stavebni-denik-component', {
           };
         }
         
-        summary[dateStr].prace.add(r[5]); // name_job
-        summary[dateStr].pracovnici.add(r[1]); // name_worker
-        summary[dateStr].celkemHodin += r[7]; // hours
+        summary[dateStr].prace.add(r[3]);
+        summary[dateStr].pracovnici.add(r[6]);
+        summary[dateStr].celkemHodin += r[7];
       });
       
-      // Přidat "já" pokud jsem nebyl, ale ostatní byli
       if (this.exportOptions.includeMe && this.absenceFrom && this.absenceTo && this.myName) {
         const absFrom = new Date(this.absenceFrom);
         const absTo = new Date(this.absenceTo);
@@ -83,7 +82,6 @@ window.app.component('stavebni-denik-component', {
             p.toLowerCase().includes(this.myName.toLowerCase())
           );
           
-          // Pokud jsem nebyl v absenci a ostatní tam byli, přidat mě
           if (!isInAbsence && !iWasThere && day.pracovnici.size > 0) {
             const avgHours = day.celkemHodin / day.pracovnici.size;
             day.celkemHodin += avgHours;
@@ -92,7 +90,6 @@ window.app.component('stavebni-denik-component', {
         });
       }
       
-      // Převést na pole a seřadit
       return Object.values(summary)
         .map(s => ({
           datum: s.datum,
@@ -104,7 +101,6 @@ window.app.component('stavebni-denik-component', {
         .sort((a, b) => b.timestamp - a.timestamp);
     },
     
-    // Detekce absence (dny kdy ostatní pracovali hodně, ale já ne)
     detectedAbsence() {
       if (!this.myName) return [];
       
@@ -115,7 +111,6 @@ window.app.component('stavebni-denik-component', {
           p.toLowerCase().includes(this.myName.toLowerCase())
         );
         
-        // Pokud jsem tam nebyl a bylo tam více lidí
         if (!iWasThere && day.pracovnici.length > 1) {
           absenceDays.push(day.datum);
         }
@@ -124,12 +119,12 @@ window.app.component('stavebni-denik-component', {
       return absenceDays;
     },
     
-    // Statistiky
     stats() {
       return {
         dnu: this.dailySummary.length,
         hodin: this.dailySummary.reduce((s, d) => s + d.celkemHodin, 0).toFixed(1),
-        absence: this.detectedAbsence.length
+        absence: this.detectedAbsence.length,
+        imported: this.importedRecords.length
       };
     }
   },
@@ -141,6 +136,99 @@ window.app.component('stavebni-denik-component', {
         this.selectedContracts.splice(idx, 1);
       } else {
         this.selectedContracts.push(contract);
+      }
+    },
+    
+    handleFileUpload(event) {
+      const files = event.target.files;
+      if (!files || files.length === 0) return;
+      
+      Array.from(files).forEach(file => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          try {
+            const text = e.target.result;
+            const records = this.parseCSV(text);
+            this.importedRecords.push(...records);
+            this.$emit('message', `✓ Načteno ${records.length} záznamů z ${file.name}`);
+          } catch (error) {
+            this.$emit('message', `❌ Chyba při načítání ${file.name}: ${error.message}`);
+          }
+        };
+        reader.readAsText(file, 'UTF-8');
+      });
+      
+      this.showImportDialog = false;
+    },
+    
+    parseCSV(text) {
+      const lines = text.split('\n').filter(line => line.trim());
+      const records = [];
+      
+      for (let i = 1; i < lines.length; i++) {
+        const values = this.parseCSVLine(lines[i]);
+        
+        if (values.length >= 8) {
+          const dateTime = values[9] || values[0];
+          const timestamp = this.parseDateTime(dateTime);
+          
+          records.push([
+            values[0] || 'Neznámá zakázka',
+            values[1] || '0',
+            parseFloat(values[2]) || 0,
+            values[3] || 'Neznámá práce',
+            timestamp,
+            timestamp + (parseFloat(values[7]) * 3600000 || 0),
+            values[6] || 'Neznámý pracovník',
+            parseFloat(values[7]) || 0,
+            values[8] || '',
+            dateTime,
+            dateTime,
+            0,
+            0,
+            'N'
+          ]);
+        }
+      }
+      
+      return records;
+    },
+    
+    parseCSVLine(line) {
+      const values = [];
+      let current = '';
+      let inQuotes = false;
+      
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        
+        if (char === '"') {
+          inQuotes = !inQuotes;
+        } else if (char === ',' && !inQuotes) {
+          values.push(current.trim());
+          current = '';
+        } else {
+          current += char;
+        }
+      }
+      values.push(current.trim());
+      
+      return values;
+    },
+    
+    parseDateTime(dateStr) {
+      const parts = dateStr.match(/(\d{1,2})\.\s*(\d{1,2})\.\s*(\d{4})\s+(\d{1,2}):(\d{2})/);
+      if (parts) {
+        const [, day, month, year, hour, minute] = parts;
+        return new Date(year, month - 1, day, hour, minute).getTime();
+      }
+      return Date.now();
+    },
+    
+    clearImported() {
+      if (confirm('Smazat všechna importovaná data?')) {
+        this.importedRecords = [];
+        this.$emit('message', '✓ Importovaná data smazána');
       }
     },
     
@@ -170,9 +258,9 @@ window.app.component('stavebni-denik-component', {
       const csv = [
         headers.join(','),
         ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
-      ].join('\\n');
+      ].join('\n');
       
-      const blob = new Blob(['\\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+      const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
       link.download = `stavebni_denik_${this.dateFrom}_${this.dateTo}.csv`;
@@ -187,9 +275,11 @@ window.app.component('stavebni-denik-component', {
   
   template: `
     <div class="q-pa-md">
-      <div class="text-h5 q-mb-md">📋 Stavební deník</div>
+      <div class="row items-center q-mb-md">
+        <div class="text-h5 col">📋 Stavební deník</div>
+        <q-btn color="orange" icon="upload_file" label="Import CSV" @click="showImportDialog = true" unelevated dense/>
+      </div>
       
-      <!-- FILTRY -->
       <q-card class="q-mb-md">
         <q-card-section>
           <div class="text-subtitle2 q-mb-sm">Období</div>
@@ -303,7 +393,6 @@ window.app.component('stavebni-denik-component', {
         </q-card-section>
       </q-card>
       
-      <!-- STATISTIKY -->
       <div class="row q-gutter-sm q-mb-md">
         <q-card class="col" style="background: #e3f2fd">
           <q-card-section>
@@ -325,9 +414,25 @@ window.app.component('stavebni-denik-component', {
             <div class="text-h4 text-orange">{{ stats.absence }}</div>
           </q-card-section>
         </q-card>
+        
+        <q-card v-if="importedRecords.length > 0" class="col" style="background: #f3e5f5">
+          <q-card-section>
+            <div class="text-caption text-grey-7">Import</div>
+            <div class="text-h4 text-purple">{{ stats.imported }}</div>
+          </q-card-section>
+        </q-card>
       </div>
       
-      <!-- DETEKOVANÁ ABSENCE -->
+      <q-banner v-if="importedRecords.length > 0" class="bg-purple-2 q-mb-md" dense rounded>
+        <template v-slot:avatar>
+          <q-icon name="info" color="purple"/>
+        </template>
+        <strong>Zobrazena data včetně {{ importedRecords.length }} importovaných záznamů</strong>
+        <template v-slot:action>
+          <q-btn flat label="Smazat import" @click="clearImported" dense/>
+        </template>
+      </q-banner>
+      
       <q-banner v-if="detectedAbsence.length > 0" class="bg-orange-2 q-mb-md" dense rounded>
         <template v-slot:avatar>
           <q-icon name="warning" color="orange"/>
@@ -336,7 +441,6 @@ window.app.component('stavebni-denik-component', {
         <div class="q-mt-xs">{{ detectedAbsence.join(', ') }}</div>
       </q-banner>
       
-      <!-- EXPORT -->
       <div class="q-mb-md">
         <q-btn
           @click="exportToCSV"
@@ -347,7 +451,6 @@ window.app.component('stavebni-denik-component', {
         />
       </div>
       
-      <!-- TABULKA -->
       <q-card>
         <q-table
           :rows="dailySummary"
@@ -368,6 +471,31 @@ window.app.component('stavebni-denik-component', {
           </template>
         </q-table>
       </q-card>
+      
+      <q-dialog v-model="showImportDialog">
+        <q-card style="min-width: 350px">
+          <q-card-section>
+            <div class="text-h6">📂 Import CSV souborů</div>
+          </q-card-section>
+          
+          <q-card-section>
+            <p class="text-body2">Vyberte jeden nebo více CSV souborů ze starého systému.</p>
+            <p class="text-caption text-grey-7">Očekávané sloupce: zakázka, id_pracovníka, sazba, práce, čas_od, čas_do, jméno, hodiny, poznámka, datum</p>
+            
+            <input
+              type="file"
+              accept=".csv"
+              multiple
+              @change="handleFileUpload"
+              style="margin-top: 16px"
+            />
+          </q-card-section>
+          
+          <q-card-actions align="right">
+            <q-btn flat label="Zrušit" v-close-popup/>
+          </q-card-actions>
+        </q-card>
+      </q-dialog>
     </div>
   `
 });
