@@ -17,7 +17,7 @@ window.app.component('statistics-component', {
       const to = parseDateString(this.dateTo);
       to.setHours(23, 59, 59);
       return this.allRecords.filter(r => {
-        const d = new Date(r[6]);
+        const d = new Date(r[4]); // timeFr = index 4
         return d >= from && d <= to;
       });
     },
@@ -27,9 +27,9 @@ window.app.component('statistics-component', {
       const tripDays = {};
       
       this.filteredRecords.forEach(r => {
-        const contractName = r[3];
-        const dateKey = new Date(r[6]).toDateString();
-        const kmCelkem = r[12] || 0;
+        const contractName = r[0]; // nameContract = index 0
+        const dateKey = new Date(r[4]).toDateString(); // timeFr = index 4
+        const kmCelkem = r[12] || 0; // kmCelkem = index 12
         
         if (!stats[contractName]) {
           stats[contractName] = {
@@ -43,8 +43,8 @@ window.app.component('statistics-component', {
           tripDays[contractName] = new Set();
         }
         
-        stats[contractName].totalHours += r[7];
-        stats[contractName].totalWorkers.add(r[1]);
+        stats[contractName].totalHours += r[7]; // hours = index 7
+        stats[contractName].totalWorkers.add(r[1]); // idWorker = index 1
         stats[contractName].visits += 1;
         
         if (kmCelkem > 0 && !tripDays[contractName].has(dateKey)) {
@@ -64,7 +64,7 @@ window.app.component('statistics-component', {
     workerStats() {
       const stats = {};
       this.filteredRecords.forEach(r => {
-        const workerName = r[1];
+        const workerName = r[6]; // nameWorker = index 6
         if (!stats[workerName]) {
           stats[workerName] = {
             name: workerName,
@@ -73,9 +73,9 @@ window.app.component('statistics-component', {
             days: new Set()
           };
         }
-        stats[workerName].totalHours += r[7];
-        stats[workerName].contracts.add(r[3]);
-        const day = new Date(r[6]).toDateString();
+        stats[workerName].totalHours += r[7]; // hours = index 7
+        stats[workerName].contracts.add(r[0]); // nameContract = index 0
+        const day = new Date(r[4]).toDateString(); // timeFr = index 4
         stats[workerName].days.add(day);
       });
       
@@ -89,11 +89,11 @@ window.app.component('statistics-component', {
     jobStats() {
       const stats = {};
       this.filteredRecords.forEach(r => {
-        const jobName = r[5];
+        const jobName = r[3]; // nameJob = index 3
         if (!stats[jobName]) {
           stats[jobName] = { name: jobName, totalHours: 0, count: 0 };
         }
-        stats[jobName].totalHours += r[7];
+        stats[jobName].totalHours += r[7]; // hours = index 7
         stats[jobName].count += 1;
       });
       
@@ -122,11 +122,11 @@ window.app.component('statistics-component', {
     },
     
     exportToPDF() {
-      const content = `
+      const content = \`
         <html>
         <head>
           <meta charset="utf-8">
-          <title>Statistiky ${this.exportData.period}</title>
+          <title>Statistiky \${this.exportData.period}</title>
           <style>
             body { font-family: Arial; padding: 20px; }
             h1 { color: #1976d2; }
@@ -139,13 +139,13 @@ window.app.component('statistics-component', {
         </head>
         <body>
           <h1>📊 Statistiky práce</h1>
-          <p><strong>Období:</strong> ${this.exportData.period}</p>
+          <p><strong>Období:</strong> \${this.exportData.period}</p>
           
           <div class="summary">
             <h2>Souhrn</h2>
-            <p>Celkem hodin: <span class="total">${this.exportData.totalHours.toFixed(2)} h</span></p>
-            <p>Celkem km: <span class="total">${this.exportData.totalKm} km</span></p>
-            <p>Cestovné: <span class="total">${this.exportData.totalCestovne} Kč</span></p>
+            <p>Celkem hodin: <span class="total">\${this.exportData.totalHours.toFixed(2)} h</span></p>
+            <p>Celkem km: <span class="total">\${this.exportData.totalKm} km</span></p>
+            <p>Cestovné: <span class="total">\${this.exportData.totalCestovne} Kč</span></p>
           </div>
           
           <h2>📋 Zakázky</h2>
@@ -162,17 +162,17 @@ window.app.component('statistics-component', {
               </tr>
             </thead>
             <tbody>
-              ${this.exportData.contracts.map(c => `
+              \${this.exportData.contracts.map(c => \`
                 <tr>
-                  <td>${c.name}</td>
-                  <td>${c.totalHours.toFixed(2)} h</td>
-                  <td>${c.totalWorkers}</td>
-                  <td>${c.visits}x</td>
-                  <td>${c.tripCount}x</td>
-                  <td>${c.totalKm} km</td>
-                  <td>${c.cestovne} Kč</td>
+                  <td>\${c.name}</td>
+                  <td>\${c.totalHours.toFixed(2)} h</td>
+                  <td>\${c.totalWorkers}</td>
+                  <td>\${c.visits}x</td>
+                  <td>\${c.tripCount}x</td>
+                  <td>\${c.totalKm} km</td>
+                  <td>\${c.cestovne} Kč</td>
                 </tr>
-              `).join('')}
+              \`).join('')}
             </tbody>
           </table>
           
@@ -187,24 +187,24 @@ window.app.component('statistics-component', {
               </tr>
             </thead>
             <tbody>
-              ${this.exportData.workers.map(w => `
+              \${this.exportData.workers.map(w => \`
                 <tr>
-                  <td>${w.name}</td>
-                  <td>${w.totalHours.toFixed(2)} h</td>
-                  <td>${w.contracts}</td>
-                  <td>${w.days}</td>
+                  <td>\${w.name}</td>
+                  <td>\${w.totalHours.toFixed(2)} h</td>
+                  <td>\${w.contracts}</td>
+                  <td>\${w.days}</td>
                 </tr>
-              `).join('')}
+              \`).join('')}
             </tbody>
           </table>
           
           <p style="margin-top: 40px; color: #999; font-size: 12px;">
-            Vygenerováno: ${new Date().toLocaleString('cs-CZ')}<br>
+            Vygenerováno: \${new Date().toLocaleString('cs-CZ')}<br>
             Evidence práce 2026
           </p>
         </body>
         </html>
-      `;
+      \`;
       
       const printWindow = window.open('', '_blank');
       printWindow.document.write(content);
@@ -215,20 +215,20 @@ window.app.component('statistics-component', {
     },
     
     exportToCSV() {
-      let csv = 'Zakázka,Hodiny,Pracovníků,Návštěv,Cest,KM,Cestovné\n';
+      let csv = 'Zakázka,Hodiny,Pracovníků,Návštěv,Cest,KM,Cestovné\\n';
       this.exportData.contracts.forEach(c => {
-        csv += `"${c.name}",${c.totalHours.toFixed(2)},${c.totalWorkers},${c.visits},${c.tripCount},${c.totalKm},${c.cestovne}\n`;
+        csv += \`"\${c.name}",\${c.totalHours.toFixed(2)},\${c.totalWorkers},\${c.visits},\${c.tripCount},\${c.totalKm},\${c.cestovne}\\n\`;
       });
       
-      csv += '\n\nPracovník,Hodiny,Zakázek,Dnů\n';
+      csv += '\\n\\nPracovník,Hodiny,Zakázek,Dnů\\n';
       this.exportData.workers.forEach(w => {
-        csv += `"${w.name}",${w.totalHours.toFixed(2)},${w.contracts},${w.days}\n`;
+        csv += \`"\${w.name}",\${w.totalHours.toFixed(2)},\${w.contracts},\${w.days}\\n\`;
       });
       
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
-      link.download = `statistiky_${this.dateFrom}_${this.dateTo}.csv`;
+      link.download = \`statistiky_\${this.dateFrom}_\${this.dateTo}.csv\`;
       link.click();
       
       this.exportDialog = false;
@@ -236,7 +236,7 @@ window.app.component('statistics-component', {
     }
   },
   
-  template: `
+  template: \`
     <div class="q-pa-md">
       <div class="row items-center q-mb-md">
         <div class="text-h5 col">📊 Statistiky</div>
@@ -367,5 +367,5 @@ window.app.component('statistics-component', {
         </q-card>
       </q-dialog>
     </div>
-  `
+  \`
 });
