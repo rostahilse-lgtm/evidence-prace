@@ -260,7 +260,7 @@ window.app.component('stavebni-denik-component', {
         ...rows.map(row => row.map(cell => `"${cell}"`).join(';'))
       ].join('\r\n');
       
-      const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+      const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=windows-1250;' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
       link.download = `stavebni_denik_${this.dateFrom}_${this.dateTo}.csv`;
