@@ -256,9 +256,9 @@ window.app.component('stavebni-denik-component', {
       }
       
       const csv = [
-        headers.join(','),
-        ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
-      ].join('\n');
+  headers.join(';'),
+  ...rows.map(row => row.map(cell => `"${cell}"`).join(';'))
+].join('\n');
       
       const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
