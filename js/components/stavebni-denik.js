@@ -54,7 +54,7 @@ window.app.component('stavebni-denik-component', {
       
       this.filteredRecords.forEach(r => {
         const date = new Date(r[4]);
-     const dateStr = `${date.getDate()}. ${date.getMonth() + 1}. ${date.getFullYear()}`;
+        const dateStr = `${date.getDate()}. ${date.getMonth() + 1}. ${date.getFullYear()}`;
         
         if (!summary[dateStr]) {
           summary[dateStr] = {
@@ -236,28 +236,29 @@ window.app.component('stavebni-denik-component', {
       let headers, rows;
       
       if (this.exportOptions.showNames) {
-        headers = ['Datum', 'Pracovníci', 'Práce', 'Celkem hodin'];
-       rows = this.dailySummary.map(d => [
-  d.datum,
-  d.prace,
-  `="${d.celkemHodin}"` // Excel nechá jako text
-]); 
+        headers = ['Datum', 'Práce', 'Pracovníci', 'Celkem hodin'];
+        rows = this.dailySummary.map(d => [
+          d.datum,
+          d.prace,
+          d.pracovnici.join(', '),
+          d.celkemHodin.toString().replace('.', ',')
+        ]);
       } else if (this.exportOptions.showHours) {
         headers = ['Datum', 'Práce', 'Celkem hodin'];
         rows = this.dailySummary.map(d => [
-  d.datum,
-  d.prace,
-  `="${d.celkemHodin}"` // Excel nechá jako text
-]);
+          d.datum,
+          d.prace,
+          d.celkemHodin.toString().replace('.', ',')
+        ]);
       } else {
         headers = ['Datum', 'Práce'];
         rows = this.dailySummary.map(d => [d.datum, d.prace]);
       }
       
       const csv = [
-  headers.join(';'),
-  ...rows.map(row => row.map(cell => `"${cell}"`).join(';'))
-].join('\n');
+        headers.join(';'),
+        ...rows.map(row => row.map(cell => `"${cell}"`).join(';'))
+      ].join('\r\n');
       
       const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
