@@ -246,10 +246,10 @@ window.app.component('stavebni-denik-component', {
       } else if (this.exportOptions.showHours) {
         headers = ['Datum', 'Práce', 'Celkem hodin'];
         rows = this.dailySummary.map(d => [
-          d.datum,
-          d.prace,
-          d.celkemHodin
-        ]);
+  d.datum,
+  d.prace,
+  `="${d.celkemHodin}"` // Excel nechá jako text
+]);
       } else {
         headers = ['Datum', 'Práce'];
         rows = this.dailySummary.map(d => [d.datum, d.prace]);
