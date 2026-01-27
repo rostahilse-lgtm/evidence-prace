@@ -232,7 +232,7 @@ window.app.component('stavebni-denik-component', {
       }
     },
     
-  exportToCSV() {
+ exportToCSV() {
   let headers, rows;
   
   if (this.exportOptions.showNames) {
