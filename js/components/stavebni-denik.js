@@ -233,41 +233,27 @@ window.app.component('stavebni-denik-component', {
     },
     
     exportToCSV() {
-  let headers, rows;
-  
-  if (this.exportOptions.showNames) {
-    headers = ['Datum', 'Pracovnici', 'Prace', 'Celkem hodin'];
-    rows = this.dailySummary.map(d => [
-      d.datum,
-      d.pracovnici.join(', '),
-      d.prace,
-      d.celkemHodin.toString().replace('.', ',')
-    ]);
-  } else if (this.exportOptions.showHours) {
-    headers = ['Datum', 'Prace', 'Celkem hodin'];
-    rows = this.dailySummary.map(d => [
-      d.datum,
-      d.prace,
-      d.celkemHodin.toString().replace('.', ',')
-    ]);
-  } else {
-    headers = ['Datum', 'Prace'];
-    rows = this.dailySummary.map(d => [d.datum, d.prace]);
-  }
-  
-  const csv = '\ufeff' + [
-    headers.join(';'),
-    ...rows.map(row => row.map(cell => `"${cell}"`).join(';'))
-  ].join('\r\n');
-  
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = `stavebni_denik_${this.dateFrom}_${this.dateTo}.csv`;
-  link.click();
-  
-  this.$emit('message', '✓ Export dokončen');
-}
+      let headers, rows;
+      
+      if (this.exportOptions.showNames) {
+        headers = ['Datum', 'Pracovníci', 'Práce', 'Celkem hodin'];
+        rows = this.dailySummary.map(d => [
+          d.datum,
+          d.pracovnici.join(', '),
+          d.prace,
+          d.celkemHodin
+        ]);
+      } else if (this.exportOptions.showHours) {
+        headers = ['Datum', 'Práce', 'Celkem hodin'];
+        rows = this.dailySummary.map(d => [
+  d.datum,
+  d.prace,
+  `="${d.celkemHodin}"` // Excel nechá jako text
+]);
+      } else {
+        headers = ['Datum', 'Práce'];
+        rows = this.dailySummary.map(d => [d.datum, d.prace]);
+      }
       
       const csv = [
   headers.join(';'),
