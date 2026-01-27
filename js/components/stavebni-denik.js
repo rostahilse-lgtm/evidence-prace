@@ -54,7 +54,7 @@ window.app.component('stavebni-denik-component', {
       
       this.filteredRecords.forEach(r => {
         const date = new Date(r[4]);
-        const dateStr = formatDate(date);
+     const dateStr = `${date.getDate()}. ${date.getMonth() + 1}. ${date.getFullYear()}`;
         
         if (!summary[dateStr]) {
           summary[dateStr] = {
