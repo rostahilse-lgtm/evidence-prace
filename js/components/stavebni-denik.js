@@ -269,18 +269,6 @@ window.app.component('stavebni-denik-component', {
   this.$emit('message', '✓ Export dokončen');
 }
       
-      const csv = [
-  headers.join(';'),
-  ...rows.map(row => row.map(cell => `"${cell}"`).join(';'))
-].join('\n');
-      
-      const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = `stavebni_denik_${this.dateFrom}_${this.dateTo}.csv`;
-      link.click();
-      
-      this.$emit('message', '✓ Export dokončen');
     },
     
     formatDateForInput(s) { return formatDateForInput(s); },
