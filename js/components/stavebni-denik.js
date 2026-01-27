@@ -237,12 +237,11 @@ window.app.component('stavebni-denik-component', {
       
       if (this.exportOptions.showNames) {
         headers = ['Datum', 'Pracovníci', 'Práce', 'Celkem hodin'];
-        rows = this.dailySummary.map(d => [
-          d.datum,
-          d.pracovnici.join(', '),
-          d.prace,
-          d.celkemHodin
-        ]);
+       rows = this.dailySummary.map(d => [
+  d.datum,
+  d.prace,
+  `="${d.celkemHodin}"` // Excel nechá jako text
+]); 
       } else if (this.exportOptions.showHours) {
         headers = ['Datum', 'Práce', 'Celkem hodin'];
         rows = this.dailySummary.map(d => [
