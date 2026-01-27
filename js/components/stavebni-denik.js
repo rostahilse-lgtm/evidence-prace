@@ -232,42 +232,57 @@ window.app.component('stavebni-denik-component', {
       }
     },
     
-    exportToCSV() {
-      let headers, rows;
-      
-      if (this.exportOptions.showNames) {
-        headers = ['Datum', 'Práce', 'Pracovníci', 'Celkem hodin'];
-        rows = this.dailySummary.map(d => [
-          d.datum,
-          d.prace,
-          d.pracovnici.join(', '),
-          d.celkemHodin.toString().replace('.', ',')
-        ]);
-      } else if (this.exportOptions.showHours) {
-        headers = ['Datum', 'Práce', 'Celkem hodin'];
-        rows = this.dailySummary.map(d => [
-          d.datum,
-          d.prace,
-          d.celkemHodin.toString().replace('.', ',')
-        ]);
-      } else {
-        headers = ['Datum', 'Práce'];
-        rows = this.dailySummary.map(d => [d.datum, d.prace]);
-      }
-      
-      const csv = [
-        headers.join(';'),
-        ...rows.map(row => row.map(cell => `"${cell}"`).join(';'))
-      ].join('\r\n');
-      
-      const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=windows-1250;' });
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = `stavebni_denik_${this.dateFrom}_${this.dateTo}.csv`;
-      link.click();
-      
-      this.$emit('message', '✓ Export dokončen');
-    },
+  exportToCSV() {
+  let headers, rows;
+  
+  if (this.exportOptions.showNames) {
+    headers = ['Datum', 'Práce', 'Pracovníci', 'Celkem hodin'];
+    rows = this.dailySummary.map(d => [
+      d.datum,
+      d.prace,
+      d.pracovnici.join(', '),
+      d.celkemHodin.toString().replace('.', ',')
+    ]);
+  } else if (this.exportOptions.showHours) {
+    headers = ['Datum', 'Práce', 'Celkem hodin'];
+    rows = this.dailySummary.map(d => [
+      d.datum,
+      d.prace,
+      d.celkemHodin.toString().replace('.', ',')
+    ]);
+  } else {
+    headers = ['Datum', 'Práce'];
+    rows = this.dailySummary.map(d => [d.datum, d.prace]);
+  }
+  
+  const csvContent = [
+    headers.join(';'),
+    ...rows.map(row => row.map(cell => `"${cell}"`).join(';'))
+  ].join('\r\n');
+  
+  // Převod do windows-1250
+  const win1250map = {
+    'Á':0xC1,'á':0xE1,'Č':0xC8,'č':0xE8,'Ď':0xCF,'ď':0xEF,
+    'É':0xC9,'é':0xE9,'Ě':0xCC,'ě':0xEC,'Í':0xCD,'í':0xED,
+    'Ň':0xD2,'ň':0xF2,'Ó':0xD3,'ó':0xF3,'Ř':0xD8,'ř':0xF8,
+    'Š':0xD0,'š':0xF0,'Ť':0xDD,'ť':0xFD,'Ú':0xDA,'ú':0xFA,
+    'Ů':0xD9,'ů':0xF9,'Ý':0xDD,'ý':0xFD,'Ž':0xDE,'ž':0xFE
+  };
+  
+  const bytes = new Uint8Array(csvContent.length);
+  for (let i = 0; i < csvContent.length; i++) {
+    const char = csvContent[i];
+    bytes[i] = win1250map[char] || csvContent.charCodeAt(i);
+  }
+  
+  const blob = new Blob([bytes], { type: 'text/csv;charset=windows-1250;' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `stavebni_denik_${this.dateFrom}_${this.dateTo}.csv`;
+  link.click();
+  
+  this.$emit('message', '✓ Export dokončen');
+}  
     
     formatDateForInput(s) { return formatDateForInput(s); },
     formatDateFromInput(i) { return formatDateFromInput(i); }
