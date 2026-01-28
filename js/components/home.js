@@ -22,7 +22,9 @@ window.app.component('home-component', {
       kmRoundTrip: true,
       todayTripExists: false,
       todayTripInfo: null,
-      isSaving: false
+      savingShift: false,
+      savingLunch: false,
+      savingAdvance: false
     }
   },
   
@@ -103,7 +105,10 @@ window.app.component('home-component', {
     },
     
     async saveShift() {
-      if (this.isSaving) return;
+      if (this.savingShift) {
+        console.log('Již se ukládá, ignoruji duplicitní kliknutí');
+        return;
+      }
       
       if (!this.shiftForm.contractId || !this.shiftForm.jobId || !this.shiftForm.timeStart || !this.shiftForm.timeEnd) {
         this.$emit('message', 'Vyplňte všechna pole');
@@ -114,7 +119,7 @@ window.app.component('home-component', {
         return;
       }
       
-      this.isSaving = true;
+      this.savingShift = true;
       
       try {
         const payload = {
@@ -146,7 +151,9 @@ window.app.component('home-component', {
         console.error('Save shift error:', error);
         this.$emit('message', 'Chyba při ukládání směny');
       } finally {
-        this.isSaving = false;
+        setTimeout(() => {
+          this.savingShift = false;
+        }, 1000);
       }
     },
     
@@ -200,6 +207,9 @@ window.app.component('home-component', {
     },
     
     async saveLunch() {
+      if (this.savingLunch) return;
+      this.savingLunch = true;
+      
       try {
         const res = await apiCall('savelunch', {
           id_worker: this.currentUser.id,
@@ -215,14 +225,21 @@ window.app.component('home-component', {
       } catch (error) {
         console.error('Save lunch error:', error);
         this.$emit('message', 'Chyba při ukládání oběda');
+      } finally {
+        setTimeout(() => { this.savingLunch = false; }, 1000);
       }
     },
     
     async saveAdvance() {
+      if (this.savingAdvance) return;
+      
       if (!this.advanceForm.amount || !this.advanceForm.reason) {
         this.$emit('message', 'Vyplňte částku a důvod');
         return;
       }
+      
+      this.savingAdvance = true;
+      
       try {
         const res = await apiCall('saveadvance', {
           id_worker: this.currentUser.id,
@@ -242,24 +259,26 @@ window.app.component('home-component', {
       } catch (error) {
         console.error('Save advance error:', error);
         this.$emit('message', 'Chyba při ukládání zálohy');
+      } finally {
+        setTimeout(() => { this.savingAdvance = false; }, 1000);
       }
     }
   },
   
   watch: {
-    'shiftForm.contractId': function(newVal, oldVal) {
-      if (newVal !== oldVal && !this.isSaving) {
+    'shiftForm.contractId': function() {
+      if (!this.savingShift) {
         this.saveShiftState();
-        if (this.isAdmin && newVal) {
+        if (this.isAdmin) {
           this.loadContractKm();
         }
       }
     },
     'shiftForm.jobId': function() { 
-      if (!this.isSaving) this.saveShiftState(); 
+      if (!this.savingShift) this.saveShiftState(); 
     },
     'shiftForm.note': function() { 
-      if (!this.isSaving) this.saveShiftState(); 
+      if (!this.savingShift) this.saveShiftState(); 
     }
   },
   
@@ -333,7 +352,7 @@ window.app.component('home-component', {
         </div>
         
         <q-btn @click="saveShift" label="Uložit směnu" color="primary" 
-          :loading="isSaving" class="full-width" size="lg" :disabled="isSaving"/>
+          :loading="savingShift" :disable="savingShift" class="full-width" size="lg"/>
       </div>
       
       <div v-if="currentTab==='lunch'" class="q-pt-md">
@@ -342,7 +361,7 @@ window.app.component('home-component', {
           <div class="text-h6 q-mt-md">{{todayDate}}</div>
         </div>
         <q-btn @click="saveLunch" label="Uložit oběd" color="orange" 
-          :loading="loading" class="full-width" size="lg" icon="restaurant"/>
+          :loading="savingLunch" :disable="savingLunch" class="full-width" size="lg" icon="restaurant"/>
       </div>
       
       <div v-if="currentTab==='advance'" class="q-pt-md">
@@ -351,7 +370,7 @@ window.app.component('home-component', {
         <q-input v-model="advanceForm.reason" label="Důvod *" 
           outlined class="q-mb-md" type="textarea" rows="2"/>
         <q-btn @click="saveAdvance" label="Uložit zálohu" color="primary" 
-          :loading="loading" class="full-width" size="lg"/>
+          :loading="savingAdvance" :disable="savingAdvance" class="full-width" size="lg"/>
       </div>
     </div>
   `
