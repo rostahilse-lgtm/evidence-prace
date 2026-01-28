@@ -39,7 +39,7 @@ window.app.component('admin-component', {
     selectedContractKm() {
       if (!this.editForm.contractId) return 0;
       const contract = this.contracts.find(c => c[0] === this.editForm.contractId);
-      return contract ? (contract[3] || 0) : 0; // sloupec D
+      return contract ? (contract[3] || 0) : 0;
     },
     calculatedKmEdit() {
       if (this.editForm.kmManual) {
@@ -78,7 +78,6 @@ window.app.component('admin-component', {
       const contract = this.contracts.find(c => c[1] === record[3]);
       const job = this.jobs.find(j => j[1] === record[5]);
       
-      // Načíst km data z záznamu
       const kmJednosmer = record[10] || 0;
       const kmCelkem = record[11] || 0;
       const kmRucne = record[12] || 'N';
@@ -87,7 +86,7 @@ window.app.component('admin-component', {
         contractId: contract ? contract[0] : null,
         jobId: job ? job[0] : null,
         timeFr: record[6],
-        timeTo: record[7],
+        timeTo: record[6] + (record[7] * 3600000),
         note: record[8],
         kmJednosmer: kmJednosmer,
         kmCelkem: kmCelkem,
@@ -152,6 +151,13 @@ window.app.component('admin-component', {
       }
     },
     
+    formatDayRecordTime(record) {
+      const timeFrom = record[6];
+      const hours = record[7];
+      const timeTo = timeFrom + (hours * 3600000);
+      return formatTimeRange(timeFrom, timeTo);
+    },
+    
     formatTimeRange(fr, to) { return formatTimeRange(fr, to); },
     formatShortDateTime(ts) { return formatShortDateTime(ts); },
     getTodayDate() { return getTodayDate(); },
@@ -163,7 +169,6 @@ window.app.component('admin-component', {
     adminDayView() { if (this.adminTab === 'day') this.loadDayRecords(); },
     selectedDate() { if (this.adminTab === 'day') this.loadDayRecords(); },
     'editForm.contractId'() {
-      // Auto-update km při změně zakázky
       if (!this.editForm.kmManual) {
         this.editForm.kmJednosmer = this.selectedContractKm;
         this.editForm.kmCelkem = this.calculatedKmEdit;
@@ -242,7 +247,7 @@ window.app.component('admin-component', {
               <q-icon name="edit" class="edit-icon q-ml-sm" @click="openEditDialog(record,idx)"/>
             </div>
             <div class="text-caption text-grey-7 q-mt-sm">
-              {{ formatTimeRange(record[6],record[7]) }}
+              {{ formatTimeRange(record[4], record[5]) }}
             </div>
             <div v-if="record[11] > 0" class="text-caption text-orange q-mt-xs">
               🚗 {{ record[11] }} km
@@ -315,7 +320,7 @@ window.app.component('admin-component', {
             <q-icon name="edit" class="edit-icon q-ml-sm" @click="openEditDialog(record,idx)"/>
           </div>
           <div class="text-caption text-grey-7 q-mt-sm">
-         {{ formatShortDateTime(record[6]) }}  
+            {{ formatDayRecordTime(record) }}
           </div>
           <div v-if="record[11] > 0" class="text-caption text-orange q-mt-xs">
             🚗 {{ record[11] }} km
