@@ -21,7 +21,8 @@ window.app.component('home-component', {
       kmManualValue: null,
       kmRoundTrip: true,
       todayTripExists: false,
-      todayTripInfo: null
+      todayTripInfo: null,
+      isSaving: false
     }
   },
   
@@ -102,6 +103,8 @@ window.app.component('home-component', {
     },
     
     async saveShift() {
+      if (this.isSaving) return;
+      
       if (!this.shiftForm.contractId || !this.shiftForm.jobId || !this.shiftForm.timeStart || !this.shiftForm.timeEnd) {
         this.$emit('message', 'Vyplňte všechna pole');
         return;
@@ -110,6 +113,8 @@ window.app.component('home-component', {
         this.$emit('message', 'Poznámka je povinná');
         return;
       }
+      
+      this.isSaving = true;
       
       try {
         const payload = {
@@ -140,6 +145,8 @@ window.app.component('home-component', {
       } catch (error) {
         console.error('Save shift error:', error);
         this.$emit('message', 'Chyba při ukládání směny');
+      } finally {
+        this.isSaving = false;
       }
     },
     
@@ -165,6 +172,10 @@ window.app.component('home-component', {
           this.shiftForm.contractId = state.contractId;
           this.shiftForm.jobId = state.jobId;
           this.shiftForm.note = state.note;
+          
+          if (this.isAdmin && this.shiftForm.contractId) {
+            this.loadContractKm();
+          }
         } else {
           this.clearShiftState();
         }
@@ -236,14 +247,20 @@ window.app.component('home-component', {
   },
   
   watch: {
-    'shiftForm.contractId': function() {
-      this.saveShiftState();
-      if (this.isAdmin) {
-        this.loadContractKm();
+    'shiftForm.contractId': function(newVal, oldVal) {
+      if (newVal !== oldVal && !this.isSaving) {
+        this.saveShiftState();
+        if (this.isAdmin && newVal) {
+          this.loadContractKm();
+        }
       }
     },
-    'shiftForm.jobId': function() { this.saveShiftState(); },
-    'shiftForm.note': function() { this.saveShiftState(); }
+    'shiftForm.jobId': function() { 
+      if (!this.isSaving) this.saveShiftState(); 
+    },
+    'shiftForm.note': function() { 
+      if (!this.isSaving) this.saveShiftState(); 
+    }
   },
   
   mounted() {
@@ -316,7 +333,7 @@ window.app.component('home-component', {
         </div>
         
         <q-btn @click="saveShift" label="Uložit směnu" color="primary" 
-          :loading="loading" class="full-width" size="lg"/>
+          :loading="isSaving" class="full-width" size="lg" :disabled="isSaving"/>
       </div>
       
       <div v-if="currentTab==='lunch'" class="q-pt-md">
