@@ -315,7 +315,7 @@ window.app.component('admin-component', {
             <q-icon name="edit" class="edit-icon q-ml-sm" @click="openEditDialog(record,idx)"/>
           </div>
           <div class="text-caption text-grey-7 q-mt-sm">
-            {{ formatTimeRange(record[6],record[7]) }}
+         {{ formatShortDateTime(record[6]) }}  
           </div>
           <div v-if="record[11] > 0" class="text-caption text-orange q-mt-xs">
             🚗 {{ record[11] }} km
