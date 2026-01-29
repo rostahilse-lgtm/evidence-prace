@@ -313,8 +313,8 @@ window.app.component('admin-component', {
         <div v-for="(record,idx) in dayRecords" :key="idx" class="record-card">
           <div class="row items-center">
             <div class="col">
-              <div class="text-bold">{{ record[3] }}</div>
-              <div class="text-caption text-grey-7">{{ record[5] }}</div>
+              <div class="text-bold">{{ record[1] }}</div>
+              <div class="text-caption text-grey-7">{{ record[3] }} • {{ record[5] }}</div>
             </div>
             <div class="text-right">
               <div class="text-bold text-primary">{{ record[7].toFixed(2) }} hod</div>
