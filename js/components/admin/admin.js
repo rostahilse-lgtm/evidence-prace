@@ -160,7 +160,15 @@ window.app.component('admin-component', {
       }
     },
     
-    formatTimeRange(fr, to) { return formatTimeRange(fr, to); },
+    getContractName(contractId) {
+      const contract = this.contracts.find(c => c[0] === contractId);
+      return contract ? contract[1] : contractId;
+    },
+    
+    getJobName(jobId) {
+      const job = this.jobs.find(j => j[0] === jobId);
+      return job ? j[1] : jobId;
+    },
     formatShortDateTime(ts) { return formatShortDateTime(ts); },
     getTodayDate() { return getTodayDate(); },
     formatDateForInput(s) { return formatDateForInput(s); },
@@ -313,8 +321,8 @@ window.app.component('admin-component', {
         <div v-for="(record,idx) in dayRecords" :key="idx" class="record-card">
           <div class="row items-center">
             <div class="col">
-              <div class="text-bold">{{ record[1] }}</div>
-              <div class="text-caption text-grey-7">{{ record[3] }} • {{ record[5] }}</div>
+              <div class="text-bold">{{ record[6] }}</div>
+              <div class="text-caption text-grey-7">{{ getContractName(record[0]) }} • {{ getJobName(record[1]) }}</div>
             </div>
             <div class="text-right">
               <div class="text-bold text-primary">{{ record[7].toFixed(2) }} hod</div>
