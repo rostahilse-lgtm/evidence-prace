@@ -69,8 +69,17 @@ window.app.component('admin-component', {
     
     async loadDayRecords() {
       const date = this.adminDayView === 'today' ? getTodayDate() : this.selectedDate;
-      const res = await apiCall('getdayrecords', { date: date });
-      if (res.data) this.dayRecords = res.data.sort((a, b) => a[6] - b[6]);
+      
+      const dateObj = parseDateString(date);
+      const dayStart = new Date(dateObj);
+      dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(dateObj);
+      dayEnd.setHours(23, 59, 59, 999);
+      
+      this.dayRecords = this.allRecords.filter(r => {
+        const recordTime = r[4];
+        return recordTime >= dayStart.getTime() && recordTime <= dayEnd.getTime();
+      }).sort((a, b) => a[4] - b[4]);
     },
     
     openEditDialog(record, index) {
@@ -85,8 +94,8 @@ window.app.component('admin-component', {
       this.editForm = {
         contractId: contract ? contract[0] : null,
         jobId: job ? job[0] : null,
-        timeFr: record[6],
-        timeTo: record[6] + (record[7] * 3600000),
+        timeFr: record[4],
+        timeTo: record[5],
         note: record[8],
         kmJednosmer: kmJednosmer,
         kmCelkem: kmCelkem,
@@ -149,13 +158,6 @@ window.app.component('admin-component', {
       } catch (error) {
         this.$emit('message', 'Chyba při mazání');
       }
-    },
-    
-    formatDayRecordTime(record) {
-      const timeFrom = record[6];
-      const hours = record[7];
-      const timeTo = timeFrom + (hours * 3600000);
-      return formatTimeRange(timeFrom, timeTo);
     },
     
     formatTimeRange(fr, to) { return formatTimeRange(fr, to); },
@@ -311,16 +313,17 @@ window.app.component('admin-component', {
         <div v-for="(record,idx) in dayRecords" :key="idx" class="record-card">
           <div class="row items-center">
             <div class="col">
-              <div class="text-bold">{{ record[1] }}</div>
-              <div class="text-caption">{{ record[3] }} • {{ record[5] }}</div>
+              <div class="text-bold">{{ record[3] }}</div>
+              <div class="text-caption text-grey-7">{{ record[5] }}</div>
             </div>
             <div class="text-right">
               <div class="text-bold text-primary">{{ record[7].toFixed(2) }} hod</div>
+              <div class="text-caption">{{ record[2] }} Kč/hod</div>
             </div>
             <q-icon name="edit" class="edit-icon q-ml-sm" @click="openEditDialog(record,idx)"/>
           </div>
           <div class="text-caption text-grey-7 q-mt-sm">
-            {{ formatDayRecordTime(record) }}
+            {{ formatTimeRange(record[4], record[5]) }}
           </div>
           <div v-if="record[11] > 0" class="text-caption text-orange q-mt-xs">
             🚗 {{ record[11] }} km
