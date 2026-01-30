@@ -10,6 +10,7 @@ window.app = Vue.createApp({
       showMessageDialog: false,
       contracts: [],
       jobs: [],
+      places: [],
       summary: { totalEarnings: 0, totalPaid: 0, balance: 0 },
       records: [],
       advances: [],
@@ -47,15 +48,17 @@ window.app = Vue.createApp({
     
     async loadUserData() {
       this.loading = true;
-      const [c, j, s, r, a] = await Promise.all([
+      const [c, j, p, s, r, a] = await Promise.all([
         apiCall('get', { type: 'contracts' }),
         apiCall('get', { type: 'jobs' }),
+        apiCall('get', { type: 'places' }),
         apiCall('getsummary', { id_worker: this.currentUser.id }),
         apiCall('getrecords', { id_worker: this.currentUser.id }),
         apiCall('getadvances', { id_worker: this.currentUser.id })
       ]);
       if (c.data) this.contracts = c.data;
       if (j.data) this.jobs = j.data;
+      if (p.data) this.places = p.data;
       if (s.data) this.summary = s.data;
       if (r.data) this.records = r.data;
       if (a.data) {
@@ -130,6 +133,7 @@ window.app = Vue.createApp({
             :is-admin="isAdmin"
             :contracts="contracts"
             :jobs="jobs"
+            :places="places"
             :loading="loading"
             @message="showMessage"
             @reload="loadUserData"
@@ -184,4 +188,3 @@ setTimeout(() => {
   window.app.use(Quasar);
   window.app.mount('#app');
 }, 100);
-
