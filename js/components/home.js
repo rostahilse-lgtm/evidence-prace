@@ -1,5 +1,5 @@
 window.app.component('home-component', {
-  props: ['currentUser', 'isAdmin', 'contracts', 'jobs', 'loading'],
+  props: ['currentUser', 'isAdmin', 'contracts', 'jobs', 'places', 'loading'],
   emits: ['message', 'reload'],
   
   data() {
@@ -8,6 +8,7 @@ window.app.component('home-component', {
       shiftForm: {
         contractId: null,
         jobId: null,
+        placeId: null,
         timeStart: null,
         timeEnd: null,
         note: ''
@@ -34,6 +35,9 @@ window.app.component('home-component', {
     },
     jobOptions() {
       return this.jobs.map(j => ({ label: j[1], value: j[0] }));
+    },
+    placeOptions() {
+      return this.places.map(p => ({ label: p[1], value: p[0] }));
     },
     formattedStartTime() {
       return this.shiftForm.timeStart ? formatShortDateTime(this.shiftForm.timeStart) : '';
@@ -118,6 +122,10 @@ window.app.component('home-component', {
         this.$emit('message', 'Poznámka je povinná');
         return;
       }
+      if (!this.shiftForm.placeId) {
+        this.$emit('message', 'Vyberte místo práce');
+        return;
+      }
       
       this.savingShift = true;
       
@@ -126,6 +134,7 @@ window.app.component('home-component', {
           id_contract: this.shiftForm.contractId,
           id_worker: this.currentUser.id,
           id_job: this.shiftForm.jobId,
+          id_place: this.shiftForm.placeId,
           time_fr: this.shiftForm.timeStart,
           time_to: this.shiftForm.timeEnd,
           note: this.shiftForm.note
@@ -163,6 +172,7 @@ window.app.component('home-component', {
         timeEnd: this.shiftForm.timeEnd,
         contractId: this.shiftForm.contractId,
         jobId: this.shiftForm.jobId,
+        placeId: this.shiftForm.placeId,
         note: this.shiftForm.note,
         date: getTodayDate()
       };
@@ -178,6 +188,7 @@ window.app.component('home-component', {
           this.shiftForm.timeEnd = state.timeEnd;
           this.shiftForm.contractId = state.contractId;
           this.shiftForm.jobId = state.jobId;
+          this.shiftForm.placeId = state.placeId;
           this.shiftForm.note = state.note;
           
           if (this.isAdmin && this.shiftForm.contractId) {
@@ -194,6 +205,7 @@ window.app.component('home-component', {
       this.shiftForm = {
         contractId: null,
         jobId: null,
+        placeId: null,
         timeStart: null,
         timeEnd: null,
         note: ''
@@ -277,6 +289,9 @@ window.app.component('home-component', {
     'shiftForm.jobId': function() { 
       if (!this.savingShift) this.saveShiftState(); 
     },
+    'shiftForm.placeId': function() { 
+      if (!this.savingShift) this.saveShiftState(); 
+    },
     'shiftForm.note': function() { 
       if (!this.savingShift) this.saveShiftState(); 
     }
@@ -317,6 +332,9 @@ window.app.component('home-component', {
         
         <q-select v-model="shiftForm.jobId" :options="jobOptions" 
           label="Práce *" emit-value map-options outlined class="q-mb-md"/>
+        
+        <q-select v-model="shiftForm.placeId" :options="placeOptions" 
+          label="Místo práce *" emit-value map-options outlined class="q-mb-md"/>
         
         <q-input v-model="shiftForm.note" label="Poznámka *" 
           outlined class="q-mb-md" type="textarea" rows="3"/>
