@@ -161,18 +161,6 @@ window.app = Vue.createApp({
             @reload="loadAdminData"
           />
 
-          <panel-component
-            v-if="isLoggedIn && isAdmin && currentView === 'panel' && !loading"
-            :all-summary="allSummary"
-            :all-records="allRecords"
-            :all-advances="allAdvances"
-            :contracts="contracts"
-            :jobs="jobs"
-            :loading="loading"
-            @message="showMessage"
-            @reload="loadAdminData"
-          />
-
           <settings-component
             v-if="isLoggedIn && currentView === 'settings' && !loading"
             @message="showMessage"
