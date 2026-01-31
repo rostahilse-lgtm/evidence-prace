@@ -124,7 +124,7 @@ window.app.component('home-component', {
       }
       // Dočasně vypnuto - čeká se na backend
       // if (!this.shiftForm.placeId) {
-      //   this.$emit('message', 'Vyberte místo práce');
+      //   this.$emit('message', 'Vyberte místo');
       //   return;
       // }
       
@@ -335,7 +335,7 @@ window.app.component('home-component', {
           label="Práce *" emit-value map-options outlined class="q-mb-md"/>
         
         <q-select v-model="shiftForm.placeId" :options="placeOptions" 
-          label="Místo práce *" emit-value map-options outlined class="q-mb-md"/>
+          label="Místo *" emit-value map-options outlined class="q-mb-md"/>
         
         <q-input v-model="shiftForm.note" label="Poznámka *" 
           outlined class="q-mb-md" type="textarea" rows="3"/>
