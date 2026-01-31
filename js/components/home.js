@@ -1,5 +1,5 @@
 window.app.component('home-component', {
-  props: ['currentUser', 'isAdmin', 'contracts', 'jobs', 'places', 'loading'],  // PŘIDÁNO places
+  props: ['currentUser', 'isAdmin', 'contracts', 'jobs', 'places', 'loading'],
   emits: ['message', 'reload'],
   
   data() {
@@ -8,7 +8,7 @@ window.app.component('home-component', {
       shiftForm: {
         contractId: null,
         jobId: null,
-        placeId: null,  // PŘIDÁNO
+        placeId: null,
         timeStart: null,
         timeEnd: null,
         note: ''
@@ -22,22 +22,22 @@ window.app.component('home-component', {
       kmManualValue: null,
       kmRoundTrip: true,
       todayTripExists: false,
-      todayTripInfo: null
+      todayTripInfo: null,
+      savingShift: false,
+      savingLunch: false,
+      savingAdvance: false
     }
   },
   
   computed: {
     contractOptions() {
-      if (!this.contracts || this.contracts.length === 0) return [];
       return this.contracts.map(c => ({ label: c[0] + ' - ' + c[1], value: c[0] }));
     },
     jobOptions() {
-      if (!this.jobs || this.jobs.length === 0) return [];
       return this.jobs.map(j => ({ label: j[1], value: j[0] }));
     },
-    placeOptions() {  // PŘIDÁNO
-      if (!this.places || this.places.length === 0) return [];
-      return this.places.map(p => ({ label: p[1], value: p[0] }));
+    placeOptions() {
+      return this.places ? this.places.map(p => ({ label: p[1], value: p[0] })) : [];
     },
     formattedStartTime() {
       return this.shiftForm.timeStart ? formatShortDateTime(this.shiftForm.timeStart) : '';
@@ -109,23 +109,33 @@ window.app.component('home-component', {
     },
     
     async saveShift() {
-      // UPRAVENÁ VALIDACE - přidáno placeId
-      if (!this.shiftForm.contractId || !this.shiftForm.jobId || !this.shiftForm.placeId || 
-          !this.shiftForm.timeStart || !this.shiftForm.timeEnd) {
-        this.$emit('message', 'Vyplňte všechna pole (zakázka, práce, místo, časy)');
+      if (this.savingShift) {
+        console.log('Již se ukládá, ignoruji duplicitní kliknutí');
+        return;
+      }
+      
+      if (!this.shiftForm.contractId || !this.shiftForm.jobId || !this.shiftForm.timeStart || !this.shiftForm.timeEnd) {
+        this.$emit('message', 'Vyplňte všechna pole');
         return;
       }
       if (!this.shiftForm.note || this.shiftForm.note.trim() === '') {
         this.$emit('message', 'Poznámka je povinná');
         return;
       }
+      // Dočasně vypnuto - čeká se na backend
+      // if (!this.shiftForm.placeId) {
+      //   this.$emit('message', 'Vyberte místo práce');
+      //   return;
+      // }
+      
+      this.savingShift = true;
       
       try {
         const payload = {
           id_contract: this.shiftForm.contractId,
           id_worker: this.currentUser.id,
           id_job: this.shiftForm.jobId,
-          id_place: this.shiftForm.placeId,  // PŘIDÁNO
+          id_place: this.shiftForm.placeId,
           time_fr: this.shiftForm.timeStart,
           time_to: this.shiftForm.timeEnd,
           note: this.shiftForm.note
@@ -150,6 +160,10 @@ window.app.component('home-component', {
       } catch (error) {
         console.error('Save shift error:', error);
         this.$emit('message', 'Chyba při ukládání směny');
+      } finally {
+        setTimeout(() => {
+          this.savingShift = false;
+        }, 1000);
       }
     },
     
@@ -159,7 +173,7 @@ window.app.component('home-component', {
         timeEnd: this.shiftForm.timeEnd,
         contractId: this.shiftForm.contractId,
         jobId: this.shiftForm.jobId,
-        placeId: this.shiftForm.placeId,  // PŘIDÁNO
+        placeId: this.shiftForm.placeId,
         note: this.shiftForm.note,
         date: getTodayDate()
       };
@@ -175,8 +189,12 @@ window.app.component('home-component', {
           this.shiftForm.timeEnd = state.timeEnd;
           this.shiftForm.contractId = state.contractId;
           this.shiftForm.jobId = state.jobId;
-          this.shiftForm.placeId = state.placeId;  // PŘIDÁNO
+          this.shiftForm.placeId = state.placeId;
           this.shiftForm.note = state.note;
+          
+          if (this.isAdmin && this.shiftForm.contractId) {
+            this.loadContractKm();
+          }
         } else {
           this.clearShiftState();
         }
@@ -188,7 +206,7 @@ window.app.component('home-component', {
       this.shiftForm = {
         contractId: null,
         jobId: null,
-        placeId: null,  // PŘIDÁNO
+        placeId: null,
         timeStart: null,
         timeEnd: null,
         note: ''
@@ -202,6 +220,9 @@ window.app.component('home-component', {
     },
     
     async saveLunch() {
+      if (this.savingLunch) return;
+      this.savingLunch = true;
+      
       try {
         const res = await apiCall('savelunch', {
           id_worker: this.currentUser.id,
@@ -217,14 +238,21 @@ window.app.component('home-component', {
       } catch (error) {
         console.error('Save lunch error:', error);
         this.$emit('message', 'Chyba při ukládání oběda');
+      } finally {
+        setTimeout(() => { this.savingLunch = false; }, 1000);
       }
     },
     
     async saveAdvance() {
+      if (this.savingAdvance) return;
+      
       if (!this.advanceForm.amount || !this.advanceForm.reason) {
         this.$emit('message', 'Vyplňte částku a důvod');
         return;
       }
+      
+      this.savingAdvance = true;
+      
       try {
         const res = await apiCall('saveadvance', {
           id_worker: this.currentUser.id,
@@ -244,28 +272,34 @@ window.app.component('home-component', {
       } catch (error) {
         console.error('Save advance error:', error);
         this.$emit('message', 'Chyba při ukládání zálohy');
+      } finally {
+        setTimeout(() => { this.savingAdvance = false; }, 1000);
       }
     }
   },
   
   watch: {
     'shiftForm.contractId': function() {
-      this.saveShiftState();
-      if (this.isAdmin) {
-        this.loadContractKm();
+      if (!this.savingShift) {
+        this.saveShiftState();
+        if (this.isAdmin) {
+          this.loadContractKm();
+        }
       }
     },
-    'shiftForm.jobId': function() { this.saveShiftState(); },
-    'shiftForm.placeId': function() { this.saveShiftState(); },  // PŘIDÁNO
-    'shiftForm.note': function() { this.saveShiftState(); }
+    'shiftForm.jobId': function() { 
+      if (!this.savingShift) this.saveShiftState(); 
+    },
+    'shiftForm.placeId': function() { 
+      if (!this.savingShift) this.saveShiftState(); 
+    },
+    'shiftForm.note': function() { 
+      if (!this.savingShift) this.saveShiftState(); 
+    }
   },
   
   mounted() {
     this.loadShiftState();
-    //Debub log pro kontrolu
-    console.log('Home component mounted');
-    console.log('Places:', this.places);
-    console.log('Place options:', this.placeOptions);
   },
   
   template: `
@@ -301,7 +335,7 @@ window.app.component('home-component', {
           label="Práce *" emit-value map-options outlined class="q-mb-md"/>
         
         <q-select v-model="shiftForm.placeId" :options="placeOptions" 
-          label="Místo *" emit-value map-options outlined class="q-mb-md"/>
+          label="Místo práce *" emit-value map-options outlined class="q-mb-md"/>
         
         <q-input v-model="shiftForm.note" label="Poznámka *" 
           outlined class="q-mb-md" type="textarea" rows="3"/>
@@ -337,7 +371,7 @@ window.app.component('home-component', {
         </div>
         
         <q-btn @click="saveShift" label="Uložit směnu" color="primary" 
-          :loading="loading" class="full-width" size="lg"/>
+          :loading="savingShift" :disable="savingShift" class="full-width" size="lg"/>
       </div>
       
       <div v-if="currentTab==='lunch'" class="q-pt-md">
@@ -346,7 +380,7 @@ window.app.component('home-component', {
           <div class="text-h6 q-mt-md">{{todayDate}}</div>
         </div>
         <q-btn @click="saveLunch" label="Uložit oběd" color="orange" 
-          :loading="loading" class="full-width" size="lg" icon="restaurant"/>
+          :loading="savingLunch" :disable="savingLunch" class="full-width" size="lg" icon="restaurant"/>
       </div>
       
       <div v-if="currentTab==='advance'" class="q-pt-md">
@@ -355,7 +389,7 @@ window.app.component('home-component', {
         <q-input v-model="advanceForm.reason" label="Důvod *" 
           outlined class="q-mb-md" type="textarea" rows="2"/>
         <q-btn @click="saveAdvance" label="Uložit zálohu" color="primary" 
-          :loading="loading" class="full-width" size="lg"/>
+          :loading="savingAdvance" :disable="savingAdvance" class="full-width" size="lg"/>
       </div>
     </div>
   `
