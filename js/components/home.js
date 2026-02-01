@@ -114,6 +114,10 @@ window.app.component('home-component', {
         this.$emit('message', 'Poznámka je povinná');
         return;
       }
+      if (!this.shiftForm.placeId) {
+        this.$emit('message', 'Vyberte místo práce');
+        return;
+      }
       
       try {
         const payload = {
@@ -292,7 +296,7 @@ window.app.component('home-component', {
           label="Práce *" emit-value map-options outlined class="q-mb-md"/>
         
         <q-select v-model="shiftForm.placeId" :options="placeOptions" 
-          label="Místo práce" emit-value map-options outlined class="q-mb-md"/>
+          label="Místo práce *" emit-value map-options outlined class="q-mb-md"/>
         
         <q-input v-model="shiftForm.note" label="Poznámka *" 
           outlined class="q-mb-md" type="textarea" rows="3"/>
