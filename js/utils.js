@@ -1,39 +1,56 @@
+// Formátování času
 function formatTime(timestamp) {
-  return new Date(timestamp).toLocaleString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
+  const d = new Date(timestamp);
+  const hours = String(d.getHours()).padStart(2, '0');
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  return `${hours}:${minutes}`;
 }
 
+// Formátování data a času
+function formatDateTime(timestamp) {
+  const d = new Date(timestamp);
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  const hours = String(d.getHours()).padStart(2, '0');
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  return `${day}. ${month}. ${year} ${hours}:${minutes}`;
+}
+
+// Krátké formátování data a času
 function formatShortDateTime(timestamp) {
   const d = new Date(timestamp);
-  return `${d.getDate()}.${d.getMonth() + 1}.${d.getFullYear()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const hours = String(d.getHours()).padStart(2, '0');
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  return `${day}. ${month}. ${hours}:${minutes}`;
 }
 
-function formatTimeRange(timeFr, timeTo) {
-  const d1 = new Date(timeFr);
-  const d2 = new Date(timeTo);
-  return `${d1.getDate()}.${d1.getMonth() + 1}. ${String(d1.getHours()).padStart(2, '0')}:${String(d1.getMinutes()).padStart(2, '0')} - ${String(d2.getHours()).padStart(2, '0')}:${String(d2.getMinutes()).padStart(2, '0')}`;
+// Formátování časového rozsahu (od - do)
+function formatTimeRange(from, to) {
+  return `${formatTime(from)} - ${formatTime(to)}`;
 }
 
+// Získání dnešního data
 function getTodayDate() {
-  const today = new Date();
-  return `${String(today.getDate()).padStart(2, '0')}. ${String(today.getMonth() + 1).padStart(2, '0')}. ${today.getFullYear()}`;
+  const d = new Date();
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${day}. ${month}. ${year}`;
 }
 
-function getMonthStart() {
-  const today = new Date();
-  return `01. ${String(today.getMonth() + 1).padStart(2, '0')}. ${today.getFullYear()}`;
-}
-
-function parseDateString(dateStr) {
-  const parts = dateStr.split('. ');
-  return new Date(parts[2], parts[1] - 1, parts[0]);
-}
-
+// Formátování data pro input type="date"
 function formatDateForInput(dateStr) {
-  const date = parseDateString(dateStr);
-  return date.toISOString().split('T')[0];
+  if (!dateStr) return '';
+  const parts = dateStr.split('. ');
+  return `${parts[2]}-${parts[1]}-${parts[0]}`;
 }
 
+// Formátování data z input type="date"
 function formatDateFromInput(inputDate) {
-  const date = new Date(inputDate);
-  return `${String(date.getDate()).padStart(2, '0')}. ${String(date.getMonth() + 1).padStart(2, '0')}. ${date.getFullYear()}`;
+  if (!inputDate) return '';
+  const parts = inputDate.split('-');
+  return `${parts[2]}. ${parts[1]}. ${parts[0]}`;
 }
