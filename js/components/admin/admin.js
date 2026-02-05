@@ -1,7 +1,7 @@
 // KOMPLETNÍ admin.js s podporou KM
 
 window.app.component('admin-component', {
-  props: ['allSummary', 'allRecords', 'allAdvances', 'contracts', 'jobs', 'loading'],
+  props: ['allSummary', 'allRecords', 'allAdvances', 'contracts', 'jobs', 'places', 'loading'],
   emits: ['message', 'reload'],
   
   data() {
@@ -187,6 +187,7 @@ window.app.component('admin-component', {
       <q-tabs v-model="adminTab" dense align="justify" class="text-primary">
         <q-tab name="workers" label="Pracovníci"/>
         <q-tab name="day" label="Přehled dne"/>
+        <q-tab name="stats" label="Statistiky"/>
       </q-tabs>
 
       <!-- PRACOVNÍCI -->
@@ -276,60 +277,27 @@ window.app.component('admin-component', {
 
       <!-- PŘEHLED DNE -->
       <div v-if="adminTab==='day'" class="q-pt-md">
-        <div class="row q-gutter-sm q-mb-md">
-          <q-btn 
-            :color="adminDayView==='today'?'primary':'grey-5'" 
-            label="Dnes" 
-            @click="adminDayView='today';loadDayRecords()" 
-            class="col"
-          />
-          <q-btn 
-            :color="adminDayView==='date'?'primary':'grey-5'" 
-            label="Datum" 
-            @click="adminDayView='date'" 
-            class="col"
-          />
-        </div>
-
-        <div v-if="adminDayView==='date'" class="q-mb-md">
-          <q-input 
-            v-model="selectedDate" 
-            label="Vyberte datum" 
-            type="date" 
-            outlined 
-            :model-value="formatDateForInput(selectedDate)" 
-            @update:model-value="selectedDate=formatDateFromInput($event)"
-          />
-        </div>
-
-        <div class="text-h6 q-mb-md">
-          {{ adminDayView==='today'?getTodayDate():selectedDate }}
-        </div>
-
-        <div v-if="dayRecords.length===0" class="text-center text-grey-7 q-mt-lg">
-          Žádné záznamy pro tento den
-        </div>
-
-        <div v-for="(record,idx) in dayRecords" :key="idx" class="record-card">
-          <div class="row items-center">
-            <div class="col">
-              <div class="text-bold">{{ record[6] }}</div>
-              <div class="text-caption text-grey-7">{{ record[0] }} • {{ record[3] }}</div>
-            </div>
-            <div class="text-right">
-              <div class="text-bold text-primary">{{ record[7].toFixed(2) }} hod</div>
-              <div class="text-caption">{{ record[2] }} Kč/hod</div>
-            </div>
-            <q-icon name="edit" class="edit-icon q-ml-sm" @click="openEditDialog(record,idx)"/>
-          </div>
-          <div class="text-caption text-grey-7 q-mt-sm">
-            {{ formatTimeRange(record[4], record[5]) }}
-          </div>
-          <div v-if="record[11] > 0" class="text-caption text-orange q-mt-xs">
-            🚗 {{ record[11] }} km
-          </div>
-          <div v-if="record[8]" class="note-display">💬 {{ record[8] }}</div>
-        </div>
+        <day-overview 
+          :all-records="allRecords"
+          :contracts="contracts"
+          :jobs="jobs"
+          :places="places"
+          :loading="loading"
+          @message="(msg) => $emit('message', msg)"
+          @reload="$emit('reload')"
+        />
+      </div>
+      
+      <!-- STATISTIKY -->
+      <div v-if="adminTab==='stats'">
+        <statistics-component
+          :all-records="allRecords"
+          :contracts="contracts"
+          :jobs="jobs"
+          :places="places"
+          :all-advances="allAdvances"
+          @message="(msg) => $emit('message', msg)"
+        />
       </div>
 
       <!-- EDITAČNÍ DIALOG S KM -->
