@@ -110,8 +110,17 @@ window.app = Vue.createApp({
         <q-toolbar>
           <q-toolbar-title>{{ currentUser.name }}</q-toolbar-title>
           <span v-if="isAdmin" class="admin-badge q-ml-sm">ADMIN</span>
-          <q-btn v-if="isAdmin" flat dense label="Deník" icon="book" 
-            href="https://evidence-prace.vercel.app/admin.html" target="_blank" class="q-ml-md" />
+          <q-btn 
+            v-if="isAdmin" 
+            flat 
+            dense 
+            icon="menu_book" 
+            href="admin.html" 
+            target="_blank"
+            class="q-ml-sm"
+          >
+            <q-tooltip>Stavební deník</q-tooltip>
+          </q-btn>
           <q-btn flat round dense icon="logout" @click="logout" />
         </q-toolbar>
       </q-header>
