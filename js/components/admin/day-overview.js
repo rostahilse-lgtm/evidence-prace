@@ -1,4 +1,3 @@
-
 window.app.component('day-overview', {
   props: ['allRecords', 'contracts', 'jobs', 'places', 'loading'],
   emits: ['message', 'reload'],
