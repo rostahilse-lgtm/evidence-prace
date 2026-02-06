@@ -25,15 +25,12 @@
   <script src="https://cdn.jsdelivr.net/npm/vue@3.3.4/dist/vue.global.prod.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/quasar@2.12.0/dist/quasar.umd.prod.js"></script>
   
-  <!-- 2. CONFIG, UTILITY A API (před vším ostatním) -->
+  <!-- 2. UTILITY A API (PŘED vším ostatním) -->
   <script src="js/config.js"></script>
   <script src="js/utils.js"></script>
   <script src="js/api.js"></script>
   
-  <!-- 3. VYTVOŘENÍ VUE APP (main.js PRVNÍ!) -->
-  <script src="js/main.js"></script>
-  
-  <!-- 4. KOMPONENTY (po vytvoření app) -->
+  <!-- 3. KOMPONENTY (PŘED main.js!) -->
   <script src="js/components/login.js"></script>
   <script src="js/components/home.js"></script>
   <script src="js/components/summary.js"></script>
@@ -41,6 +38,9 @@
   <script src="js/components/admin/admin.js"></script>
   <script src="js/components/admin/day-overview.js"></script>
   <script src="js/components/admin/statistics.js"></script>
+  
+  <!-- 4. MAIN (POSLEDNÍ!) -->
+  <script src="js/main.js"></script>
   
   <!-- PWA Service Worker -->
   <script>
