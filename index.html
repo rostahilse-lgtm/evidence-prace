@@ -20,26 +20,27 @@
 </head>
 <body>
   <div id="app"></div>
-
+  
   <!-- 1. KNIHOVNY -->
   <script src="https://cdn.jsdelivr.net/npm/vue@3.3.4/dist/vue.global.prod.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/quasar@2.12.0/dist/quasar.umd.prod.js"></script>
-
-  <!-- 2. UTILITY -->
+  
+  <!-- 2. UTILITY A API -->
   <script src="js/config.js"></script>
   <script src="js/utils.js"></script>
   <script src="js/api.js"></script>
-
-  <!-- 3. MAIN -->
-  <script src="js/main.js"></script>
-
-  <!-- 4. KOMPONENTY -->
+  
+  <!-- 3. KOMPONENTY (PŘED main.js!) -->
   <script src="js/components/login.js"></script>
   <script src="js/components/home.js"></script>
   <script src="js/components/summary.js"></script>
   <script src="js/components/settings.js"></script>
   <script src="js/components/admin/admin.js"></script>
   <script src="js/components/admin/day-overview.js"></script>
+  <script src="js/components/admin/statistics.js"></script>
+  
+  <!-- 4. MAIN (POSLEDNÍ!) -->
+  <script src="js/main.js"></script>
   
   <!-- PWA Service Worker -->
   <script>
@@ -53,4 +54,3 @@
   </script>
 </body>
 </html>
-
