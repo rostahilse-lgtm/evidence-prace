@@ -1,371 +1,523 @@
 window.app.component('statistics-component', {
-  props: ['allRecords', 'allAdvances', 'contracts', 'jobs'],
+  props: ['allRecords', 'contracts', 'jobs', 'places', 'allAdvances'],
   emits: ['message'],
   
   data() {
     return {
-      statsTab: 'contracts',
-      dateFrom: getMonthStart(),
-      dateTo: getTodayDate(),
-      exportDialog: false
+      filters: {
+        contracts: [],
+        jobs: [],
+        places: [],
+        workers: [],
+        dateFrom: null,
+        dateTo: null,
+        withKm: null
+      },
+      workers: [],
+      filteredRecords: [],
+      customCharge: null,
+      showResults: false
     }
   },
   
   computed: {
-    filteredRecords() {
-      const from = parseDateString(this.dateFrom);
-      const to = parseDateString(this.dateTo);
-      to.setHours(23, 59, 59);
-      return this.allRecords.filter(r => {
-        const d = new Date(r[4]);
-        return d >= from && d <= to;
-      });
+    contractOptions() {
+      return [
+        { label: '--- Všechny zakázky ---', value: null },
+        ...this.contracts.map(c => ({ label: c[0] + ' - ' + c[1], value: c[0] }))
+      ];
     },
     
-    contractStats() {
-      const stats = {};
-      const tripDays = {};
+    jobOptions() {
+      return [
+        { label: '--- Všechny práce ---', value: null },
+        ...this.jobs.map(j => ({ label: j[1], value: j[0] }))
+      ];
+    },
+    
+    placeOptions() {
+      return [
+        { label: '--- Všechna místa ---', value: null },
+        ...(this.places ? this.places.map(p => ({ label: p[1], value: p[0] })) : [])
+      ];
+    },
+    
+    workerOptions() {
+      return [
+        { label: '--- Všichni pracovníci ---', value: null },
+        ...this.workers.map(w => ({ label: w[1], value: w[0] }))
+      ];
+    },
+    
+    totalHours() {
+      return this.filteredRecords.reduce((sum, r) => sum + (parseFloat(r[7]) || 0), 0).toFixed(2);
+    },
+    
+    totalTrips() {
+      return this.filteredRecords.filter(r => (parseFloat(r[12]) || 0) > 0).length;
+    },
+    
+    uniqueWorkers() {
+      const workers = new Set(this.filteredRecords.map(r => r[1]));
+      return workers.size;
+    },
+    
+    totalKm() {
+      return this.filteredRecords.reduce((sum, r) => sum + (parseFloat(r[12]) || 0), 0);
+    },
+    
+    totalCost() {
+      return Math.round(this.filteredRecords.reduce((sum, r) => {
+        const rate = parseFloat(r[2]) || 0;
+        const hours = parseFloat(r[7]) || 0;
+        return sum + (rate * hours);
+      }, 0));
+    },
+    
+    totalPaid() {
+      if (!this.allAdvances) return 0;
       
-      this.filteredRecords.forEach(r => {
-        const contractName = r[0];
-        const dateKey = new Date(r[4]).toDateString();
-        const kmCelkem = r[12] || 0;
+      const workerIds = new Set(this.filteredRecords.map(r => String(r[1])));
+      
+      let dateFrom = null;
+      let dateTo = null;
+      
+      if (this.filters.dateFrom) {
+        const parts = this.filters.dateFrom.split('. ');
+        dateFrom = new Date(parts[2], parts[1] - 1, parts[0]);
+      }
+      if (this.filters.dateTo) {
+        const parts = this.filters.dateTo.split('. ');
+        dateTo = new Date(parts[2], parts[1] - 1, parts[0], 23, 59, 59);
+      }
+      
+      return Math.round(this.allAdvances.reduce((sum, adv) => {
+        if (!workerIds.has(String(adv[0]))) return sum;
         
-        if (!stats[contractName]) {
-          stats[contractName] = {
-            name: contractName,
-            totalHours: 0,
-            totalWorkers: new Set(),
-            visits: 0,
-            totalKm: 0,
-            tripCount: 0
-          };
-          tripDays[contractName] = new Set();
+        if (dateFrom || dateTo) {
+          const advDate = new Date(adv[1]);
+          if (dateFrom && advDate < dateFrom) return sum;
+          if (dateTo && advDate > dateTo) return sum;
         }
         
-        stats[contractName].totalHours += r[7];
-        stats[contractName].totalWorkers.add(r[1]);
-        stats[contractName].visits += 1;
-        
-        if (kmCelkem > 0 && !tripDays[contractName].has(dateKey)) {
-          stats[contractName].totalKm += kmCelkem;
-          stats[contractName].tripCount += 1;
-          tripDays[contractName].add(dateKey);
-        }
-      });
-      
-      return Object.values(stats).map(s => ({
-        ...s,
-        totalWorkers: s.totalWorkers.size,
-        cestovne: s.totalKm * 4
-      })).sort((a, b) => b.totalHours - a.totalHours);
+        return sum + (parseFloat(adv[4]) || 0);
+      }, 0));
     },
     
-    workerStats() {
-      const stats = {};
-      this.filteredRecords.forEach(r => {
-        const workerName = r[6];
-        if (!stats[workerName]) {
-          stats[workerName] = {
-            name: workerName,
-            totalHours: 0,
-            contracts: new Set(),
-            days: new Set()
-          };
-        }
-        stats[workerName].totalHours += r[7];
-        stats[workerName].contracts.add(r[0]);
-        const day = new Date(r[4]).toDateString();
-        stats[workerName].days.add(day);
-      });
-      
-      return Object.values(stats).map(s => ({
-        ...s,
-        contracts: s.contracts.size,
-        days: s.days.size
-      })).sort((a, b) => b.totalHours - a.totalHours);
+    profit() {
+      if (!this.customCharge) return 0;
+      return this.customCharge - this.totalCost;
     },
     
-    jobStats() {
-      const stats = {};
-      this.filteredRecords.forEach(r => {
-        const jobName = r[3];
-        if (!stats[jobName]) {
-          stats[jobName] = { name: jobName, totalHours: 0, count: 0 };
-        }
-        stats[jobName].totalHours += r[7];
-        stats[jobName].count += 1;
-      });
-      
-      return Object.values(stats).sort((a, b) => b.totalHours - a.totalHours);
-    },
-    
-    exportData() {
-      return {
-        period: `${this.dateFrom} - ${this.dateTo}`,
-        contracts: this.contractStats,
-        workers: this.workerStats,
-        jobs: this.jobStats,
-        totalHours: this.contractStats.reduce((s, c) => s + c.totalHours, 0),
-        totalKm: this.contractStats.reduce((s, c) => s + c.totalKm, 0),
-        totalCestovne: this.contractStats.reduce((s, c) => s + c.cestovne, 0)
-      };
+    profitMargin() {
+      if (!this.customCharge || this.customCharge === 0) return 0;
+      return ((this.profit / this.customCharge) * 100).toFixed(1);
     }
   },
   
   methods: {
-    formatDateForInput(s) { return formatDateForInput(s); },
-    formatDateFromInput(i) { return formatDateFromInput(i); },
-    
-    openExportDialog() {
-      this.exportDialog = true;
+    async loadWorkers() {
+      const res = await apiCall('get', { type: 'workers' });
+      if (res.code === '000' && res.data) {
+        this.workers = res.data;
+      }
     },
     
-    exportToPDF() {
-      const content = `
-        <html>
-        <head>
-          <meta charset="utf-8">
-          <title>Statistiky ${this.exportData.period}</title>
-          <style>
-            body { font-family: Arial; padding: 20px; }
-            h1 { color: #1976d2; }
-            table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-            th { background-color: #1976d2; color: white; }
-            .summary { background: #f5f5f5; padding: 15px; margin: 20px 0; }
-            .total { font-weight: bold; font-size: 18px; color: #1976d2; }
-          </style>
-        </head>
-        <body>
-          <h1>📊 Statistiky práce</h1>
-          <p><strong>Období:</strong> ${this.exportData.period}</p>
-          
-          <div class="summary">
-            <h2>Souhrn</h2>
-            <p>Celkem hodin: <span class="total">${this.exportData.totalHours.toFixed(2)} h</span></p>
-            <p>Celkem km: <span class="total">${this.exportData.totalKm} km</span></p>
-            <p>Cestovné: <span class="total">${this.exportData.totalCestovne} Kč</span></p>
-          </div>
-          
-          <h2>📋 Zakázky</h2>
-          <table>
-            <thead>
-              <tr>
-                <th>Zakázka</th>
-                <th>Hodiny</th>
-                <th>Pracovníků</th>
-                <th>Návštěv</th>
-                <th>Cest</th>
-                <th>KM</th>
-                <th>Cestovné</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${this.exportData.contracts.map(c => `
-                <tr>
-                  <td>${c.name}</td>
-                  <td>${c.totalHours.toFixed(2)} h</td>
-                  <td>${c.totalWorkers}</td>
-                  <td>${c.visits}x</td>
-                  <td>${c.tripCount}x</td>
-                  <td>${c.totalKm} km</td>
-                  <td>${c.cestovne} Kč</td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-          
-          <h2>👷 Pracovníci</h2>
-          <table>
-            <thead>
-              <tr>
-                <th>Jméno</th>
-                <th>Hodiny</th>
-                <th>Zakázek</th>
-                <th>Dnů</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${this.exportData.workers.map(w => `
-                <tr>
-                  <td>${w.name}</td>
-                  <td>${w.totalHours.toFixed(2)} h</td>
-                  <td>${w.contracts}</td>
-                  <td>${w.days}</td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-          
-          <p style="margin-top: 40px; color: #999; font-size: 12px;">
-            Vygenerováno: ${new Date().toLocaleString('cs-CZ')}<br>
-            Evidence práce 2026
-          </p>
-        </body>
-        </html>
-      `;
+    applyFilters() {
+      let filtered = [...this.allRecords];
       
-      const printWindow = window.open('', '_blank');
-      printWindow.document.write(content);
-      printWindow.document.close();
-      setTimeout(() => printWindow.print(), 500);
-      this.exportDialog = false;
-      this.$emit('message', '✓ PDF připraveno k tisku');
+      // Filtr zakázek
+      if (this.filters.contracts.length > 0) {
+        const contractNames = this.filters.contracts
+          .filter(id => id !== null)
+          .map(id => {
+            const contract = this.contracts.find(c => c[0] === id);
+            return contract ? contract[1] : null;
+          })
+          .filter(Boolean);
+        
+        if (contractNames.length > 0) {
+          filtered = filtered.filter(r => contractNames.includes(r[0]));
+        }
+      }
+      
+      // Filtr prací
+      if (this.filters.jobs.length > 0) {
+        const jobNames = this.filters.jobs
+          .filter(id => id !== null)
+          .map(id => {
+            const job = this.jobs.find(j => j[0] === id);
+            return job ? job[1] : null;
+          })
+          .filter(Boolean);
+        
+        if (jobNames.length > 0) {
+          filtered = filtered.filter(r => jobNames.includes(r[3]));
+        }
+      }
+      
+      // Filtr míst
+      if (this.filters.places.length > 0) {
+        const placeNames = this.filters.places
+          .filter(id => id !== null)
+          .map(id => {
+            const place = this.places.find(p => p[0] === id);
+            return place ? place[1] : null;
+          })
+          .filter(Boolean);
+        
+        if (placeNames.length > 0) {
+          filtered = filtered.filter(r => placeNames.includes(r[14]));
+        }
+      }
+      
+      // Filtr pracovníků
+      if (this.filters.workers.length > 0) {
+        const workerIds = this.filters.workers.filter(id => id !== null);
+        if (workerIds.length > 0) {
+          filtered = filtered.filter(r => workerIds.includes(r[1]));
+        }
+      }
+      
+      // Filtr data OD
+      if (this.filters.dateFrom) {
+        const parts = this.filters.dateFrom.split('. ');
+        const dateFrom = new Date(parts[2], parts[1] - 1, parts[0]);
+        filtered = filtered.filter(r => new Date(r[4]) >= dateFrom);
+      }
+      
+      // Filtr data DO
+      if (this.filters.dateTo) {
+        const parts = this.filters.dateTo.split('. ');
+        const dateTo = new Date(parts[2], parts[1] - 1, parts[0], 23, 59, 59);
+        filtered = filtered.filter(r => new Date(r[4]) <= dateTo);
+      }
+      
+      // Filtr KM
+      if (this.filters.withKm === true) {
+        filtered = filtered.filter(r => (parseFloat(r[12]) || 0) > 0);
+      } else if (this.filters.withKm === false) {
+        filtered = filtered.filter(r => (parseFloat(r[12]) || 0) === 0);
+      }
+      
+      this.filteredRecords = filtered;
+      this.showResults = true;
+      this.$emit('message', `Nalezeno ${filtered.length} záznamů`);
     },
     
-    exportToCSV() {
-      let csv = 'Zakázka,Hodiny,Pracovníků,Návštěv,Cest,KM,Cestovné\n';
-      this.exportData.contracts.forEach(c => {
-        csv += `"${c.name}",${c.totalHours.toFixed(2)},${c.totalWorkers},${c.visits},${c.tripCount},${c.totalKm},${c.cestovne}\n`;
+    resetFilters() {
+      this.filters = {
+        contracts: [],
+        jobs: [],
+        places: [],
+        workers: [],
+        dateFrom: null,
+        dateTo: null,
+        withKm: null
+      };
+      this.filteredRecords = [];
+      this.customCharge = null;
+      this.showResults = false;
+    },
+    
+    exportToExcel() {
+      if (this.filteredRecords.length === 0) {
+        this.$emit('message', 'Nejdříve aplikujte filtry');
+        return;
+      }
+      
+      let csv = 'Zakázka;Pracovník;Kč/hod;Práce;Datum od;Datum do;Hodiny;Poznámka;Km;Místo práce\n';
+      
+      this.filteredRecords.forEach(r => {
+        const row = [
+          r[0],
+          r[6],
+          r[2],
+          r[3],
+          formatShortDateTime(r[4]),
+          formatShortDateTime(r[5]),
+          r[7].toFixed(2),
+          r[8] || '',
+          r[12] || 0,
+          r[14] || ''
+        ];
+        csv += row.map(cell => `"${cell}"`).join(';') + '\n';
       });
       
-      csv += '\n\nPracovník,Hodiny,Zakázek,Dnů\n';
-      this.exportData.workers.forEach(w => {
-        csv += `"${w.name}",${w.totalHours.toFixed(2)},${w.contracts},${w.days}\n`;
-      });
+      // Přidat souhrn
+      csv += '\n';
+      csv += 'SOUHRN\n';
+      csv += `Celkem hodin;${this.totalHours}\n`;
+      csv += `Celkem cest;${this.totalTrips}\n`;
+      csv += `Celkem dělníků;${this.uniqueWorkers}\n`;
+      csv += `Celkem km;${this.totalKm}\n`;
+      csv += `Celkem náklady;${this.totalCost} Kč\n`;
+      csv += `Celkem vyplaceno;${this.totalPaid} Kč\n`;
+      if (this.customCharge) {
+        csv += `Má se účtovat;${this.customCharge} Kč\n`;
+        csv += `Rozdíl (zisk);${this.profit} Kč\n`;
+        csv += `Marže;${this.profitMargin} %\n`;
+      }
       
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = `statistiky_${this.dateFrom}_${this.dateTo}.csv`;
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `statistiky_${new Date().getTime()}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
       link.click();
+      document.body.removeChild(link);
       
-      this.exportDialog = false;
-      this.$emit('message', '✓ CSV staženo');
+      this.$emit('message', '✓ Export dokončen');
     }
+  },
+  
+  async mounted() {
+    await this.loadWorkers();
   },
   
   template: `
     <div class="q-pa-md">
-      <div class="row items-center q-mb-md">
-        <div class="text-h5 col">📊 Statistiky</div>
-        <q-btn color="primary" icon="download" label="Export" @click="openExportDialog" unelevated/>
-      </div>
+      <div class="text-h6 q-mb-md">📊 Statistiky a filtry</div>
       
+      <!-- FILTRY -->
       <q-card class="q-mb-md">
         <q-card-section>
+          <div class="text-subtitle2 q-mb-sm">Filtry</div>
+          
+          <q-select 
+            v-model="filters.contracts" 
+            :options="contractOptions" 
+            label="Zakázky" 
+            emit-value 
+            map-options 
+            multiple
+            outlined 
+            dense 
+            class="q-mb-sm"
+          />
+          
+          <q-select 
+            v-model="filters.jobs" 
+            :options="jobOptions" 
+            label="Práce" 
+            emit-value 
+            map-options 
+            multiple
+            outlined 
+            dense 
+            class="q-mb-sm"
+          />
+          
+          <q-select 
+            v-model="filters.places" 
+            :options="placeOptions" 
+            label="Místa práce" 
+            emit-value 
+            map-options 
+            multiple
+            outlined 
+            dense 
+            class="q-mb-sm"
+          />
+          
+          <q-select 
+            v-model="filters.workers" 
+            :options="workerOptions" 
+            label="Pracovníci" 
+            emit-value 
+            map-options 
+            multiple
+            outlined 
+            dense 
+            class="q-mb-sm"
+          />
+          
+          <div class="row q-gutter-sm q-mb-sm">
+            <div class="col">
+              <q-input 
+                v-model="filters.dateFrom" 
+                label="Datum od" 
+                outlined 
+                dense 
+                readonly
+              >
+                <template v-slot:append>
+                  <q-icon name="event" class="cursor-pointer">
+                    <q-popup-proxy cover transition-show="scale" transition-hide="scale">
+                      <q-date v-model="filters.dateFrom" mask="DD. MM. YYYY">
+                        <div class="row items-center justify-end">
+                          <q-btn v-close-popup label="OK" color="primary" flat />
+                        </div>
+                      </q-date>
+                    </q-popup-proxy>
+                  </q-icon>
+                </template>
+              </q-input>
+            </div>
+            <div class="col">
+              <q-input 
+                v-model="filters.dateTo" 
+                label="Datum do" 
+                outlined 
+                dense 
+                readonly
+              >
+                <template v-slot:append>
+                  <q-icon name="event" class="cursor-pointer">
+                    <q-popup-proxy cover transition-show="scale" transition-hide="scale">
+                      <q-date v-model="filters.dateTo" mask="DD. MM. YYYY">
+                        <div class="row items-center justify-end">
+                          <q-btn v-close-popup label="OK" color="primary" flat />
+                        </div>
+                      </q-date>
+                    </q-popup-proxy>
+                  </q-icon>
+                </template>
+              </q-input>
+            </div>
+          </div>
+          
+          <q-select 
+            v-model="filters.withKm" 
+            :options="[
+              { label: '--- Všechny záznamy ---', value: null },
+              { label: 'Pouze s cestami (km > 0)', value: true },
+              { label: 'Pouze bez cest (km = 0)', value: false }
+            ]" 
+            label="Kilometry" 
+            emit-value 
+            map-options 
+            outlined 
+            dense 
+            class="q-mb-sm"
+          />
+          
           <div class="row q-gutter-sm">
-            <div class="col">
-              <q-input v-model="dateFrom" label="Od" type="date" outlined dense 
-                :model-value="formatDateForInput(dateFrom)" 
-                @update:model-value="dateFrom=formatDateFromInput($event)"/>
-            </div>
-            <div class="col">
-              <q-input v-model="dateTo" label="Do" type="date" outlined dense 
-                :model-value="formatDateForInput(dateTo)" 
-                @update:model-value="dateTo=formatDateFromInput($event)"/>
-            </div>
+            <q-btn 
+              label="Použít filtry" 
+              color="primary" 
+              icon="filter_list" 
+              @click="applyFilters" 
+              class="col"
+            />
+            <q-btn 
+              label="Zrušit" 
+              color="grey" 
+              outline 
+              @click="resetFilters" 
+              class="col"
+            />
           </div>
         </q-card-section>
       </q-card>
-
-      <q-tabs v-model="statsTab" dense align="justify" class="q-mb-md text-primary">
-        <q-tab name="contracts" label="Zakázky"/>
-        <q-tab name="workers" label="Pracovníci"/>
-        <q-tab name="jobs" label="Práce"/>
-      </q-tabs>
-
-      <div v-if="statsTab==='contracts'">
-        <q-card v-for="stat in contractStats" :key="stat.name" class="q-mb-md">
-          <q-card-section>
-            <div class="text-h6">{{ stat.name }}</div>
-            <q-separator class="q-my-sm"/>
-            
-            <div class="row q-mt-sm">
-              <div class="col-6">
-                <div class="text-caption text-grey-7">Celkem hodin</div>
-                <div class="text-bold text-primary">{{ stat.totalHours.toFixed(2) }} h</div>
-              </div>
-              <div class="col-3">
-                <div class="text-caption text-grey-7">Pracovníků</div>
-                <div class="text-bold">{{ stat.totalWorkers }}</div>
-              </div>
-              <div class="col-3">
-                <div class="text-caption text-grey-7">Návštěv</div>
-                <div class="text-bold">{{ stat.visits }}x</div>
-              </div>
-            </div>
-            
-            <div v-if="stat.totalKm > 0" class="q-mt-md">
-              <q-separator class="q-mb-sm"/>
-              <div class="text-subtitle2">🚗 Kilometry</div>
-              <div class="row q-mt-xs">
-                <div class="col-4">
-                  <div class="text-caption text-grey-7">Cest</div>
-                  <div class="text-bold">{{ stat.tripCount }}x</div>
-                </div>
-                <div class="col-4">
-                  <div class="text-caption text-grey-7">Celkem km</div>
-                  <div class="text-bold text-orange">{{ stat.totalKm }} km</div>
-                </div>
-                <div class="col-4">
-                  <div class="text-caption text-grey-7">Cestovné</div>
-                  <div class="text-bold text-green">{{ stat.cestovne }} Kč</div>
-                </div>
-              </div>
-            </div>
-          </q-card-section>
-        </q-card>
-      </div>
-
-      <div v-if="statsTab==='workers'">
-        <q-card v-for="stat in workerStats" :key="stat.name" class="q-mb-md">
-          <q-card-section>
-            <div class="text-h6">{{ stat.name }}</div>
-            <div class="row q-mt-sm">
-              <div class="col">
-                <div class="text-caption text-grey-7">Celkem hodin</div>
-                <div class="text-bold text-primary">{{ stat.totalHours.toFixed(2) }} h</div>
-              </div>
-              <div class="col">
-                <div class="text-caption text-grey-7">Zakázek</div>
-                <div class="text-bold">{{ stat.contracts }}</div>
-              </div>
-              <div class="col">
-                <div class="text-caption text-grey-7">Odprac. dnů</div>
-                <div class="text-bold">{{ stat.days }}</div>
-              </div>
-            </div>
-          </q-card-section>
-        </q-card>
-      </div>
-
-      <div v-if="statsTab==='jobs'">
-        <q-card v-for="stat in jobStats" :key="stat.name" class="q-mb-md">
-          <q-card-section>
-            <div class="row items-center">
-              <div class="col">
-                <div class="text-bold">{{ stat.name }}</div>
-              </div>
-              <div class="text-right">
-                <div class="text-bold text-primary">{{ stat.totalHours.toFixed(2) }} h</div>
-                <div class="text-caption text-grey-7">{{ stat.count }}x</div>
-              </div>
-            </div>
-          </q-card-section>
-        </q-card>
-      </div>
       
-      <q-dialog v-model="exportDialog">
-        <q-card style="min-width: 300px">
+      <!-- VÝSLEDKY -->
+      <div v-if="showResults">
+        <!-- STATISTIKY -->
+        <q-card class="q-mb-md">
           <q-card-section>
-            <div class="text-h6">📥 Export statistik</div>
+            <div class="text-subtitle2 q-mb-md">Souhrnné statistiky</div>
+            
+            <div class="row q-gutter-sm q-mb-md">
+              <div class="col stat-card">
+                <div class="stat-label">Celkem hodin</div>
+                <div class="stat-value">{{ totalHours }}</div>
+              </div>
+              <div class="col stat-card">
+                <div class="stat-label">Celkem cest</div>
+                <div class="stat-value">{{ totalTrips }}</div>
+              </div>
+              <div class="col stat-card">
+                <div class="stat-label">Celkem dělníků</div>
+                <div class="stat-value">{{ uniqueWorkers }}</div>
+              </div>
+              <div class="col stat-card">
+                <div class="stat-label">Celkem km</div>
+                <div class="stat-value">{{ totalKm }}</div>
+              </div>
+            </div>
+            
+            <div class="row q-gutter-sm q-mb-md">
+              <div class="col stat-card bg-orange-1">
+                <div class="stat-label">Celkem náklady</div>
+                <div class="stat-value text-orange">{{ totalCost }} Kč</div>
+              </div>
+              <div class="col stat-card bg-blue-1">
+                <div class="stat-label">Celkem vyplaceno</div>
+                <div class="stat-value text-blue">{{ totalPaid }} Kč</div>
+              </div>
+            </div>
+            
+            <q-separator class="q-my-md" />
+            
+            <div class="text-subtitle2 q-mb-sm">Kalkulace zisku</div>
+            
+            <q-input 
+              v-model.number="customCharge" 
+              label="Má se účtovat (Kč)" 
+              type="number" 
+              outlined 
+              dense 
+              class="q-mb-sm"
+            />
+            
+            <div v-if="customCharge" class="row q-gutter-sm">
+              <div class="col stat-card" :class="profit >= 0 ? 'bg-green-1' : 'bg-red-1'">
+                <div class="stat-label">Rozdíl (zisk)</div>
+                <div class="stat-value" :class="profit >= 0 ? 'text-green' : 'text-red'">
+                  {{ profit }} Kč
+                </div>
+              </div>
+              <div class="col stat-card bg-grey-2">
+                <div class="stat-label">Marže</div>
+                <div class="stat-value">{{ profitMargin }} %</div>
+              </div>
+            </div>
           </q-card-section>
-          
-          <q-card-section>
-            <p class="text-body2">Období: {{ exportData.period }}</p>
-          </q-card-section>
-          
-          <q-card-actions vertical>
-            <q-btn color="primary" icon="picture_as_pdf" label="Export do PDF" 
-              @click="exportToPDF" unelevated class="full-width q-mb-sm"/>
-            <q-btn color="green" icon="table_chart" label="Export do CSV" 
-              @click="exportToCSV" unelevated class="full-width q-mb-sm"/>
-            <q-btn flat label="Zrušit" v-close-popup class="full-width"/>
-          </q-card-actions>
         </q-card>
-      </q-dialog>
+        
+        <!-- TLAČÍTKO EXPORT -->
+        <q-btn 
+          label="Exportovat do Excel (CSV)" 
+          color="green" 
+          icon="download" 
+          @click="exportToExcel" 
+          class="full-width q-mb-md"
+        />
+        
+        <!-- SEZNAM ZÁZNAMŮ -->
+        <div class="text-subtitle2 q-mb-sm">
+          Záznamy ({{ filteredRecords.length }})
+        </div>
+        
+        <div v-if="filteredRecords.length === 0" class="text-center text-grey-7 q-mt-lg">
+          Žádné záznamy nevyhovují filtrům
+        </div>
+        
+        <div v-for="(record, idx) in filteredRecords" :key="idx" class="record-card">
+          <div class="row items-center">
+            <div class="col">
+              <div class="text-bold">{{ record[6] }}</div>
+              <div class="text-caption text-grey-7">
+                {{ record[0] }} • {{ record[3] }} • {{ record[14] || 'Nezadáno' }}
+              </div>
+            </div>
+            <div class="text-right">
+              <div class="text-bold text-primary">{{ record[7].toFixed(2) }} hod</div>
+              <div class="text-caption">{{ record[2] }} Kč/hod = {{ Math.round(record[2] * record[7]) }} Kč</div>
+            </div>
+          </div>
+          <div class="text-caption text-grey-7 q-mt-sm">
+            {{ formatTimeRange(record[4], record[5]) }}
+          </div>
+          <div v-if="record[12] > 0" class="text-caption text-orange q-mt-xs">
+            🚗 {{ record[12] }} km
+          </div>
+          <div v-if="record[8]" class="note-display">💬 {{ record[8] }}</div>
+        </div>
+      </div>
     </div>
   `
 });
