@@ -3,432 +3,55 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Stavební deník - Evidence práce 2026</title>
+  <title>Admin - Evidence práce 2026</title>
+  
+  <!-- PWA -->
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#1976D2">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Evidence práce">
+  <link rel="apple-touch-icon" href="/icon-192.png">
+  
   <link href="https://fonts.googleapis.com/css?family=Material+Icons" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@100;300;400;500;700;900&display=swap" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/quasar@2.12.0/dist/quasar.prod.css" rel="stylesheet">
-  <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-    body {
-      font-family: 'Roboto', sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      min-height: 100vh;
-      padding: 20px;
-    }
-    .container {
-      max-width: 1200px;
-      margin: 0 auto;
-      background: white;
-      border-radius: 12px;
-      padding: 30px;
-      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-    }
-    h1 {
-      color: #1976D2;
-      margin-bottom: 30px;
-      text-align: center;
-      font-size: 2rem;
-    }
-    .filters {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 15px;
-      margin-bottom: 30px;
-    }
-    .filter-group {
-      display: flex;
-      flex-direction: column;
-    }
-    label {
-      font-weight: 500;
-      margin-bottom: 5px;
-      color: #333;
-      font-size: 0.9rem;
-    }
-    select, input {
-      padding: 10px;
-      border: 2px solid #e0e0e0;
-      border-radius: 6px;
-      font-size: 1rem;
-      transition: border 0.3s;
-    }
-    select:focus, input:focus {
-      outline: none;
-      border-color: #1976D2;
-    }
-    .buttons {
-      display: flex;
-      gap: 10px;
-      margin-bottom: 30px;
-    }
-    button {
-      padding: 12px 24px;
-      border: none;
-      border-radius: 6px;
-      font-size: 1rem;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.3s;
-    }
-    .btn-primary {
-      background: #1976D2;
-      color: white;
-    }
-    .btn-primary:hover {
-      background: #1565C0;
-      transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(25,118,210,0.4);
-    }
-    .btn-success {
-      background: #4CAF50;
-      color: white;
-    }
-    .btn-success:hover {
-      background: #45a049;
-    }
-    .btn-secondary {
-      background: #757575;
-      color: white;
-    }
-    .btn-secondary:hover {
-      background: #616161;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 20px;
-      background: white;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-      border-radius: 8px;
-      overflow: hidden;
-    }
-    thead {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-    }
-    th, td {
-      padding: 14px;
-      text-align: left;
-      border-bottom: 1px solid #e0e0e0;
-    }
-    th {
-      font-weight: 600;
-      font-size: 0.95rem;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-    tr:hover {
-      background: #f5f5f5;
-    }
-    tr:last-child td {
-      border-bottom: none;
-    }
-    .stats {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 15px;
-      margin-bottom: 30px;
-    }
-    .stat-card {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      padding: 20px;
-      border-radius: 10px;
-      text-align: center;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    }
-    .stat-label {
-      font-size: 0.9rem;
-      opacity: 0.9;
-      margin-bottom: 8px;
-    }
-    .stat-value {
-      font-size: 2rem;
-      font-weight: bold;
-    }
-    .no-data {
-      text-align: center;
-      padding: 40px;
-      color: #757575;
-      font-size: 1.1rem;
-    }
-    @media (max-width: 768px) {
-      .container {
-        padding: 15px;
-      }
-      h1 {
-        font-size: 1.5rem;
-      }
-      .filters {
-        grid-template-columns: 1fr;
-      }
-      table {
-        font-size: 0.85rem;
-      }
-      th, td {
-        padding: 8px;
-      }
-    }
-  </style>
+  <link href="styles.css" rel="stylesheet">
 </head>
 <body>
-  <div class="container">
-    <h1>📋 Stavební deník - Evidence práce</h1>
-    
-    <div class="filters">
-      <div class="filter-group">
-        <label>Zakázka:</label>
-        <select id="contractFilter">
-          <option value="">Všechny zakázky</option>
-        </select>
-      </div>
-      
-      <div class="filter-group">
-        <label>Práce:</label>
-        <select id="jobFilter">
-          <option value="">Všechny práce</option>
-        </select>
-      </div>
-      
-      <div class="filter-group">
-        <label>Pracovník:</label>
-        <select id="workerFilter">
-          <option value="">Všichni pracovníci</option>
-        </select>
-      </div>
-      
-      <div class="filter-group">
-        <label>Datum od:</label>
-        <input type="date" id="dateFrom">
-      </div>
-      
-      <div class="filter-group">
-        <label>Datum do:</label>
-        <input type="date" id="dateTo">
-      </div>
-    </div>
-    
-    <div class="buttons">
-      <button class="btn-primary" onclick="applyFilters()">🔍 Zobrazit</button>
-      <button class="btn-success" onclick="exportToCSV()">📥 Export CSV</button>
-      <button class="btn-secondary" onclick="resetFilters()">🔄 Reset</button>
-    </div>
-    
-    <div class="stats" id="stats" style="display:none;">
-      <div class="stat-card">
-        <div class="stat-label">Celkem hodin</div>
-        <div class="stat-value" id="totalHours">0</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Celkem km</div>
-        <div class="stat-value" id="totalKm">0</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Počet záznamů</div>
-        <div class="stat-value" id="recordCount">0</div>
-      </div>
-    </div>
-    
-    <div id="tableContainer"></div>
-  </div>
+  <div id="admin-app"></div>
 
+  <!-- 1. KNIHOVNY -->
+  <script src="https://cdn.jsdelivr.net/npm/vue@3.3.4/dist/vue.global.prod.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/quasar@2.12.0/dist/quasar.umd.prod.js"></script>
+
+  <!-- 2. UTILITY -->
   <script src="js/config.js"></script>
+  <script src="js/utils.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/notifications.js"></script>
+
+  <!-- 3. ADMIN MAIN -->
+  <script src="js/admin-main.js"></script>
+
+  <!-- 4. KOMPONENTY -->
+  <script src="js/components/login.js"></script>
+  <script src="js/components/home.js"></script>
+  <script src="js/components/summary.js"></script>
+  <script src="js/components/settings.js"></script>
+  <script src="js/components/admin/admin.js"></script>
+  <script src="js/components/admin/statistics.js"></script>
+  <script src="js/components/stavebni-denik.js"></script>
+  
+  <!-- PWA Service Worker -->
   <script>
-    let allRecords = [];
-    let contracts = [];
-    let jobs = [];
-    let workers = [];
-    let filteredRecords = [];
-
-    // Formátování data a času
-    function formatDateTime(timestamp) {
-      const d = new Date(timestamp);
-      const day = String(d.getDate()).padStart(2, '0');
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      const year = d.getFullYear();
-      const hours = String(d.getHours()).padStart(2, '0');
-      const minutes = String(d.getMinutes()).padStart(2, '0');
-      return `${day}. ${month}. ${year} ${hours}:${minutes}`;
-    }
-
-    function formatTime(timestamp) {
-      const d = new Date(timestamp);
-      const hours = String(d.getHours()).padStart(2, '0');
-      const minutes = String(d.getMinutes()).padStart(2, '0');
-      return `${hours}:${minutes}`;
-    }
-
-    async function loadData() {
-      try {
-        const API_URL = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : 'https://script.google.com/macros/s/AKfycbwY2USnMZas3j2kPRkDc8VkNEmH7U3DWGymALwndbRHoTaRYKuF1tMCwFUaFXy-hL0n/exec';
-        
-        const [recordsRes, contractsRes, jobsRes, workersRes] = await Promise.all([
-          fetch(`${API_URL}?action=get&type=records`),
-          fetch(`${API_URL}?action=get&type=contracts`),
-          fetch(`${API_URL}?action=get&type=jobs`),
-          fetch(`${API_URL}?action=get&type=workers`)
-        ]);
-        
-        const recordsData = await recordsRes.json();
-        const contractsData = await contractsRes.json();
-        const jobsData = await jobsRes.json();
-        const workersData = await workersRes.json();
-        
-        allRecords = recordsData.data || [];
-        contracts = contractsData.data || [];
-        jobs = jobsData.data || [];
-        workers = workersData.data || [];
-        
-        populateFilters();
-      } catch (error) {
-        console.error('Chyba načítání dat:', error);
-        alert('Chyba načítání dat. Zkontrolujte připojení.');
-      }
-    }
-
-    function populateFilters() {
-      const contractFilter = document.getElementById('contractFilter');
-      const jobFilter = document.getElementById('jobFilter');
-      const workerFilter = document.getElementById('workerFilter');
-      
-      contracts.forEach(c => {
-        const option = document.createElement('option');
-        option.value = c[1];
-        option.textContent = c[0] + ' - ' + c[1];
-        contractFilter.appendChild(option);
-      });
-      
-      jobs.forEach(j => {
-        const option = document.createElement('option');
-        option.value = j[1];
-        option.textContent = j[1];
-        jobFilter.appendChild(option);
-      });
-      
-      workers.forEach(w => {
-        const option = document.createElement('option');
-        option.value = w[1];
-        option.textContent = w[1];
-        workerFilter.appendChild(option);
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/service-worker.js')
+          .then(reg => console.log('Service Worker zaregistrován'))
+          .catch(err => console.log('Service Worker chyba:', err));
       });
     }
-
-    function applyFilters() {
-      const contractFilter = document.getElementById('contractFilter').value;
-      const jobFilter = document.getElementById('jobFilter').value;
-      const workerFilter = document.getElementById('workerFilter').value;
-      const dateFrom = document.getElementById('dateFrom').value;
-      const dateTo = document.getElementById('dateTo').value;
-      
-      filteredRecords = allRecords.filter(record => {
-        if (contractFilter && record[0] !== contractFilter) return false;
-        if (jobFilter && record[3] !== jobFilter) return false;
-        if (workerFilter && record[6] !== workerFilter) return false;
-        
-        const recordDate = new Date(record[4]);
-        if (dateFrom && recordDate < new Date(dateFrom)) return false;
-        if (dateTo && recordDate > new Date(dateTo + ' 23:59:59')) return false;
-        
-        return true;
-      });
-      
-      displayResults();
-    }
-
-    function displayResults() {
-      const container = document.getElementById('tableContainer');
-      const statsDiv = document.getElementById('stats');
-      
-      if (filteredRecords.length === 0) {
-        container.innerHTML = '<div class="no-data">Žádné záznamy nevyhovují filtrům</div>';
-        statsDiv.style.display = 'none';
-        return;
-      }
-      
-      // Statistiky
-      const totalHours = filteredRecords.reduce((sum, r) => sum + (parseFloat(r[7]) || 0), 0);
-      const totalKm = filteredRecords.reduce((sum, r) => sum + (parseFloat(r[12]) || 0), 0);
-      
-      document.getElementById('totalHours').textContent = totalHours.toFixed(2);
-      document.getElementById('totalKm').textContent = totalKm;
-      document.getElementById('recordCount').textContent = filteredRecords.length;
-      statsDiv.style.display = 'grid';
-      
-      // Tabulka
-      let html = '<table><thead><tr>';
-      html += '<th>Datum</th><th>Zakázka</th><th>Práce</th><th>Pracovník</th>';
-      html += '<th>Čas od</th><th>Čas do</th><th>Hodiny</th><th>Poznámka</th><th>Km</th>';
-      html += '</tr></thead><tbody>';
-      
-      filteredRecords.forEach(record => {
-        html += '<tr>';
-        html += `<td>${formatDateTime(record[4]).split(' ')[0]}</td>`;
-        html += `<td>${record[0]}</td>`;
-        html += `<td>${record[3]}</td>`;
-        html += `<td>${record[6]}</td>`;
-        html += `<td>${formatTime(record[4])}</td>`;
-        html += `<td>${formatTime(record[5])}</td>`;
-        html += `<td>${parseFloat(record[7]).toFixed(2)}</td>`;
-        html += `<td>${record[8] || ''}</td>`;
-        html += `<td>${record[12] || 0}</td>`;
-        html += '</tr>';
-      });
-      
-      html += '</tbody></table>';
-      container.innerHTML = html;
-    }
-
-    function exportToCSV() {
-      if (filteredRecords.length === 0) {
-        alert('Nejdříve použijte filtry');
-        return;
-      }
-      
-      let csv = 'Datum;Zakázka;Práce;Pracovník;Čas od;Čas do;Hodiny;Poznámka;Km\n';
-      
-      filteredRecords.forEach(record => {
-        const row = [
-          formatDateTime(record[4]).split(' ')[0],
-          record[0],
-          record[3],
-          record[6],
-          formatTime(record[4]),
-          formatTime(record[5]),
-          parseFloat(record[7]).toFixed(2),
-          record[8] || '',
-          record[12] || 0
-        ];
-        csv += row.map(cell => `"${cell}"`).join(';') + '\n';
-      });
-      
-      const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement('a');
-      const url = URL.createObjectURL(blob);
-      link.setAttribute('href', url);
-      link.setAttribute('download', `stavebni_denik_${new Date().getTime()}.csv`);
-      link.style.visibility = 'hidden';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    }
-
-    function resetFilters() {
-      document.getElementById('contractFilter').value = '';
-      document.getElementById('jobFilter').value = '';
-      document.getElementById('workerFilter').value = '';
-      document.getElementById('dateFrom').value = '';
-      document.getElementById('dateTo').value = '';
-      filteredRecords = [];
-      document.getElementById('tableContainer').innerHTML = '';
-      document.getElementById('stats').style.display = 'none';
-    }
-
-    // Načtení dat při startu
-    loadData();
   </script>
 </body>
 </html>
