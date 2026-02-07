@@ -1,4 +1,4 @@
-// KOMPLETNÍ admin.js - OPRAVENÁ VERZE
+// admin.js - OPRAVENÁ VERZE
 
 window.app.component('admin-component', {
   props: ['allSummary', 'allRecords', 'allAdvances', 'contracts', 'jobs', 'places', 'loading'],
@@ -8,132 +8,28 @@ window.app.component('admin-component', {
     return {
       adminTab: 'workers',
       selectedWorkerData: null,
-      summaryTab: 'records',
-      editDialog: false,
-      editingRecord: null,
-      editForm: { 
-        contractId: null, 
-        jobId: null, 
-        timeFr: null, 
-        timeTo: null, 
-        note: '',
-        kmJednosmer: 0,
-        kmCelkem: 0,
-        kmRucne: 'N',
-        kmManual: false,
-        kmRoundTrip: true
-      }
-    }
-  },
-  
-  computed: {
-    contractOptions() {
-      return this.contracts.map(c => ({ label: c[0] + ' - ' + c[1], value: c[0] }));
-    },
-    jobOptions() {
-      return this.jobs.map(j => ({ label: j[1], value: j[0] }));
-    },
-    selectedContractKm() {
-      if (!this.editForm.contractId) return 0;
-      const contract = this.contracts.find(c => c[0] === this.editForm.contractId);
-      return contract ? (contract[3] || 0) : 0;
-    },
-    calculatedKmEdit() {
-      if (this.editForm.kmManual) {
-        return this.editForm.kmRoundTrip ? this.editForm.kmJednosmer * 2 : this.editForm.kmJednosmer;
-      }
-      if (this.selectedContractKm > 0) {
-        return this.editForm.kmRoundTrip ? this.selectedContractKm * 2 : this.selectedContractKm;
-      }
-      return 0;
+      summaryTab: 'records'
     }
   },
   
   methods: {
-    async selectWorker(worker) {
-      try {
-        const res = await apiCall('getworkerdata', { id_worker: worker.id });
-        if (res.code === '000' && res.data) {
-          this.selectedWorkerData = res.data;
-          this.adminTab = 'detail';
-        }
-      } catch (error) {
-        console.error('Load worker data error:', error);
-      }
+    selectWorker(worker) {
+      // OPRAVA: filtrovat podle r[1] (idWorker), ne r[0] (nameContract)
+      this.selectedWorkerData = {
+        info: worker,
+        records: this.allRecords.filter(r => String(r[1]) === String(worker.id)),
+        advances: this.allAdvances.filter(a => String(a[0]) === String(worker.id))
+      };
+      this.adminTab = 'detail';
     },
     
     backToWorkers() {
-      this.adminTab = 'workers';
       this.selectedWorkerData = null;
+      this.adminTab = 'workers';
     },
     
-    openEditDialog(record, idx) {
-      this.editingRecord = { record, idx };
-      
-      const contract = this.contracts.find(c => c[1] === record[0]);
-      const job = this.jobs.find(j => j[1] === record[3]);
-      
-      this.editForm = {
-        contractId: contract ? contract[0] : null,
-        jobId: job ? job[0] : null,
-        timeFr: record[4],
-        timeTo: record[5],
-        note: record[8] || '',
-        kmJednosmer: parseFloat(record[11]) || 0,
-        kmCelkem: parseFloat(record[12]) || 0,
-        kmRucne: record[13] || 'N',
-        kmManual: record[13] === 'Y',
-        kmRoundTrip: true
-      };
-      
-      this.editDialog = true;
-    },
-    
-    async saveEdit() {
-      if (!this.editForm.contractId || !this.editForm.jobId || !this.editForm.timeFr || !this.editForm.timeTo) {
-        this.$emit('message', 'Vyplňte všechna pole');
-        return;
-      }
-      
-      try {
-        const payload = {
-          record_index: this.editingRecord.idx,
-          id_worker: this.selectedWorkerData.info.id,
-          id_contract: this.editForm.contractId,
-          id_job: this.editForm.jobId,
-          time_fr: this.editForm.timeFr,
-          time_to: this.editForm.timeTo,
-          note: this.editForm.note
-        };
-        
-        if (this.editForm.kmManual) {
-          payload.km_jednosmer = this.editForm.kmJednosmer;
-          payload.km_celkem = this.calculatedKmEdit;
-          payload.km_rucne = 'Y';
-        } else if (this.selectedContractKm > 0) {
-          payload.km_jednosmer = this.selectedContractKm;
-          payload.km_celkem = this.calculatedKmEdit;
-          payload.km_rucne = 'N';
-        }
-        
-        const res = await apiCall('updaterecord', payload);
-        
-        if (res.code === '000') {
-          this.$emit('message', '✓ Záznam upraven');
-          this.editDialog = false;
-          this.$emit('reload');
-        } else {
-          this.$emit('message', 'Chyba: ' + res.error);
-        }
-      } catch (error) {
-        console.error('Update record error:', error);
-        this.$emit('message', 'Chyba při ukládání');
-      }
-    },
-    
-    formatTimeRange(fr, to) {
-      return formatTimeRange(fr, to);
-    }
+    formatTimeRange(fr, to) { return formatTimeRange(fr, to); },
+    formatShortDateTime(ts) { return formatShortDateTime(ts); }
   },
   
   template: `
@@ -184,13 +80,12 @@ window.app.component('admin-component', {
           </div>
         </div>
 
-        <q-tabs v-model="summaryTab" dense align="justify" class="text-primary q-mt-md">
+        <q-tabs v-model="summaryTab" dense class="q-mt-md">
           <q-tab name="records" label="Směny"/>
-          <q-tab name="lunches" label="Obědy"/>
           <q-tab name="advances" label="Zálohy"/>
         </q-tabs>
 
-        <!-- ZÁZNAMY -->
+        <!-- SMĚNY -->
         <div v-if="summaryTab==='records'" class="q-mt-md">
           <div v-for="(record,idx) in selectedWorkerData.records" :key="idx" class="record-card">
             <div class="row items-center">
@@ -202,7 +97,6 @@ window.app.component('admin-component', {
                 <div class="text-bold text-primary">{{ record[7].toFixed(2) }} hod</div>
                 <div class="text-caption">{{ record[2] }} Kč/hod</div>
               </div>
-              <q-icon name="edit" class="edit-icon q-ml-sm" @click="openEditDialog(record,idx)"/>
             </div>
             <div class="text-caption text-grey-7 q-mt-sm">
               {{ formatTimeRange(record[4], record[5]) }}
@@ -214,28 +108,17 @@ window.app.component('admin-component', {
           </div>
         </div>
 
-        <!-- OBĚDY -->
-        <div v-if="summaryTab==='lunches'" class="q-mt-md">
-          <div v-for="(lunch,idx) in selectedWorkerData.lunches" :key="idx" class="record-card">
-            <div class="row items-center">
-              <div class="col">
-                <div class="text-bold">Oběd</div>
-                <div class="text-caption text-grey-7">{{ formatShortDateTime(lunch[1]) }}</div>
-              </div>
-              <div class="text-right text-bold text-orange">{{ lunch[4] }} Kč</div>
-            </div>
-          </div>
-        </div>
-
         <!-- ZÁLOHY -->
         <div v-if="summaryTab==='advances'" class="q-mt-md">
           <div v-for="(advance,idx) in selectedWorkerData.advances" :key="idx" class="record-card">
             <div class="row items-center">
               <div class="col">
                 <div class="text-bold">{{ advance[5] }}</div>
-                <div class="text-caption text-grey-7">{{ formatShortDateTime(advance[1]) }}</div>
               </div>
               <div class="text-right text-bold text-primary">{{ advance[4] }} Kč</div>
+            </div>
+            <div class="text-caption text-grey-7 q-mt-sm">
+              {{ formatShortDateTime(advance[1]) }}
             </div>
           </div>
         </div>
@@ -265,79 +148,6 @@ window.app.component('admin-component', {
           @message="(msg) => $emit('message', msg)"
         />
       </div>
-
-      <!-- EDITAČNÍ DIALOG S KM -->
-      <q-dialog v-model="editDialog">
-        <q-card style="min-width:350px">
-          <q-card-section>
-            <div class="text-h6">Upravit záznam</div>
-          </q-card-section>
-          
-          <q-card-section class="q-pt-none">
-            <q-select 
-              v-model="editForm.contractId" 
-              :options="contractOptions" 
-              label="Zakázka" 
-              emit-value 
-              map-options 
-              outlined 
-              class="q-mb-md"
-            />
-            
-            <q-select 
-              v-model="editForm.jobId" 
-              :options="jobOptions" 
-              label="Práce" 
-              emit-value 
-              map-options 
-              outlined 
-              class="q-mb-md"
-            />
-            
-            <q-input 
-              v-model="editForm.note" 
-              label="Poznámka" 
-              outlined 
-              class="q-mb-md"
-            />
-            
-            <div v-if="selectedContractKm > 0 || editForm.kmManual" class="q-mb-md">
-              <q-card flat bordered>
-                <q-card-section>
-                  <div class="text-subtitle2">🚗 Kilometry</div>
-                  
-                  <div v-if="selectedContractKm > 0" class="text-caption text-grey-7 q-mt-sm">
-                    Zakázka má: {{ selectedContractKm }} km jedna cesta
-                  </div>
-                  
-                  <q-checkbox v-model="editForm.kmRoundTrip" label="Tam a zpět (×2)" class="q-mt-sm"/>
-                  
-                  <div class="text-bold text-primary q-mt-xs">
-                    Celkem: {{ calculatedKmEdit }} km
-                  </div>
-                  
-                  <q-checkbox v-model="editForm.kmManual" label="Zadat km ručně" class="q-mt-sm"/>
-                  
-                  <q-input 
-                    v-if="editForm.kmManual" 
-                    v-model.number="editForm.kmJednosmer"
-                    label="Počet km (jedna cesta)" 
-                    type="number" 
-                    outlined 
-                    dense 
-                    class="q-mt-sm"
-                  />
-                </q-card-section>
-              </q-card>
-            </div>
-          </q-card-section>
-          
-          <q-card-actions align="right">
-            <q-btn flat label="Zrušit" color="grey" v-close-popup/>
-            <q-btn label="Uložit" color="primary" @click="saveEdit"/>
-          </q-card-actions>
-        </q-card>
-      </q-dialog>
     </div>
   `
 });
