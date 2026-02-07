@@ -1,19 +1,9 @@
-
 <!DOCTYPE html>
 <html lang="cs">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Evidence práce 2026</title>
-  
-  <!-- PWA -->
-  <link rel="manifest" href="/manifest.json">
-  <meta name="theme-color" content="#1976D2">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="Evidence práce">
-  <link rel="apple-touch-icon" href="/icon-192.png">
-  
   <link href="https://fonts.googleapis.com/css?family=Material+Icons" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@100;300;400;500;700;900&display=swap" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/quasar@2.12.0/dist/quasar.prod.css" rel="stylesheet">
@@ -26,30 +16,21 @@
   <script src="https://cdn.jsdelivr.net/npm/vue@3.3.4/dist/vue.global.prod.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/quasar@2.12.0/dist/quasar.umd.prod.js"></script>
 
-  <!-- 2. UTILITY -->
+  <!-- 2. UTILITY (PŘED main.js!) -->
   <script src="js/config.js"></script>
   <script src="js/utils.js"></script>
   <script src="js/api.js"></script>
 
-  <!-- 3. MAIN -->
-  <script src="js/main.js"></script>
-
-  <!-- 4. KOMPONENTY -->
+  <!-- 3. KOMPONENTY (PŘED main.js!) -->
   <script src="js/components/login.js"></script>
   <script src="js/components/home.js"></script>
   <script src="js/components/summary.js"></script>
   <script src="js/components/settings.js"></script>
   <script src="js/components/admin/admin.js"></script>
-  
-  <!-- PWA Service Worker -->
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/service-worker.js')
-          .then(reg => console.log('Service Worker zaregistrován'))
-          .catch(err => console.log('Service Worker chyba:', err));
-      });
-    }
-  </script>
+  <script src="js/components/admin/day-overview.js"></script>
+  <script src="js/components/admin/statistics.js"></script>
+
+  <!-- 4. MAIN (POSLEDNÍ!) -->
+  <script src="js/main.js"></script>
 </body>
 </html>
