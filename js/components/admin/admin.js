@@ -278,15 +278,15 @@ window.app.component('admin-component', {
 
       <!-- PŘEHLED DNE -->
       <div v-if="adminTab==='day'" class="q-pt-md">
-        <day-overview 
-          :all-records="allRecords"
-          :contracts="contracts"
-          :jobs="jobs"
-          :places="places"
-          :loading="loading"
-          @message="(msg) => $emit('message', msg)"
-          @reload="$emit('reload')"
-        />
+        <day-overview
+  :all-records="allRecords"
+  :contracts="contracts"
+  :jobs="jobs"
+  :places="places"
+  :loading="loading"
+  @message="$emit('message', $event)"
+  @reload="$emit('reload')"
+/>
       </div>
       
       <!-- STATISTIKY -->
