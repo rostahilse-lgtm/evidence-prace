@@ -172,7 +172,6 @@ window.app = Vue.createApp({
           <q-tab name="home" icon="home" label="Domů" />
           <q-tab name="summary" icon="assessment" label="Přehledy" />
           <q-tab v-if="isAdmin" name="admin" icon="admin_panel_settings" label="Admin" />
-          <q-tab v-if="isAdmin" @click="window.open('admin.html', '_blank')" icon="menu_book" label="Deník" />
           <q-tab name="settings" icon="settings" label="Nastavení" />
         </q-tabs>
       </q-footer>
