@@ -127,7 +127,6 @@ window.app = Vue.createApp({
           <home-component
             v-if="isLoggedIn && currentView === 'home' && !loading"
             :current-user="currentUser"
-            :is-admin="isAdmin"
             :contracts="contracts"
             :jobs="jobs"
             :loading="loading"
@@ -150,8 +149,6 @@ window.app = Vue.createApp({
             :all-advances="allAdvances"
             :contracts="contracts"
             :jobs="jobs"
-            :is-admin="isAdmin"
-            :current-user="currentUser"
             :loading="loading"
             @message="showMessage"
             @reload="loadAdminData"
