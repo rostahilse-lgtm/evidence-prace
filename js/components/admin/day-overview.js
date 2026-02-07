@@ -5,34 +5,30 @@ window.app.component('day-overview', {
   data() {
     return {
       selectedDate: getTodayDate(),
+      workers: [],
+      
+      // Dialogy
       showAddShiftDialog: false,
+      showEditShiftDialog: false,
       showAddLunchDialog: false,
       showAddAdvanceDialog: false,
-      showDuplicateDialog: false,
-      workers: [],
-      newShift: {
-        workerId: null,
-        contractId: null,
-        jobId: null,
-        placeId: null,
-        timeStart: null,
-        timeEnd: null,
-        note: '',
-        kmManual: false,
-        kmValue: null,
-        kmRoundTrip: true,
-        customDate: null,
-        customTimeStart: '',
-        customTimeEnd: ''
-      },
-      duplicateShift: null,
+      
+      // Formuláře
+      newShift: this.getEmptyShift(),
+      editShift: this.getEmptyShift(),
+      editingRecord: null,
+      
       newLunch: {
-        workerId: null
+        workerId: null,
+        date: getTodayDate(),
+        time: this.getCurrentTime()
       },
+      
       newAdvance: {
         workerId: null,
         amount: null,
-        reason: ''
+        reason: '',
+        date: getTodayDate()
       }
     }
   },
@@ -82,6 +78,27 @@ window.app.component('day-overview', {
   },
   
   methods: {
+    getEmptyShift() {
+      return {
+        workerId: null,
+        contractId: null,
+        jobId: null,
+        placeId: null,
+        date: getTodayDate(),
+        timeStart: '',
+        timeEnd: '',
+        note: '',
+        kmManual: false,
+        kmValue: null,
+        kmRoundTrip: true
+      };
+    },
+    
+    getCurrentTime() {
+      const now = new Date();
+      return String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+    },
+    
     async loadWorkers() {
       const res = await apiCall('get', { type: 'workers' });
       if (res.code === '000' && res.data) {
@@ -90,26 +107,43 @@ window.app.component('day-overview', {
     },
     
     openAddShiftDialog() {
-      this.newShift = {
-        workerId: null,
-        contractId: null,
-        jobId: null,
-        placeId: null,
-        timeStart: null,
-        timeEnd: null,
-        note: '',
-        kmManual: false,
-        kmValue: null,
-        kmRoundTrip: true,
-        customDate: null,
-        customTimeStart: '',
-        customTimeEnd: ''
-      };
+      this.newShift = this.getEmptyShift();
       this.showAddShiftDialog = true;
     },
     
-    openDuplicateDialog(record) {
-      const worker = this.workers.find(w => w[0] === record[1]);
+    openEditDialog(record) {
+      const worker = this.workers.find(w => w[1] === record[6]);
+      const contract = this.contracts.find(c => c[1] === record[0]);
+      const job = this.jobs.find(j => j[1] === record[3]);
+      const place = this.places ? this.places.find(p => p[1] === record[14]) : null;
+      
+      const recordDate = new Date(record[4]);
+      const dateParts = [
+        String(recordDate.getDate()).padStart(2, '0'),
+        String(recordDate.getMonth() + 1).padStart(2, '0'),
+        recordDate.getFullYear()
+      ];
+      
+      this.editShift = {
+        workerId: worker ? worker[0] : null,
+        contractId: contract ? contract[0] : null,
+        jobId: job ? job[0] : null,
+        placeId: place ? place[0] : null,
+        date: dateParts.join('. '),
+        timeStart: formatTime(record[4]),
+        timeEnd: formatTime(record[5]),
+        note: record[8] || '',
+        kmManual: record[13] === 'Y',
+        kmValue: parseFloat(record[11]) || null,
+        kmRoundTrip: true
+      };
+      
+      this.editingRecord = record;
+      this.showEditShiftDialog = true;
+    },
+    
+    duplicateShift(record) {
+      const worker = this.workers.find(w => w[1] === record[6]);
       const contract = this.contracts.find(c => c[1] === record[0]);
       const job = this.jobs.find(j => j[1] === record[3]);
       const place = this.places ? this.places.find(p => p[1] === record[14]) : null;
@@ -119,61 +153,19 @@ window.app.component('day-overview', {
         contractId: contract ? contract[0] : null,
         jobId: job ? job[0] : null,
         placeId: place ? place[0] : null,
-        timeStart: null,
-        timeEnd: null,
+        date: getTodayDate(),
+        timeStart: '',
+        timeEnd: '',
         note: record[8] || '',
         kmManual: record[13] === 'Y',
         kmValue: parseFloat(record[11]) || null,
-        kmRoundTrip: true,
-        customDate: null,
-        customTimeStart: '',
-        customTimeEnd: ''
+        kmRoundTrip: true
       };
       
-      this.showDuplicateDialog = true;
-    },
-    
-    openAddLunchDialog() {
-      this.newLunch = { workerId: null };
-      this.showAddLunchDialog = true;
-    },
-    
-    openAddAdvanceDialog() {
-      this.newAdvance = { workerId: null, amount: null, reason: '' };
-      this.showAddAdvanceDialog = true;
-    },
-    
-    setCurrentTime(field) {
-      if (field === 'start') {
-        this.newShift.timeStart = Date.now();
-        this.newShift.customDate = null;
-        this.newShift.customTimeStart = '';
-      } else {
-        this.newShift.timeEnd = Date.now();
-        this.newShift.customTimeEnd = '';
-      }
-    },
-    
-    applyCustomDateTime() {
-      if (!this.newShift.customDate || !this.newShift.customTimeStart) return;
-      
-      const dateParts = this.newShift.customDate.split('. ');
-      const timeParts = this.newShift.customTimeStart.split(':');
-      const date = new Date(dateParts[2], dateParts[1] - 1, dateParts[0], timeParts[0], timeParts[1]);
-      this.newShift.timeStart = date.getTime();
-      
-      if (this.newShift.customTimeEnd) {
-        const timeEndParts = this.newShift.customTimeEnd.split(':');
-        const dateEnd = new Date(dateParts[2], dateParts[1] - 1, dateParts[0], timeEndParts[0], timeEndParts[1]);
-        this.newShift.timeEnd = dateEnd.getTime();
-      }
+      this.showAddShiftDialog = true;
     },
     
     async saveNewShift() {
-      if (this.newShift.customDate && this.newShift.customTimeStart) {
-        this.applyCustomDateTime();
-      }
-      
       if (!this.newShift.workerId || !this.newShift.contractId || !this.newShift.jobId || 
           !this.newShift.placeId || !this.newShift.timeStart || !this.newShift.timeEnd) {
         this.$emit('message', 'Vyplňte všechna povinná pole');
@@ -184,14 +176,21 @@ window.app.component('day-overview', {
         return;
       }
       
+      const dateParts = this.newShift.date.split('. ');
+      const timeParts1 = this.newShift.timeStart.split(':');
+      const timeParts2 = this.newShift.timeEnd.split(':');
+      
+      const timeFrom = new Date(dateParts[2], dateParts[1] - 1, dateParts[0], timeParts1[0], timeParts1[1]).getTime();
+      const timeTo = new Date(dateParts[2], dateParts[1] - 1, dateParts[0], timeParts2[0], timeParts2[1]).getTime();
+      
       try {
         const payload = {
           id_contract: this.newShift.contractId,
           id_worker: this.newShift.workerId,
           id_job: this.newShift.jobId,
           id_place: this.newShift.placeId,
-          time_fr: this.newShift.timeStart,
-          time_to: this.newShift.timeEnd,
+          time_fr: timeFrom,
+          time_to: timeTo,
           note: this.newShift.note
         };
         
@@ -207,7 +206,6 @@ window.app.component('day-overview', {
         if (res.code === '000') {
           this.$emit('message', '✓ Směna uložena');
           this.showAddShiftDialog = false;
-          this.showDuplicateDialog = false;
           this.$emit('reload');
         } else {
           this.$emit('message', 'Chyba: ' + res.error);
@@ -218,18 +216,78 @@ window.app.component('day-overview', {
       }
     },
     
+    async saveEditShift() {
+      if (!this.editShift.workerId || !this.editShift.contractId || !this.editShift.jobId || 
+          !this.editShift.placeId || !this.editShift.timeStart || !this.editShift.timeEnd) {
+        this.$emit('message', 'Vyplňte všechna povinná pole');
+        return;
+      }
+      
+      const dateParts = this.editShift.date.split('. ');
+      const timeParts1 = this.editShift.timeStart.split(':');
+      const timeParts2 = this.editShift.timeEnd.split(':');
+      
+      const timeFrom = new Date(dateParts[2], dateParts[1] - 1, dateParts[0], timeParts1[0], timeParts1[1]).getTime();
+      const timeTo = new Date(dateParts[2], dateParts[1] - 1, dateParts[0], timeParts2[0], timeParts2[1]).getTime();
+      
+      try {
+        const payload = {
+          id_contract: this.editShift.contractId,
+          id_worker: this.editShift.workerId,
+          id_job: this.editShift.jobId,
+          id_place: this.editShift.placeId,
+          time_fr: timeFrom,
+          time_to: timeTo,
+          note: this.editShift.note
+        };
+        
+        if (this.editShift.kmManual && this.editShift.kmValue) {
+          const kmTotal = this.editShift.kmRoundTrip ? this.editShift.kmValue * 2 : this.editShift.kmValue;
+          payload.km_jednosmer = this.editShift.kmValue;
+          payload.km_celkem = kmTotal;
+          payload.km_rucne = 'Y';
+        }
+        
+        const res = await apiCall('saverecord', payload);
+        
+        if (res.code === '000') {
+          this.$emit('message', '✓ Změny uloženy');
+          this.showEditShiftDialog = false;
+          this.$emit('reload');
+        } else {
+          this.$emit('message', 'Chyba: ' + res.error);
+        }
+      } catch (error) {
+        console.error('Edit shift error:', error);
+        this.$emit('message', 'Chyba při úpravě směny');
+      }
+    },
+    
+    openAddLunchDialog() {
+      this.newLunch = {
+        workerId: null,
+        date: getTodayDate(),
+        time: this.getCurrentTime()
+      };
+      this.showAddLunchDialog = true;
+    },
+    
     async saveNewLunch() {
       if (!this.newLunch.workerId) {
         this.$emit('message', 'Vyberte pracovníka');
         return;
       }
       
+      const dateParts = this.newLunch.date.split('. ');
+      const timeParts = this.newLunch.time.split(':');
+      const timestamp = new Date(dateParts[2], dateParts[1] - 1, dateParts[0], timeParts[0], timeParts[1]).getTime();
+      
       try {
         const worker = this.workers.find(w => w[0] === this.newLunch.workerId);
         const res = await apiCall('savelunch', {
           id_worker: this.newLunch.workerId,
           name_worker: worker[1],
-          time: Date.now()
+          time: timestamp
         });
         
         if (res.code === '000') {
@@ -245,18 +303,31 @@ window.app.component('day-overview', {
       }
     },
     
+    openAddAdvanceDialog() {
+      this.newAdvance = {
+        workerId: null,
+        amount: null,
+        reason: '',
+        date: getTodayDate()
+      };
+      this.showAddAdvanceDialog = true;
+    },
+    
     async saveNewAdvance() {
       if (!this.newAdvance.workerId || !this.newAdvance.amount || !this.newAdvance.reason) {
         this.$emit('message', 'Vyplňte všechna pole');
         return;
       }
       
+      const dateParts = this.newAdvance.date.split('. ');
+      const timestamp = new Date(dateParts[2], dateParts[1] - 1, dateParts[0], 12, 0).getTime();
+      
       try {
         const worker = this.workers.find(w => w[0] === this.newAdvance.workerId);
         const res = await apiCall('saveadvance', {
           id_worker: this.newAdvance.workerId,
           name_worker: worker[1],
-          time: Date.now(),
+          time: timestamp,
           payment: this.newAdvance.amount,
           payment_reason: this.newAdvance.reason
         });
@@ -358,8 +429,11 @@ window.app.component('day-overview', {
             <div class="text-bold text-primary">{{ record[7].toFixed(2) }} hod</div>
             <div class="text-caption">{{ record[2] }} Kč/hod</div>
           </div>
-          <q-btn flat dense round icon="content_copy" size="sm" class="q-ml-sm" @click="openDuplicateDialog(record)">
-            <q-tooltip>Duplikovat směnu</q-tooltip>
+          <q-btn flat dense round icon="content_copy" size="sm" class="q-ml-xs" @click="duplicateShift(record)">
+            <q-tooltip>Duplikovat</q-tooltip>
+          </q-btn>
+          <q-btn flat dense round icon="edit" size="sm" class="q-ml-xs" @click="openEditDialog(record)">
+            <q-tooltip>Upravit</q-tooltip>
           </q-btn>
         </div>
         <div class="text-caption text-grey-7 q-mt-sm">
@@ -391,13 +465,11 @@ window.app.component('day-overview', {
             <q-select v-model="newShift.placeId" :options="placeOptions" 
               label="Místo práce *" emit-value map-options outlined dense class="q-mb-sm"/>
             
-            <div class="text-subtitle2 q-mb-sm">Čas</div>
-            
-            <q-input v-model="newShift.customDate" label="Datum" outlined dense readonly class="q-mb-sm">
+            <q-input v-model="newShift.date" label="Datum" outlined dense readonly class="q-mb-sm">
               <template v-slot:append>
                 <q-icon name="event" class="cursor-pointer">
                   <q-popup-proxy>
-                    <q-date v-model="newShift.customDate" mask="DD. MM. YYYY">
+                    <q-date v-model="newShift.date" mask="DD. MM. YYYY">
                       <div class="row items-center justify-end">
                         <q-btn v-close-popup label="OK" color="primary" flat />
                       </div>
@@ -409,18 +481,13 @@ window.app.component('day-overview', {
             
             <div class="row q-gutter-sm q-mb-sm">
               <div class="col">
-                <q-input v-model="newShift.customTimeStart" label="Čas od (HH:MM)" 
+                <q-input v-model="newShift.timeStart" label="Čas od (HH:MM)" 
                   outlined dense placeholder="08:00" mask="##:##"/>
               </div>
               <div class="col">
-                <q-input v-model="newShift.customTimeEnd" label="Čas do (HH:MM)" 
+                <q-input v-model="newShift.timeEnd" label="Čas do (HH:MM)" 
                   outlined dense placeholder="16:00" mask="##:##"/>
               </div>
-            </div>
-            
-            <div class="text-center q-mb-sm">
-              <q-btn dense flat label="Nebo nastavit aktuální čas" size="sm" 
-                @click="setCurrentTime('start'); setCurrentTime('end')"/>
             </div>
             
             <q-input v-model="newShift.note" label="Poznámka *" outlined dense class="q-mb-sm"/>
@@ -441,33 +508,31 @@ window.app.component('day-overview', {
         </q-card>
       </q-dialog>
       
-      <!-- DIALOG - DUPLIKOVAT SMĚNU -->
-      <q-dialog v-model="showDuplicateDialog">
+      <!-- DIALOG - UPRAVIT SMĚNU -->
+      <q-dialog v-model="showEditShiftDialog">
         <q-card style="min-width: 400px">
           <q-card-section>
-            <div class="text-h6">📋 Duplikovat směnu</div>
+            <div class="text-h6">Upravit směnu</div>
           </q-card-section>
           
           <q-card-section class="q-pt-none">
-            <q-select v-model="newShift.workerId" :options="workerOptions" 
+            <q-select v-model="editShift.workerId" :options="workerOptions" 
               label="Pracovník *" emit-value map-options outlined dense class="q-mb-sm"/>
             
-            <q-select v-model="newShift.contractId" :options="contractOptions" 
+            <q-select v-model="editShift.contractId" :options="contractOptions" 
               label="Zakázka *" emit-value map-options outlined dense class="q-mb-sm"/>
             
-            <q-select v-model="newShift.jobId" :options="jobOptions" 
+            <q-select v-model="editShift.jobId" :options="jobOptions" 
               label="Práce *" emit-value map-options outlined dense class="q-mb-sm"/>
             
-            <q-select v-model="newShift.placeId" :options="placeOptions" 
+            <q-select v-model="editShift.placeId" :options="placeOptions" 
               label="Místo práce *" emit-value map-options outlined dense class="q-mb-sm"/>
             
-            <div class="text-subtitle2 q-mb-sm">Čas</div>
-            
-            <q-input v-model="newShift.customDate" label="Datum" outlined dense readonly class="q-mb-sm">
+            <q-input v-model="editShift.date" label="Datum" outlined dense readonly class="q-mb-sm">
               <template v-slot:append>
                 <q-icon name="event" class="cursor-pointer">
                   <q-popup-proxy>
-                    <q-date v-model="newShift.customDate" mask="DD. MM. YYYY">
+                    <q-date v-model="editShift.date" mask="DD. MM. YYYY">
                       <div class="row items-center justify-end">
                         <q-btn v-close-popup label="OK" color="primary" flat />
                       </div>
@@ -479,29 +544,29 @@ window.app.component('day-overview', {
             
             <div class="row q-gutter-sm q-mb-sm">
               <div class="col">
-                <q-input v-model="newShift.customTimeStart" label="Čas od (HH:MM)" 
-                  outlined dense placeholder="08:00" mask="##:##"/>
+                <q-input v-model="editShift.timeStart" label="Čas od (HH:MM)" 
+                  outlined dense mask="##:##"/>
               </div>
               <div class="col">
-                <q-input v-model="newShift.customTimeEnd" label="Čas do (HH:MM)" 
-                  outlined dense placeholder="16:00" mask="##:##"/>
+                <q-input v-model="editShift.timeEnd" label="Čas do (HH:MM)" 
+                  outlined dense mask="##:##"/>
               </div>
             </div>
             
-            <q-input v-model="newShift.note" label="Poznámka *" outlined dense class="q-mb-sm"/>
+            <q-input v-model="editShift.note" label="Poznámka *" outlined dense class="q-mb-sm"/>
             
-            <q-checkbox v-model="newShift.kmManual" label="Přidat km" dense class="q-mb-sm"/>
+            <q-checkbox v-model="editShift.kmManual" label="Přidat km" dense class="q-mb-sm"/>
             
-            <div v-if="newShift.kmManual">
-              <q-input v-model.number="newShift.kmValue" label="Km jednosměr" 
+            <div v-if="editShift.kmManual">
+              <q-input v-model.number="editShift.kmValue" label="Km jednosměr" 
                 type="number" outlined dense class="q-mb-sm"/>
-              <q-checkbox v-model="newShift.kmRoundTrip" label="Tam a zpět (×2)" dense/>
+              <q-checkbox v-model="editShift.kmRoundTrip" label="Tam a zpět (×2)" dense/>
             </div>
           </q-card-section>
           
           <q-card-actions align="right">
             <q-btn flat label="Zrušit" color="grey" v-close-popup />
-            <q-btn label="Uložit kopii" color="primary" @click="saveNewShift" />
+            <q-btn label="Uložit změny" color="primary" @click="saveEditShift" />
           </q-card-actions>
         </q-card>
       </q-dialog>
@@ -515,7 +580,24 @@ window.app.component('day-overview', {
           
           <q-card-section class="q-pt-none">
             <q-select v-model="newLunch.workerId" :options="workerOptions" 
-              label="Pracovník *" emit-value map-options outlined dense/>
+              label="Pracovník *" emit-value map-options outlined dense class="q-mb-sm"/>
+            
+            <q-input v-model="newLunch.date" label="Datum" outlined dense readonly class="q-mb-sm">
+              <template v-slot:append>
+                <q-icon name="event" class="cursor-pointer">
+                  <q-popup-proxy>
+                    <q-date v-model="newLunch.date" mask="DD. MM. YYYY">
+                      <div class="row items-center justify-end">
+                        <q-btn v-close-popup label="OK" color="primary" flat />
+                      </div>
+                    </q-date>
+                  </q-popup-proxy>
+                </q-icon>
+              </template>
+            </q-input>
+            
+            <q-input v-model="newLunch.time" label="Čas (HH:MM)" 
+              outlined dense mask="##:##"/>
           </q-card-section>
           
           <q-card-actions align="right">
@@ -535,6 +617,20 @@ window.app.component('day-overview', {
           <q-card-section class="q-pt-none">
             <q-select v-model="newAdvance.workerId" :options="workerOptions" 
               label="Pracovník *" emit-value map-options outlined dense class="q-mb-sm"/>
+            
+            <q-input v-model="newAdvance.date" label="Datum" outlined dense readonly class="q-mb-sm">
+              <template v-slot:append>
+                <q-icon name="event" class="cursor-pointer">
+                  <q-popup-proxy>
+                    <q-date v-model="newAdvance.date" mask="DD. MM. YYYY">
+                      <div class="row items-center justify-end">
+                        <q-btn v-close-popup label="OK" color="primary" flat />
+                      </div>
+                    </q-date>
+                  </q-popup-proxy>
+                </q-icon>
+              </template>
+            </q-input>
             
             <q-input v-model.number="newAdvance.amount" label="Částka (Kč) *" 
               type="number" outlined dense class="q-mb-sm"/>
