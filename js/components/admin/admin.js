@@ -95,8 +95,8 @@ window.app.component('admin-component', {
       this.editForm = {
         contractId: contract ? contract[0] : null,
         jobId: job ? job[0] : null,
-        timeFr: record[6],
-        timeTo: record[7],
+        timeFr: record[4],
+        timeTo: record[5],
         note: record[8],
         kmJednosmer: kmJednosmer,
         kmCelkem: kmCelkem,
