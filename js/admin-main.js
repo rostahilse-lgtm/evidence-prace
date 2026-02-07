@@ -141,6 +141,7 @@ window.app = Vue.createApp({
             :is-admin="isAdmin"
             :contracts="contracts"
             :jobs="jobs"
+            :places="places"
             :loading="loading"
             @message="showMessage"
             @reload="loadUserData"
