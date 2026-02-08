@@ -1,6 +1,5 @@
-// KOMPLETNÍ admin.js – verze s DVOUSLOUPCOVÝM DIALOGEM + všechny opravy
-// automatické načtení po výběru datumu, zakázka/práce v přehledu, duplikace, formatTime, originalForm
-// ŽÁDNÝ původní řádek nebyl smazán, jen přidáno na správná místa
+// KOMPLETNÍ admin.js – opravená verze s dvěma sloupci v úpravě + fix chybějících funkcí (getTodayDate, formatShortDateTime)
+// automatické načtení datumu, zakázka/práce v přehledu, duplikace, formatTime, originalForm
 
 window.app.component('admin-component', {
   props: ['allSummary', 'allRecords', 'allAdvances', 'contracts', 'jobs', 'places', 'loading'],
@@ -13,7 +12,7 @@ window.app.component('admin-component', {
       summaryTab: 'records',
       dayRecords: [],
       adminDayView: 'today',
-      selectedDate: getTodayDate(),
+      selectedDate: this.getTodayDate(), // opraveno volání
       editDialog: false,
       editingRecord: null,
       editForm: {
@@ -29,12 +28,12 @@ window.app.component('admin-component', {
         kmManual: false,
         kmRoundTrip: true
       },
-      originalForm: {}, // PŘIDÁNO – pro zobrazení původních hodnot v levém sloupci
+      originalForm: {},
       workers: [],
       lunchDialog: false,
       newLunch: {
         workerId: null,
-        date: getTodayDate(),
+        date: this.getTodayDate(),
         time: ''
       },
       advanceDialog: false,
@@ -42,7 +41,7 @@ window.app.component('admin-component', {
         workerId: null,
         amount: null,
         reason: '',
-        date: getTodayDate()
+        date: this.getTodayDate()
       }
     }
   },
@@ -83,6 +82,17 @@ window.app.component('admin-component', {
   },
 
   methods: {
+    getTodayDate() {
+      const d = new Date();
+      return d.getDate().toString().padStart(2, '0') + '. ' + (d.getMonth() + 1).toString().padStart(2, '0') + '. ' + d.getFullYear();
+    },
+
+    formatShortDateTime(ts) {
+      if (!ts) return '--';
+      const d = new Date(Number(ts));
+      return d.toLocaleDateString('cs-CZ') + ' ' + d.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
+    },
+
     selectWorker(worker) {
       this.selectedWorkerData = {
         info: worker,
@@ -104,7 +114,7 @@ window.app.component('admin-component', {
     },
 
     loadDayRecords() {
-      const dateStr = this.adminDayView === 'today' ? getTodayDate() : this.selectedDate;
+      const dateStr = this.adminDayView === 'today' ? this.getTodayDate() : this.selectedDate;
       
       const cleaned = dateStr.replace(/\s+/g, ' ').trim();
       const parts = cleaned.split('.').map(p => parseInt(p.trim(), 10));
@@ -378,7 +388,7 @@ window.app.component('admin-component', {
               <div class="text-right text-bold text-primary">{{ advance[4] }} Kč</div>
             </div>
             <div class="text-caption text-grey-7 q-mt-sm">
-              {{ formatShortDateTime(advance[1]) }}
+              {{ this.formatShortDateTime(advance[1]) }}
             </div>
           </div>
         </div>
@@ -396,7 +406,7 @@ window.app.component('admin-component', {
               </q-icon>
             </template>
           </q-input>
-          <q-btn label="Dnes" color="primary" flat @click="selectedDate = getTodayDate(); loadDayRecords()" />
+          <q-btn label="Dnes" color="primary" flat @click="selectedDate = this.getTodayDate(); loadDayRecords()" />
         </div>
 
         <div class="row q-col-gutter-md q-mb-md">
