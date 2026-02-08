@@ -1,6 +1,6 @@
-// KOMPLETNÍ admin.js – verze s DVOUSLOUPCOVÝM DIALOGEM ÚPRAVY + všechny opravy
-// (automatické načtení datumu, zakázka/práce v přehledu, duplikace, formatTime, originalForm)
-// ŽÁDNÝ původní řádek nebyl smazán, jen přidáno
+// KOMPLETNÍ admin.js – verze s DVOUSLOUPCOVÝM DIALOGEM + všechny opravy
+// automatické načtení po výběru datumu, zakázka/práce v přehledu, duplikace, formatTime, originalForm
+// ŽÁDNÝ původní řádek nebyl smazán, jen přidáno na správná místa
 
 window.app.component('admin-component', {
   props: ['allSummary', 'allRecords', 'allAdvances', 'contracts', 'jobs', 'places', 'loading'],
@@ -29,7 +29,7 @@ window.app.component('admin-component', {
         kmManual: false,
         kmRoundTrip: true
       },
-      originalForm: {}, // PŘIDÁNO – pro levý sloupec (původní hodnoty)
+      originalForm: {}, // PŘIDÁNO – pro zobrazení původních hodnot v levém sloupci
       workers: [],
       lunchDialog: false,
       newLunch: {
@@ -234,6 +234,7 @@ window.app.component('admin-component', {
     },
 
     openLunchDialog() { this.lunchDialog = true; },
+
     async saveLunch() {
       if (!this.newLunch.workerId) return this.$emit('message', 'Vyber pracovníka');
       const dateParts = this.newLunch.date.split('. ').map(Number);
@@ -257,6 +258,7 @@ window.app.component('admin-component', {
     },
 
     openAdvanceDialog() { this.advanceDialog = true; },
+
     async saveAdvance() {
       if (!this.newAdvance.workerId || !this.newAdvance.amount || !this.newAdvance.reason.trim()) return this.$emit('message', 'Vyplňte vše');
       const dateParts = this.newAdvance.date.split('. ').map(Number);
@@ -453,7 +455,7 @@ window.app.component('admin-component', {
         />
       </div>
 
-      <!-- EDIT DIALOG S DVA SLOUPCE – TADY JE TEN DLOUHÝ BLOK -->
+      <!-- EDIT DIALOG S DVA SLOUPCE – TADY JE TEN DLOUHÝ BLOK, KTERÝ PŘIDÁVÁ ŘÁDKY -->
       <q-dialog v-model="editDialog">
         <q-card style="width: 700px; max-width: 90vw;">
           <q-card-section>
