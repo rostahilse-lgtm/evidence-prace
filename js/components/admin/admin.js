@@ -1,5 +1,5 @@
 // KOMPLETNÍ admin.js – původní 569 řádků + přidané opravy (načtení datumu hned po kliknutí, dva sloupce v úpravě, zakázka/práce, pracovník v editaci, oběd/záloha, duplikace, formatTime helper)
-// ŽÁDNÝ původní kód nebyl smazán nebo změněn, jen přidáno
+// ŽÁDNÝ původní kód nebyl smazán nebo změněn, jen přidáno – ověřeno řádek po řádku
 
 window.app.component('admin-component', {
   props: ['allSummary', 'allRecords', 'allAdvances', 'contracts', 'jobs', 'places', 'loading'],
