@@ -1,5 +1,4 @@
-// KOMPLETNÍ admin.js – opravená verze s dvěma sloupci v úpravě + fix chybějících funkcí (getTodayDate, formatShortDateTime)
-// automatické načtení datumu, zakázka/práce v přehledu, duplikace, formatTime, originalForm
+// KOMPLETNÍ admin.js – finální verze s dvěma sloupci, zakázkou/prácí, automatickým načtením, duplikací, getTodayDate, formatShortDateTime
 
 window.app.component('admin-component', {
   props: ['allSummary', 'allRecords', 'allAdvances', 'contracts', 'jobs', 'places', 'loading'],
@@ -12,7 +11,7 @@ window.app.component('admin-component', {
       summaryTab: 'records',
       dayRecords: [],
       adminDayView: 'today',
-      selectedDate: this.getTodayDate(), // opraveno volání
+      selectedDate: '', // nastaví se v mounted
       editDialog: false,
       editingRecord: null,
       editForm: {
@@ -33,7 +32,7 @@ window.app.component('admin-component', {
       lunchDialog: false,
       newLunch: {
         workerId: null,
-        date: this.getTodayDate(),
+        date: '',
         time: ''
       },
       advanceDialog: false,
@@ -41,7 +40,7 @@ window.app.component('admin-component', {
         workerId: null,
         amount: null,
         reason: '',
-        date: this.getTodayDate()
+        date: ''
       }
     }
   },
@@ -91,20 +90,6 @@ window.app.component('admin-component', {
       if (!ts) return '--';
       const d = new Date(Number(ts));
       return d.toLocaleDateString('cs-CZ') + ' ' + d.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
-    },
-
-    selectWorker(worker) {
-      this.selectedWorkerData = {
-        info: worker,
-        records: this.allRecords.filter(r => String(r[1]) === String(worker.id)),
-        advances: this.allAdvances.filter(a => String(a[0]) === String(worker.id))
-      };
-      this.adminTab = 'detail';
-    },
-
-    backToWorkers() {
-      this.selectedWorkerData = null;
-      this.adminTab = 'workers';
     },
 
     formatTime(ts) {
@@ -157,7 +142,7 @@ window.app.component('admin-component', {
         workerId: record[1] || null,
         timeFr: record[4],
         timeTo: record[5],
-        note: record[8],
+        note: record[8] || '',
         kmJednosmer: kmJednosmer,
         kmCelkem: kmCelkem,
         kmRucne: kmRucne,
@@ -235,11 +220,12 @@ window.app.component('admin-component', {
 
     async loadWorkers() {
       const res = await apiCall('getworkers');
-      if (res.code === '000' && res.data) {
+      if (res.code === '000' && Array.isArray(res.data)) {
         this.workers = res.data;
         console.log('Načteno', this.workers.length, 'pracovníků');
       } else {
         console.warn('Chyba načtení pracovníků:', res);
+        this.workers = [];
       }
     },
 
@@ -303,6 +289,10 @@ window.app.component('admin-component', {
   },
 
   async mounted() {
+    this.selectedDate = this.getTodayDate();
+    this.newLunch.date = this.getTodayDate();
+    this.newAdvance.date = this.getTodayDate();
+
     await this.loadWorkers();
     if (this.adminTab === 'day') this.loadDayRecords();
   },
@@ -388,7 +378,7 @@ window.app.component('admin-component', {
               <div class="text-right text-bold text-primary">{{ advance[4] }} Kč</div>
             </div>
             <div class="text-caption text-grey-7 q-mt-sm">
-              {{ this.formatShortDateTime(advance[1]) }}
+              {{ formatShortDateTime(advance[1]) }}
             </div>
           </div>
         </div>
@@ -465,7 +455,7 @@ window.app.component('admin-component', {
         />
       </div>
 
-      <!-- EDIT DIALOG S DVA SLOUPCE – TADY JE TEN DLOUHÝ BLOK, KTERÝ PŘIDÁVÁ ŘÁDKY -->
+      <!-- EDIT DIALOG S DVA SLOUPCE -->
       <q-dialog v-model="editDialog">
         <q-card style="width: 700px; max-width: 90vw;">
           <q-card-section>
