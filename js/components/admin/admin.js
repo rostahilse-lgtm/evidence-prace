@@ -1,4 +1,4 @@
-// KOMPLETNÍ admin.js – finální verze s dvěma sloupci, zakázkou/prácí, automatickým načtením, duplikací, getTodayDate, formatShortDateTime
+// KOMPLETNÍ admin.js – finální verze s opravami (dva sloupce v dialogu, zakázka/práce, automatické načtení datumu, duplikace, opravy chyb, getTodayDate, formatShortDateTime, ošetření workers)
 
 window.app.component('admin-component', {
   props: ['allSummary', 'allRecords', 'allAdvances', 'contracts', 'jobs', 'places', 'loading'],
@@ -276,6 +276,20 @@ window.app.component('admin-component', {
       } catch (error) {
         this.$emit('message', 'Chyba zálohy');
       }
+    },
+
+    selectWorker(worker) {
+      this.selectedWorkerData = {
+        info: worker,
+        records: this.allRecords.filter(r => String(r[1]) === String(worker.id)),
+        advances: this.allAdvances.filter(a => String(a[0]) === String(worker.id))
+      };
+      this.adminTab = 'detail';
+    },
+
+    backToWorkers() {
+      this.selectedWorkerData = null;
+      this.adminTab = 'workers';
     }
   },
 
