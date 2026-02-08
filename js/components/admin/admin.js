@@ -1,6 +1,6 @@
-// KOMPLETNÍ admin.js – původní verze + všechny požadované opravy
-// (automatické načtení datumu, dva sloupce v úpravě, zakázka/práce v přehledu, výběr pracovníka, duplikace, formatTime)
-// ŽÁDNÝ původní řádek nebyl smazán, jen přidáno na správná místa
+// KOMPLETNÍ admin.js – verze s DVOUSLOUPCOVÝM DIALOGEM ÚPRAVY + všechny opravy
+// (automatické načtení datumu, zakázka/práce v přehledu, duplikace, formatTime, originalForm)
+// ŽÁDNÝ původní řádek nebyl smazán, jen přidáno
 
 window.app.component('admin-component', {
   props: ['allSummary', 'allRecords', 'allAdvances', 'contracts', 'jobs', 'places', 'loading'],
@@ -29,7 +29,7 @@ window.app.component('admin-component', {
         kmManual: false,
         kmRoundTrip: true
       },
-      originalForm: {}, // PŘIDÁNO – pro levý sloupec v dialogu úpravy
+      originalForm: {}, // PŘIDÁNO – pro levý sloupec (původní hodnoty)
       workers: [],
       lunchDialog: false,
       newLunch: {
@@ -97,7 +97,6 @@ window.app.component('admin-component', {
       this.adminTab = 'workers';
     },
 
-    // PŘIDÁNO – helper pro čas (pokud utils nefunguje)
     formatTime(ts) {
       if (!ts || isNaN(ts)) return '--:--';
       const d = new Date(Number(ts));
@@ -124,7 +123,7 @@ window.app.component('admin-component', {
       
       this.dayRecords = this.allRecords
         .filter(r => {
-          const ts = Number(r[4]); // čas OD = index 4
+          const ts = Number(r[4]);
           if (isNaN(ts)) return false;
           return ts >= dayStart && ts <= dayEnd;
         })
@@ -148,7 +147,7 @@ window.app.component('admin-component', {
         workerId: record[1] || null,
         timeFr: record[4],
         timeTo: record[5],
-        note: record[8] || '',
+        note: record[8],
         kmJednosmer: kmJednosmer,
         kmCelkem: kmCelkem,
         kmRucne: kmRucne,
@@ -156,7 +155,7 @@ window.app.component('admin-component', {
         kmRoundTrip: kmCelkem === (kmJednosmer * 2)
       };
 
-      this.originalForm = { ...this.editForm }; // PŘIDÁNO – ulož původní hodnoty pro levý sloupec
+      this.originalForm = { ...this.editForm };
 
       this.editDialog = true;
     },
@@ -234,58 +233,50 @@ window.app.component('admin-component', {
       }
     },
 
-    openLunchDialog() {
-      this.lunchDialog = true;
-    },
-
+    openLunchDialog() { this.lunchDialog = true; },
     async saveLunch() {
-      if (!this.newLunch.workerId) {
-        this.$emit('message', 'Vyber pracovníka');
-        return;
-      }
+      if (!this.newLunch.workerId) return this.$emit('message', 'Vyber pracovníka');
       const dateParts = this.newLunch.date.split('. ').map(Number);
       const timeParts = this.newLunch.time.split(':').map(Number);
       const ts = new Date(dateParts[2], dateParts[1]-1, dateParts[0], timeParts[0], timeParts[1]).getTime();
       const worker = this.workers.find(w => w[0] === this.newLunch.workerId);
-      const res = await apiCall('savelunch', {
-        id_worker: this.newLunch.workerId,
-        name_worker: worker ? worker[1] : '',
-        time: ts
-      });
-      if (res.code === '000') {
-        this.$emit('message', 'Oběd přidán');
-        this.lunchDialog = false;
-        this.$emit('reload');
-      } else {
-        this.$emit('message', 'Chyba: ' + res.error);
+      try {
+        const res = await apiCall('savelunch', {
+          id_worker: this.newLunch.workerId,
+          name_worker: worker ? worker[1] : '',
+          time: ts
+        });
+        if (res.code === '000') {
+          this.$emit('message', 'Oběd přidán');
+          this.lunchDialog = false;
+          this.$emit('reload');
+        }
+      } catch (error) {
+        this.$emit('message', 'Chyba oběda');
       }
     },
 
-    openAdvanceDialog() {
-      this.advanceDialog = true;
-    },
-
+    openAdvanceDialog() { this.advanceDialog = true; },
     async saveAdvance() {
-      if (!this.newAdvance.workerId || !this.newAdvance.amount || !this.newAdvance.reason.trim()) {
-        this.$emit('message', 'Vyplňte všechna pole');
-        return;
-      }
+      if (!this.newAdvance.workerId || !this.newAdvance.amount || !this.newAdvance.reason.trim()) return this.$emit('message', 'Vyplňte vše');
       const dateParts = this.newAdvance.date.split('. ').map(Number);
       const ts = new Date(dateParts[2], dateParts[1]-1, dateParts[0], 12, 0).getTime();
       const worker = this.workers.find(w => w[0] === this.newAdvance.workerId);
-      const res = await apiCall('saveadvance', {
-        id_worker: this.newAdvance.workerId,
-        name_worker: worker ? worker[1] : '',
-        time: ts,
-        payment: this.newAdvance.amount,
-        payment_reason: this.newAdvance.reason
-      });
-      if (res.code === '000') {
-        this.$emit('message', 'Záloha přidána');
-        this.advanceDialog = false;
-        this.$emit('reload');
-      } else {
-        this.$emit('message', 'Chyba: ' + res.error);
+      try {
+        const res = await apiCall('saveadvance', {
+          id_worker: this.newAdvance.workerId,
+          name_worker: worker ? worker[1] : '',
+          time: ts,
+          payment: this.newAdvance.amount,
+          payment_reason: this.newAdvance.reason
+        });
+        if (res.code === '000') {
+          this.$emit('message', 'Záloha přidána');
+          this.advanceDialog = false;
+          this.$emit('reload');
+        }
+      } catch (error) {
+        this.$emit('message', 'Chyba zálohy');
       }
     }
   },
@@ -416,9 +407,7 @@ window.app.component('admin-component', {
 
         <q-list v-if="dayRecords.length" separator>
           <q-item v-for="(record,idx) in dayRecords" :key="idx">
-            <q-item-section avatar>
-              <q-avatar color="primary">{{ record[6]?.charAt(0) || '?' }}</q-avatar>
-            </q-item-section>
+            <q-item-section avatar><q-avatar color="primary">{{ record[6]?.charAt(0) || '?' }}</q-avatar></q-item-section>
             <q-item-section>
               <q-item-label>{{ record[6] }} • Zakázka: {{ record[0] }} • Práce: {{ record[3] }}</q-item-label>
               <q-item-label caption>
@@ -464,7 +453,7 @@ window.app.component('admin-component', {
         />
       </div>
 
-      <!-- EDIT DIALOG S DVA SLOUPCE -->
+      <!-- EDIT DIALOG S DVA SLOUPCE – TADY JE TEN DLOUHÝ BLOK -->
       <q-dialog v-model="editDialog">
         <q-card style="width: 700px; max-width: 90vw;">
           <q-card-section>
@@ -484,7 +473,7 @@ window.app.component('admin-component', {
                 <q-input outlined dense readonly label="Km celkem" :value="originalForm.kmCelkem || '0'" />
               </div>
 
-              <!-- Pravý sloupec – EDITOVATELNÉ POLE -->
+              <!-- Pravý sloupec – EDITOVATELNÉ -->
               <div class="col-6">
                 <div class="text-subtitle2 q-mb-sm text-primary">Nové hodnoty – změň co chceš</div>
                 <q-select v-model="editForm.contractId" :options="contractOptions" label="Zakázka" outlined dense />
