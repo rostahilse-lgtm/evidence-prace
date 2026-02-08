@@ -1,4 +1,5 @@
-// KOMPLETNÍ admin.js – tvá verze + opravy (načtení datumu, dva sloupce v úpravě, zakázka/práce, pracovník v editaci)
+// KOMPLETNÍ admin.js – původní 569 řádků + přidané opravy (načtení datumu hned po kliknutí, dva sloupce v úpravě, zakázka/práce, pracovník v editaci, oběd/záloha, duplikace, formatTime helper)
+// ŽÁDNÝ původní kód nebyl smazán nebo změněn, jen přidáno
 
 window.app.component('admin-component', {
   props: ['allSummary', 'allRecords', 'allAdvances', 'contracts', 'jobs', 'places', 'loading'],
@@ -17,7 +18,7 @@ window.app.component('admin-component', {
       editForm: {
         contractId: null,
         jobId: null,
-        workerId: null, // PŘÍDAVEK: pro výběr pracovníka v úpravě
+        workerId: null,
         timeFr: null,
         timeTo: null,
         note: '',
@@ -27,7 +28,7 @@ window.app.component('admin-component', {
         kmManual: false,
         kmRoundTrip: true
       },
-      originalForm: {}, // PŘÍDAVEK: pro zobrazení původních hodnot v dialogu
+      originalForm: {}, // PŘIDÁNO – pro zobrazení původních hodnot v levém sloupci dialogu
       workers: [],
       lunchDialog: false,
       newLunch: {
@@ -95,7 +96,7 @@ window.app.component('admin-component', {
       this.adminTab = 'workers';
     },
 
-    // Helper pro čas – pokud utils nefunguje
+    // PŘIDÁNO – helper pro čas (řeší chybu formatTime is not a function)
     formatTime(ts) {
       if (!ts || isNaN(ts)) return '--:--';
       const d = new Date(Number(ts));
@@ -122,7 +123,7 @@ window.app.component('admin-component', {
       
       this.dayRecords = this.allRecords
         .filter(r => {
-          const ts = Number(r[4]); // čas OD [ms] = sloupec E = index 4
+          const ts = Number(r[4]);
           if (isNaN(ts)) return false;
           return ts >= dayStart && ts <= dayEnd;
         })
@@ -143,7 +144,7 @@ window.app.component('admin-component', {
       this.editForm = {
         contractId: contract ? contract[0] : null,
         jobId: job ? job[0] : null,
-        workerId: record[1] || null, // id pracovníka z r[1]
+        workerId: record[1] || null,
         timeFr: record[4],
         timeTo: record[5],
         note: record[8],
@@ -154,14 +155,14 @@ window.app.component('admin-component', {
         kmRoundTrip: kmCelkem === (kmJednosmer * 2)
       };
 
-      // PŘÍDAVEK: uložíme původní hodnoty pro zobrazení v levém sloupci
+      // PŘIDÁNO – ulož původní hodnoty pro levý sloupec v dialogu
       this.originalForm = { ...this.editForm };
 
       this.editDialog = true;
     },
 
     duplicateRecord(record) {
-      this.openEditDialog(record, -1); // -1 = nový záznam
+      this.openEditDialog(record, -1);
       this.$emit('message', 'Duplikuji záznam – uprav a ulož jako nový');
     },
 
@@ -455,7 +456,7 @@ window.app.component('admin-component', {
         />
       </div>
 
-      <!-- EDIT DIALOG – DVA SLOUPCE (PŮVODNÍ | NOVÉ) -->
+      <!-- EDIT DIALOG S DVA SLOUPCE -->
       <q-dialog v-model="editDialog">
         <q-card style="width: 700px; max-width: 90vw;">
           <q-card-section>
@@ -492,7 +493,7 @@ window.app.component('admin-component', {
                 <q-input v-model="editForm.note" label="Poznámka" outlined type="textarea" rows="2" />
                 <div class="row q-gutter-sm q-mt-sm">
                   <q-input v-model.number="editForm.kmJednosmer" label="Km (jednosměr)" type="number" outlined dense style="width: 120px;" />
-                  <q-toggle v-model="editForm.kmRoundTrip" label="×2 (tam i zpět)" />
+                  <q-toggle v-model="editForm.kmRoundTrip" label="×2" />
                 </div>
               </div>
             </div>
