@@ -1,4 +1,4 @@
-// KOMPLETNÍ admin.js - FINÁLNÍ OPRAVENÁ VERZE
+// KOMPLETNÍ admin.js - FINÁLNÍ OPRAVENÁ VERZE V2
 
 window.app.component('admin-component', {
   props: ['allSummary', 'allRecords', 'allAdvances', 'contracts', 'jobs', 'places', 'loading'],
@@ -19,11 +19,13 @@ window.app.component('admin-component', {
       advanceDialog: false,
       editingRecord: null,
       editForm: { 
+        workerId: null,
         contractId: null, 
         jobId: null,
         placeId: null,
-        timeFr: null, 
-        timeTo: null, 
+        dateEdit: null,
+        timeFrom: null,
+        timeTo: null,
         note: '',
         kmJednosmer: 0,
         kmCelkem: 0,
@@ -98,6 +100,25 @@ window.app.component('admin-component', {
       return `${day}. ${month}. ${hours}:${minutes}`;
     },
     
+    timestampToDate(ts) {
+      const d = new Date(ts);
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = d.getFullYear();
+      return `${day}. ${month}. ${year}`;
+    },
+    
+    timestampToTime(ts) {
+      const d = new Date(ts);
+      return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    },
+    
+    dateTimeToTimestamp(dateStr, timeStr) {
+      const dateParts = dateStr.split('. ');
+      const timeParts = timeStr.split(':');
+      return new Date(dateParts[2], dateParts[1] - 1, dateParts[0], timeParts[0], timeParts[1]).getTime();
+    },
+    
     async loadWorkers() {
       const res = await apiCall('get', { type: 'workers' });
       if (res.code === '000' && res.data) {
@@ -135,41 +156,39 @@ window.app.component('admin-component', {
     openEditDialog(record, index) {
       this.editingRecord = { data: record, index: index };
       
-      // PŮVODNÍ HODNOTY (pro levý sloupec)
+      // PŮVODNÍ HODNOTY
       this.originalRecord = {
         worker: record[6],
         contract: record[0],
         job: record[3],
         place: record[14] || 'Nezadáno',
-        timeFrom: formatTime(record[4]),
-        timeTo: formatTime(record[5]),
+        timeFrom: this.timestampToTime(record[4]),
+        timeTo: this.timestampToTime(record[5]),
+        date: this.timestampToDate(record[4]),
         note: record[8] || '',
         km: record[12] || 0
       };
       
-      // EDITOVATELNÉ HODNOTY (pro pravý sloupec)
+      // EDITOVATELNÉ HODNOTY
       const worker = this.workers.find(w => w[1] === record[6]);
       const contract = this.contracts.find(c => c[1] === record[0]);
       const job = this.jobs.find(j => j[1] === record[3]);
       const place = this.places ? this.places.find(p => p[1] === record[14]) : null;
-      
-      const kmJednosmer = record[11] || 0;
-      const kmCelkem = record[12] || 0;
-      const kmRucne = record[13] || 'N';
       
       this.editForm = {
         workerId: worker ? worker[0] : null,
         contractId: contract ? contract[0] : null,
         jobId: job ? job[0] : null,
         placeId: place ? place[0] : null,
-        timeFr: record[4],
-        timeTo: record[5],
+        dateEdit: this.timestampToDate(record[4]),
+        timeFrom: this.timestampToTime(record[4]),
+        timeTo: this.timestampToTime(record[5]),
         note: record[8] || '',
-        kmJednosmer: kmJednosmer,
-        kmCelkem: kmCelkem,
-        kmRucne: kmRucne,
-        kmManual: kmRucne === 'Y',
-        kmRoundTrip: kmCelkem === (kmJednosmer * 2)
+        kmJednosmer: parseFloat(record[11]) || 0,
+        kmCelkem: parseFloat(record[12]) || 0,
+        kmRucne: record[13] || 'N',
+        kmManual: record[13] === 'Y',
+        kmRoundTrip: parseFloat(record[12]) === (parseFloat(record[11]) * 2)
       };
       
       this.editDialog = true;
@@ -186,8 +205,9 @@ window.app.component('admin-component', {
         contractId: contract ? contract[0] : null,
         jobId: job ? job[0] : null,
         placeId: place ? place[0] : null,
-        timeFr: record[4],
-        timeTo: record[5],
+        dateEdit: this.getTodayDate(),
+        timeFrom: this.timestampToTime(record[4]),
+        timeTo: this.timestampToTime(record[5]),
         note: record[8] || '',
         kmJednosmer: parseFloat(record[11]) || 0,
         kmCelkem: parseFloat(record[12]) || 0,
@@ -219,10 +239,13 @@ window.app.component('admin-component', {
     },
     
     async saveEdit() {
-      if (!this.editForm.contractId || !this.editForm.jobId || !this.editForm.placeId || !this.editForm.timeFr || !this.editForm.timeTo) {
+      if (!this.editForm.workerId || !this.editForm.contractId || !this.editForm.jobId || !this.editForm.placeId || !this.editForm.timeFrom || !this.editForm.timeTo) {
         this.$emit('message', 'Vyplňte všechna pole');
         return;
       }
+      
+      const timeFr = this.dateTimeToTimestamp(this.editForm.dateEdit, this.editForm.timeFrom);
+      const timeTo = this.dateTimeToTimestamp(this.editForm.dateEdit, this.editForm.timeTo);
       
       try {
         const payload = {
@@ -230,8 +253,8 @@ window.app.component('admin-component', {
           id_worker: this.editForm.workerId,
           id_job: this.editForm.jobId,
           id_place: this.editForm.placeId,
-          time_fr: this.editForm.timeFr,
-          time_to: this.editForm.timeTo,
+          time_fr: timeFr,
+          time_to: timeTo,
           note: this.editForm.note
         };
         
@@ -257,10 +280,13 @@ window.app.component('admin-component', {
     },
     
     async saveDuplicate() {
-      if (!this.editForm.workerId || !this.editForm.contractId || !this.editForm.jobId || !this.editForm.placeId || !this.editForm.timeFr || !this.editForm.timeTo) {
+      if (!this.editForm.workerId || !this.editForm.contractId || !this.editForm.jobId || !this.editForm.placeId || !this.editForm.timeFrom || !this.editForm.timeTo) {
         this.$emit('message', 'Vyplňte všechna pole');
         return;
       }
+      
+      const timeFr = this.dateTimeToTimestamp(this.editForm.dateEdit, this.editForm.timeFrom);
+      const timeTo = this.dateTimeToTimestamp(this.editForm.dateEdit, this.editForm.timeTo);
       
       try {
         const payload = {
@@ -268,8 +294,8 @@ window.app.component('admin-component', {
           id_worker: this.editForm.workerId,
           id_job: this.editForm.jobId,
           id_place: this.editForm.placeId,
-          time_fr: this.editForm.timeFr,
-          time_to: this.editForm.timeTo,
+          time_fr: timeFr,
+          time_to: timeTo,
           note: this.editForm.note
         };
         
@@ -300,9 +326,7 @@ window.app.component('admin-component', {
         return;
       }
       
-      const dateParts = this.newLunch.date.split('. ');
-      const timeParts = this.newLunch.time.split(':');
-      const timestamp = new Date(dateParts[2], dateParts[1] - 1, dateParts[0], timeParts[0], timeParts[1]).getTime();
+      const timestamp = this.dateTimeToTimestamp(this.newLunch.date, this.newLunch.time);
       
       try {
         const worker = this.workers.find(w => w[0] === this.newLunch.workerId);
@@ -492,12 +516,8 @@ window.app.component('admin-component', {
           <q-input v-model="selectedDate" outlined dense label="Datum" readonly>
             <template v-slot:append>
               <q-icon name="event" class="cursor-pointer">
-                <q-popup-proxy cover transition-show="scale" transition-hide="scale">
-                  <q-date v-model="selectedDate" mask="DD. MM. YYYY" locale="cs" @update:model-value="loadDayRecords">
-                    <div class="row items-center justify-end">
-                      <q-btn v-close-popup label="Zavřít" color="primary" flat />
-                    </div>
-                  </q-date>
+                <q-popup-proxy cover>
+                  <q-date v-model="selectedDate" mask="DD. MM. YYYY" locale="cs" @update:model-value="loadDayRecords" />
                 </q-popup-proxy>
               </q-icon>
             </template>
@@ -557,58 +577,47 @@ window.app.component('admin-component', {
 
       <!-- DIALOG - ÚPRAVA (DVA SLOUPCE) -->
       <q-dialog v-model="editDialog">
-        <q-card style="min-width:600px">
+        <q-card style="min-width:700px">
           <q-card-section>
             <div class="text-h6">Upravit záznam</div>
           </q-card-section>
 
           <q-card-section class="q-pt-none">
             <div class="row q-gutter-md">
-              <!-- LEVÝ SLOUPEC - PŮVODNÍ HODNOTY (READONLY) -->
+              <!-- LEVÝ SLOUPEC - PŮVODNÍ -->
               <div class="col">
                 <div class="text-subtitle2 q-mb-sm">Původní hodnoty:</div>
-                
                 <q-input v-model="originalRecord.worker" label="Pracovník" outlined dense readonly class="q-mb-sm"/>
                 <q-input v-model="originalRecord.contract" label="Zakázka" outlined dense readonly class="q-mb-sm"/>
                 <q-input v-model="originalRecord.job" label="Práce" outlined dense readonly class="q-mb-sm"/>
                 <q-input v-model="originalRecord.place" label="Místo" outlined dense readonly class="q-mb-sm"/>
+                <q-input v-model="originalRecord.date" label="Datum" outlined dense readonly class="q-mb-sm"/>
                 <q-input v-model="originalRecord.timeFrom" label="Čas od" outlined dense readonly class="q-mb-sm"/>
                 <q-input v-model="originalRecord.timeTo" label="Čas do" outlined dense readonly class="q-mb-sm"/>
                 <q-input v-model="originalRecord.note" label="Poznámka" outlined dense readonly class="q-mb-sm"/>
                 <q-input v-model="originalRecord.km" label="Km" outlined dense readonly/>
               </div>
               
-              <!-- PRAVÝ SLOUPEC - EDITOVATELNÉ HODNOTY -->
+              <!-- PRAVÝ SLOUPEC - EDITOVATELNÉ -->
               <div class="col">
                 <div class="text-subtitle2 q-mb-sm">Nové hodnoty:</div>
-                
                 <q-select v-model="editForm.workerId" :options="workerOptions" label="Pracovník" emit-value map-options outlined dense class="q-mb-sm"/>
                 <q-select v-model="editForm.contractId" :options="contractOptions" label="Zakázka" emit-value map-options outlined dense class="q-mb-sm"/>
                 <q-select v-model="editForm.jobId" :options="jobOptions" label="Práce" emit-value map-options outlined dense class="q-mb-sm"/>
                 <q-select v-model="editForm.placeId" :options="placeOptions" label="Místo práce" emit-value map-options outlined dense class="q-mb-sm"/>
                 
-                <q-input 
-                  v-model="editForm.timeFr" 
-                  label="Čas od" 
-                  type="datetime-local" 
-                  outlined 
-                  dense 
-                  :model-value="new Date(editForm.timeFr).toISOString().slice(0,16)" 
-                  @update:model-value="editForm.timeFr=new Date($event).getTime()"
-                  class="q-mb-sm"
-                />
+                <q-input v-model="editForm.dateEdit" label="Datum" outlined dense readonly class="q-mb-sm">
+                  <template v-slot:append>
+                    <q-icon name="event" class="cursor-pointer">
+                      <q-popup-proxy cover>
+                        <q-date v-model="editForm.dateEdit" mask="DD. MM. YYYY" locale="cs" />
+                      </q-popup-proxy>
+                    </q-icon>
+                  </template>
+                </q-input>
                 
-                <q-input 
-                  v-model="editForm.timeTo" 
-                  label="Čas do" 
-                  type="datetime-local" 
-                  outlined 
-                  dense 
-                  :model-value="new Date(editForm.timeTo).toISOString().slice(0,16)" 
-                  @update:model-value="editForm.timeTo=new Date($event).getTime()"
-                  class="q-mb-sm"
-                />
-                
+                <q-input v-model="editForm.timeFrom" label="Čas od (HH:MM)" outlined dense mask="##:##" class="q-mb-sm"/>
+                <q-input v-model="editForm.timeTo" label="Čas do (HH:MM)" outlined dense mask="##:##" class="q-mb-sm"/>
                 <q-input v-model="editForm.note" label="Poznámka" outlined dense class="q-mb-sm"/>
                 
                 <q-checkbox v-model="editForm.kmManual" label="Zadat km" dense class="q-mb-sm"/>
@@ -637,28 +646,18 @@ window.app.component('admin-component', {
             <q-select v-model="editForm.jobId" :options="jobOptions" label="Práce" emit-value map-options outlined dense class="q-mb-sm"/>
             <q-select v-model="editForm.placeId" :options="placeOptions" label="Místo práce" emit-value map-options outlined dense class="q-mb-sm"/>
             
-            <q-input 
-              v-model="editForm.timeFr" 
-              label="Čas od" 
-              type="datetime-local" 
-              outlined 
-              dense 
-              :model-value="new Date(editForm.timeFr).toISOString().slice(0,16)" 
-              @update:model-value="editForm.timeFr=new Date($event).getTime()"
-              class="q-mb-sm"
-            />
+            <q-input v-model="editForm.dateEdit" label="Datum" outlined dense readonly class="q-mb-sm">
+              <template v-slot:append>
+                <q-icon name="event" class="cursor-pointer">
+                  <q-popup-proxy cover>
+                    <q-date v-model="editForm.dateEdit" mask="DD. MM. YYYY" locale="cs" />
+                  </q-popup-proxy>
+                </q-icon>
+              </template>
+            </q-input>
             
-            <q-input 
-              v-model="editForm.timeTo" 
-              label="Čas do" 
-              type="datetime-local" 
-              outlined 
-              dense 
-              :model-value="new Date(editForm.timeTo).toISOString().slice(0,16)" 
-              @update:model-value="editForm.timeTo=new Date($event).getTime()"
-              class="q-mb-sm"
-            />
-            
+            <q-input v-model="editForm.timeFrom" label="Čas od (HH:MM)" outlined dense mask="##:##" class="q-mb-sm"/>
+            <q-input v-model="editForm.timeTo" label="Čas do (HH:MM)" outlined dense mask="##:##" class="q-mb-sm"/>
             <q-input v-model="editForm.note" label="Poznámka" outlined dense class="q-mb-sm"/>
             
             <q-checkbox v-model="editForm.kmManual" label="Zadat km" dense class="q-mb-sm"/>
@@ -686,12 +685,8 @@ window.app.component('admin-component', {
             <q-input v-model="newLunch.date" label="Datum" outlined dense readonly class="q-mb-sm">
               <template v-slot:append>
                 <q-icon name="event" class="cursor-pointer">
-                  <q-popup-proxy>
-                    <q-date v-model="newLunch.date" mask="DD. MM. YYYY" locale="cs">
-                      <div class="row items-center justify-end">
-                        <q-btn v-close-popup label="OK" color="primary" flat />
-                      </div>
-                    </q-date>
+                  <q-popup-proxy cover>
+                    <q-date v-model="newLunch.date" mask="DD. MM. YYYY" locale="cs" />
                   </q-popup-proxy>
                 </q-icon>
               </template>
@@ -721,12 +716,8 @@ window.app.component('admin-component', {
             <q-input v-model="newAdvance.date" label="Datum" outlined dense readonly class="q-mb-sm">
               <template v-slot:append>
                 <q-icon name="event" class="cursor-pointer">
-                  <q-popup-proxy>
-                    <q-date v-model="newAdvance.date" mask="DD. MM. YYYY" locale="cs">
-                      <div class="row items-center justify-end">
-                        <q-btn v-close-popup label="OK" color="primary" flat />
-                      </div>
-                    </q-date>
+                  <q-popup-proxy cover>
+                    <q-date v-model="newAdvance.date" mask="DD. MM. YYYY" locale="cs" />
                   </q-popup-proxy>
                 </q-icon>
               </template>
