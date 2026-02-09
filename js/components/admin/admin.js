@@ -1,4 +1,4 @@
-// KOMPLETNÍ admin.js - OTESTOVANÁ FINÁLNÍ VERZE
+// KOMPLETNÍ admin.js - SPRÁVNÁ VERZE
 
 window.app.component('admin-component', {
   props: ['allSummary', 'allRecords', 'allAdvances', 'contracts', 'jobs', 'places', 'loading'],
@@ -87,6 +87,11 @@ window.app.component('admin-component', {
       return `${day}. ${month}. ${year}`;
     },
     
+    setToday() {
+      this.selectedDate = this.getTodayDate();
+      this.loadDayRecords();
+    },
+    
     getCurrentTime() {
       const now = new Date();
       return String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
@@ -173,17 +178,17 @@ window.app.component('admin-component', {
         km: record[12] || 0
       };
       
-      // EDITOVATELNÉ HODNOTY - OPRAVA: Hledám podle ID/názvu správně
+      // EDITOVATELNÉ HODNOTY
       const worker = this.workers.find(w => w[1] === record[6]);
       const contract = this.contracts.find(c => c[1] === record[0]);
       const job = this.jobs.find(j => j[1] === record[3]);
       
-      // OPRAVA MÍSTA: Musím najít podle NÁZVU (record[14]), ne podle ID
+      // OPRAVA MÍSTA - hledat podle NÁZVU
       let placeId = null;
       if (record[14] && this.places && Array.isArray(this.places)) {
-        const place = this.places.find(p => p[1] === record[14]);
-        if (place) {
-          placeId = place[0];
+        const foundPlace = this.places.find(p => String(p[1]).trim() === String(record[14]).trim());
+        if (foundPlace) {
+          placeId = foundPlace[0];
         }
       }
       
@@ -209,12 +214,12 @@ window.app.component('admin-component', {
       const contract = this.contracts.find(c => c[1] === record[0]);
       const job = this.jobs.find(j => j[1] === record[3]);
       
-      // OPRAVA MÍSTA - stejně jako v openEditDialog
+      // OPRAVA MÍSTA - hledat podle NÁZVU
       let placeId = null;
       if (record[14] && this.places && Array.isArray(this.places)) {
-        const place = this.places.find(p => p[1] === record[14]);
-        if (place) {
-          placeId = place[0];
+        const foundPlace = this.places.find(p => String(p[1]).trim() === String(record[14]).trim());
+        if (foundPlace) {
+          placeId = foundPlace[0];
         }
       }
       
@@ -423,16 +428,18 @@ window.app.component('admin-component', {
         <q-tab name="stats" label="Statistiky"/>
       </q-tabs>
 
-      <!-- PRACOVNÍCI - KOMPAKTNÍ ZOBRAZENÍ -->
+      <!-- PRACOVNÍCI - KOMPAKTNÍ (1 ŘÁDEK) -->
       <div v-if="adminTab==='workers'" class="q-pt-md">
         <div v-for="worker in allSummary" :key="worker.id" class="worker-card" @click="selectWorker(worker)">
-          <div class="row items-center q-gutter-x-md">
-            <div style="min-width: 150px">
+          <div class="row items-center no-wrap q-gutter-x-md">
+            <div style="min-width: 120px; max-width: 150px">
               <div class="text-bold">{{ worker.name }}</div>
-              <div class="text-caption text-grey-7">ID: {{ worker.id }}</div>
             </div>
-            <div class="text-caption text-grey-7" style="min-width: 100px">
-              Vyděleno: {{ worker.totalEarnings }} Kč
+            <div class="text-caption text-grey-7" style="min-width: 80px">
+              ID: {{ worker.id }}
+            </div>
+            <div class="text-caption text-grey-7" style="min-width: 120px">
+              {{ worker.totalEarnings }} Kč
             </div>
             <div class="text-right" style="min-width: 100px">
               <div class="text-bold" :class="worker.balance>=0?'balance-positive':'balance-negative'">
@@ -507,26 +514,23 @@ window.app.component('admin-component', {
         </div>
       </div>
 
-      <!-- PŘEHLED DNE - KOMPAKTNÍ -->
+      <!-- PŘEHLED DNE - S TLAČÍTKEM DNES -->
       <div v-if="adminTab==='day'" class="q-pt-md">
         <div class="row q-gutter-sm q-mb-md items-center">
-          <div class="col-6">
-            <q-input v-model="selectedDate" outlined dense label="Datum" readonly>
-              <template v-slot:append>
-                <q-icon name="event" class="cursor-pointer">
-                  <q-popup-proxy cover @before-hide="loadDayRecords">
-                    <q-date v-model="selectedDate" mask="DD. MM. YYYY" locale="cs" />
-                  </q-popup-proxy>
-                </q-icon>
-              </template>
-            </q-input>
-          </div>
-          <div class="col">
-            <q-btn color="primary" label="Oběd" icon="restaurant" dense @click="openLunchDialog" class="full-width"/>
-          </div>
-          <div class="col">
-            <q-btn color="primary" label="Záloha" icon="payment" dense @click="openAdvanceDialog" class="full-width"/>
-          </div>
+          <q-btn color="primary" label="Dnes" @click="setToday" dense style="min-width: 80px"/>
+          
+          <q-input v-model="selectedDate" outlined dense label="Datum" readonly style="flex: 1">
+            <template v-slot:append>
+              <q-icon name="event" class="cursor-pointer">
+                <q-popup-proxy cover @before-hide="loadDayRecords">
+                  <q-date v-model="selectedDate" mask="DD. MM. YYYY" locale="cs" />
+                </q-popup-proxy>
+              </q-icon>
+            </template>
+          </q-input>
+          
+          <q-btn color="primary" label="Oběd" icon="restaurant" dense @click="openLunchDialog"/>
+          <q-btn color="primary" label="Záloha" icon="payment" dense @click="openAdvanceDialog"/>
         </div>
 
         <div v-if="dayRecords.length===0" class="text-center text-grey-7 q-mt-lg">
