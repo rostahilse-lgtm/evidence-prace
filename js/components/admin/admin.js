@@ -166,7 +166,7 @@ window.app.component('admin-component', {
         worker: record[6],
         contract: record[0],
         job: record[3],
-        place: record[14] || 'Nezadáno',
+        place: record[14],
         timeFrom: this.timestampToTime(record[4]),
         timeTo: this.timestampToTime(record[5]),
         date: this.timestampToDate(record[4]),
@@ -178,12 +178,8 @@ window.app.component('admin-component', {
       const worker = this.workers.find(w => w[1] === record[6]);
       const contract = this.contracts.find(c => c[1] === record[0]);
       const job = this.jobs.find(j => j[1] === record[3]);
-      
-      // MÍSTO: Hledat podle NÁZVU (record[14] obsahuje název!)
-      let placeId = null;
-      if (record[14] && this.places) {
-        const place = this.places.find(p => p[1] === record[14]);
-        placeId = place ? place[0] : null;
+      const place = this.places.find(p => p[1] === record[14]);
+       
       }
       
       this.editForm = {
@@ -191,6 +187,7 @@ window.app.component('admin-component', {
         contractId: contract ? contract[0] : null,
         jobId: job ? job[0] : null,
         placeId: placeId,
+        placeId: place ? place[0] : null;
         dateEdit: this.timestampToDate(record[4]),
         timeFrom: this.timestampToTime(record[4]),
         timeTo: this.timestampToTime(record[5]),
@@ -207,12 +204,8 @@ window.app.component('admin-component', {
       const worker = this.workers.find(w => w[1] === record[6]);
       const contract = this.contracts.find(c => c[1] === record[0]);
       const job = this.jobs.find(j => j[1] === record[3]);
-      
-      // MÍSTO: stejná logika
-      let placeId = null;
-      if (record[14] && this.places) {
         const place = this.places.find(p => p[1] === record[14]);
-        placeId = place ? place[0] : null;
+        
       }
       
       this.editForm = {
@@ -220,6 +213,7 @@ window.app.component('admin-component', {
         contractId: contract ? contract[0] : null,
         jobId: job ? job[0] : null,
         placeId: placeId,
+        placeId: place ? place[0] : null;
         dateEdit: this.getTodayDate(),
         timeFrom: this.timestampToTime(record[4]),
         timeTo: this.timestampToTime(record[5]),
