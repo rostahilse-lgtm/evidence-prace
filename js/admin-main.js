@@ -165,6 +165,7 @@ window.app = Vue.createApp({
             :all-advances="allAdvances"
             :contracts="contracts"
             :jobs="jobs"
+            :places="places"
             :loading="loading"
             @message="showMessage"
             @reload="loadAdminData"
@@ -176,6 +177,7 @@ window.app = Vue.createApp({
             :all-advances="allAdvances"
             :contracts="contracts"
             :jobs="jobs"
+            :places="places"
             @message="showMessage"
           />
 
