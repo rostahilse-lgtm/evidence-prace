@@ -1,5 +1,5 @@
-// ADMIN.JS - KONEČNĚ SPRÁVNÁ VERZE!
-// MÍSTO opraveno PŘESNĚ podle home.js (tam to funguje!)
+// ADMIN.JS - ČISTÁ FINÁLNÍ VERZE
+// Místo opraveno PŘESNĚ podle job (hledání podle názvu p[1])
 
 window.app.component('admin-component', {
   props: ['allSummary', 'allRecords', 'allAdvances', 'contracts', 'jobs', 'places', 'loading'],
@@ -53,9 +53,8 @@ window.app.component('admin-component', {
     jobOptions() {
       return this.jobs.map(j => ({ label: j[1], value: j[0] }));
     },
-    // OPRAVA 1: placeOptions - PŘESNĚ podle home.js!
     placeOptions() {
-      return this.places.map(p => ({ label: p[1], value: p[0] }));
+      return this.places ? this.places.map(p => ({ label: p[1], value: p[0] })) : [];
     },
     workerOptions() {
       return this.workers.map(w => ({ label: w[1], value: w[0] }));
@@ -160,7 +159,6 @@ window.app.component('admin-component', {
       this.loadDayRecords();
     },
     
-    // OPRAVA 2: openEditDialog - najít placeId STEJNĚ jako v home.js!
     openEditDialog(record, index) {
       this.editingRecord = { data: record, index: index };
       
@@ -177,17 +175,17 @@ window.app.component('admin-component', {
         km: record[12] || 0
       };
       
-      // EDITOVATELNÉ - najít IDs
+      // EDITOVATELNÉ - najít IDs (STEJNĚ JAKO JOB!)
       const worker = this.workers.find(w => w[1] === record[6]);
       const contract = this.contracts.find(c => c[1] === record[0]);
       const job = this.jobs.find(j => j[1] === record[3]);
-      const place = this.places.find(p => p[1] === record[14]);  // STEJNĚ JAKO JOB!
+      const place = this.places ? this.places.find(p => p[1] === record[14]) : null;
       
       this.editForm = {
         workerId: worker ? worker[0] : null,
         contractId: contract ? contract[0] : null,
         jobId: job ? job[0] : null,
-        placeId: place ? place[0] : null,  // STEJNĚ JAKO JOB!
+        placeId: place ? place[0] : null,
         dateEdit: this.timestampToDate(record[4]),
         timeFrom: this.timestampToTime(record[4]),
         timeTo: this.timestampToTime(record[5]),
@@ -200,18 +198,17 @@ window.app.component('admin-component', {
       this.editDialog = true;
     },
     
-    // OPRAVA 3: openDuplicateDialog - stejná logika
     openDuplicateDialog(record) {
       const worker = this.workers.find(w => w[1] === record[6]);
       const contract = this.contracts.find(c => c[1] === record[0]);
       const job = this.jobs.find(j => j[1] === record[3]);
-      const place = this.places.find(p => p[1] === record[14]);  // STEJNĚ JAKO JOB!
+      const place = this.places ? this.places.find(p => p[1] === record[14]) : null;
       
       this.editForm = {
         workerId: worker ? worker[0] : null,
         contractId: contract ? contract[0] : null,
         jobId: job ? job[0] : null,
-        placeId: place ? place[0] : null,  // STEJNĚ JAKO JOB!
+        placeId: place ? place[0] : null,
         dateEdit: this.getTodayDate(),
         timeFrom: this.timestampToTime(record[4]),
         timeTo: this.timestampToTime(record[5]),
@@ -560,11 +557,11 @@ window.app.component('admin-component', {
         />
       </div>
 
-      <!-- DIALOG - ÚPRAVA (KOMPAKTNÍ PRO MOBIL) -->
+      <!-- DIALOG - ÚPRAVA (KOMPAKTNÍ) -->
       <q-dialog v-model="editDialog">
         <q-card style="width:95%; max-width:500px">
           <q-card-section>
-            <div class="text-h6">Upravit</div>
+            <div class="text-h6">Upravit záznam</div>
           </q-card-section>
 
           <q-card-section class="q-pt-none" style="max-height:60vh; overflow-y:auto">
