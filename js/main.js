@@ -157,6 +157,7 @@ window.app = Vue.createApp({
             :all-advances="allAdvances"
             :contracts="contracts"
             :jobs="jobs"
+            :places="places"
             :loading="loading"
             @message="showMessage"
             @reload="loadAdminData"
@@ -191,4 +192,5 @@ setTimeout(() => {
   window.app.use(Quasar);
   window.app.mount('#app');
 }, 100);
+
 
