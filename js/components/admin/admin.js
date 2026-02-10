@@ -181,16 +181,13 @@ window.app.component('admin-component', {
       const worker = this.workers.find(w => w[1] === record[6]);
       const contract = this.contracts.find(c => c[1] === record[0]);
       const job = this.jobs.find(j => j[1] === record[3]);
-      
-      // OPRAVA: Hledat place podle ID (record[15]), STEJNĚ jako v home.js!
-      const place = this.places ? this.places.find(p => p[1] === record[14]) : null;
-      const placeId = place ? place[0] : null;
+      const place = this.places.find(p => p[1] === record[14]);  // STEJNĚ JAKO JOB!
       
       this.editForm = {
         workerId: worker ? worker[0] : null,
         contractId: contract ? contract[0] : null,
         jobId: job ? job[0] : null,
-        placeId: placeId,
+        placeId: place ? place[0] : null,  // STEJNĚ JAKO JOB!
         dateEdit: this.timestampToDate(record[4]),
         timeFrom: this.timestampToTime(record[4]),
         timeTo: this.timestampToTime(record[5]),
@@ -208,16 +205,13 @@ window.app.component('admin-component', {
       const worker = this.workers.find(w => w[1] === record[6]);
       const contract = this.contracts.find(c => c[1] === record[0]);
       const job = this.jobs.find(j => j[1] === record[3]);
-      
-      // OPRAVA: stejně jako v openEditDialog - podle ID!
-      const place = this.places ? this.places.find(p => p[0] === record[15]) : null;
-      const placeId = place ? place[0] : null;
+      const place = this.places.find(p => p[1] === record[14]);  // STEJNĚ JAKO JOB!
       
       this.editForm = {
         workerId: worker ? worker[0] : null,
         contractId: contract ? contract[0] : null,
         jobId: job ? job[0] : null,
-        placeId: placeId,
+        placeId: place ? place[0] : null,  // STEJNĚ JAKO JOB!
         dateEdit: this.getTodayDate(),
         timeFrom: this.timestampToTime(record[4]),
         timeTo: this.timestampToTime(record[5]),
