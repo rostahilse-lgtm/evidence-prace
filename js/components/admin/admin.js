@@ -183,7 +183,7 @@ window.app.component('admin-component', {
       const job = this.jobs.find(j => j[1] === record[3]);
       
       // OPRAVA: Hledat place podle ID (record[15]), STEJNĚ jako v home.js!
-      const place = this.places ? this.places.find(p => p[0] === record[14]) : null;
+      const place = this.places ? this.places.find(p => p[1] === record[14]) : null;
       const placeId = place ? place[0] : null;
       
       this.editForm = {
