@@ -1,4 +1,5 @@
-// ADMIN.JS - SPRÁVNÁ VERZE S FUNKČNÍM MÍSTEM
+// ADMIN.JS - KONEČNĚ SPRÁVNÁ VERZE!
+// MÍSTO opraveno PŘESNĚ podle home.js (tam to funguje!)
 
 window.app.component('admin-component', {
   props: ['allSummary', 'allRecords', 'allAdvances', 'contracts', 'jobs', 'places', 'loading'],
@@ -52,8 +53,9 @@ window.app.component('admin-component', {
     jobOptions() {
       return this.jobs.map(j => ({ label: j[1], value: j[0] }));
     },
+    // OPRAVA 1: placeOptions - PŘESNĚ podle home.js!
     placeOptions() {
-      return this.places ? this.places.map(p => ({ label: p[1], value: p[0] })) : [];
+      return this.places.map(p => ({ label: p[1], value: p[0] }));
     },
     workerOptions() {
       return this.workers.map(w => ({ label: w[1], value: w[0] }));
@@ -158,6 +160,7 @@ window.app.component('admin-component', {
       this.loadDayRecords();
     },
     
+    // OPRAVA 2: openEditDialog - najít placeId STEJNĚ jako v home.js!
     openEditDialog(record, index) {
       this.editingRecord = { data: record, index: index };
       
@@ -174,17 +177,14 @@ window.app.component('admin-component', {
         km: record[12] || 0
       };
       
-      // EDITOVATELNÉ - NAJÍT IDs správně
+      // EDITOVATELNÉ - najít IDs
       const worker = this.workers.find(w => w[1] === record[6]);
       const contract = this.contracts.find(c => c[1] === record[0]);
       const job = this.jobs.find(j => j[1] === record[3]);
       
-      // MÍSTO: Hledat podle NÁZVU (record[14] obsahuje název!)
-      let placeId = null;
-      if (record[14] && this.places) {
-        const place = this.places.find(p => p[1] === record[14]);
-        placeId = place ? place[0] : null;
-      }
+      // OPRAVA: Hledat place podle ID (record[15]), STEJNĚ jako v home.js!
+      const place = this.places ? this.places.find(p => p[0] === record[15]) : null;
+      const placeId = place ? place[0] : null;
       
       this.editForm = {
         workerId: worker ? worker[0] : null,
@@ -203,17 +203,15 @@ window.app.component('admin-component', {
       this.editDialog = true;
     },
     
+    // OPRAVA 3: openDuplicateDialog - stejná logika
     openDuplicateDialog(record) {
       const worker = this.workers.find(w => w[1] === record[6]);
       const contract = this.contracts.find(c => c[1] === record[0]);
       const job = this.jobs.find(j => j[1] === record[3]);
       
-      // MÍSTO: stejná logika
-      let placeId = null;
-      if (record[14] && this.places) {
-        const place = this.places.find(p => p[1] === record[14]);
-        placeId = place ? place[0] : null;
-      }
+      // OPRAVA: stejně jako v openEditDialog - podle ID!
+      const place = this.places ? this.places.find(p => p[0] === record[15]) : null;
+      const placeId = place ? place[0] : null;
       
       this.editForm = {
         workerId: worker ? worker[0] : null,
@@ -420,18 +418,18 @@ window.app.component('admin-component', {
         <q-tab name="stats" label="Statistiky"/>
       </q-tabs>
 
-      <!-- PRACOVNÍCI - KOMPAKTNÍ (1 ŘÁDEK) -->
+      <!-- PRACOVNÍCI - KOMPAKTNÍ -->
       <div v-if="adminTab==='workers'" class="q-pt-md">
         <div v-for="worker in allSummary" :key="worker.id" class="worker-card" @click="selectWorker(worker)">
           <div class="row items-center no-wrap">
-            <div style="min-width:120px" class="q-mr-sm">
-              <div class="text-bold">{{ worker.name }}</div>
+            <div style="min-width:100px" class="q-mr-xs">
+              <div class="text-bold text-caption">{{ worker.name }}</div>
             </div>
-            <div style="min-width:100px" class="text-caption text-grey-7 q-mr-sm">
+            <div style="min-width:70px" class="text-caption text-grey-7 q-mr-xs">
               {{ worker.totalEarnings }} Kč
             </div>
-            <div style="min-width:80px" class="text-right">
-              <div class="text-bold" :class="worker.balance>=0?'balance-positive':'balance-negative'">
+            <div style="min-width:60px" class="text-right">
+              <div class="text-bold text-caption" :class="worker.balance>=0?'balance-positive':'balance-negative'">
                 {{ worker.balance }} Kč
               </div>
             </div>
@@ -503,10 +501,10 @@ window.app.component('admin-component', {
         </div>
       </div>
 
-      <!-- PŘEHLED DNE - TLAČÍTKO DNES + KALENDÁŘ -->
+      <!-- PŘEHLED DNE -->
       <div v-if="adminTab==='day'" class="q-pt-md">
-        <div class="row q-gutter-sm q-mb-md items-center">
-          <q-btn color="primary" label="Dnes" dense @click="setToday"/>
+        <div class="row q-gutter-xs q-mb-md items-center">
+          <q-btn color="primary" label="Dnes" dense size="sm" @click="setToday"/>
           <div class="col">
             <q-input v-model="selectedDate" outlined dense label="Datum" readonly>
               <template v-slot:append>
@@ -518,8 +516,12 @@ window.app.component('admin-component', {
               </template>
             </q-input>
           </div>
-          <q-btn color="primary" label="Oběd" icon="restaurant" dense @click="openLunchDialog"/>
-          <q-btn color="primary" label="Záloha" icon="payment" dense @click="openAdvanceDialog"/>
+          <q-btn color="primary" icon="restaurant" dense size="sm" @click="openLunchDialog">
+            <q-tooltip>Oběd</q-tooltip>
+          </q-btn>
+          <q-btn color="primary" icon="payment" dense size="sm" @click="openAdvanceDialog">
+            <q-tooltip>Záloha</q-tooltip>
+          </q-btn>
         </div>
 
         <div v-if="dayRecords.length===0" class="text-center text-grey-7 q-mt-lg">
@@ -564,36 +566,35 @@ window.app.component('admin-component', {
         />
       </div>
 
-      <!-- DIALOG - ÚPRAVA (DVA SLOUPCE) -->
+      <!-- DIALOG - ÚPRAVA (KOMPAKTNÍ PRO MOBIL) -->
       <q-dialog v-model="editDialog">
-        <q-card style="min-width:700px">
+        <q-card style="width:95%; max-width:500px">
           <q-card-section>
-            <div class="text-h6">Upravit záznam</div>
+            <div class="text-h6">Upravit</div>
           </q-card-section>
 
-          <q-card-section class="q-pt-none">
-            <div class="row q-gutter-md">
-              <div class="col">
-                <div class="text-subtitle2 q-mb-sm">Původní:</div>
-                <q-input v-model="originalRecord.worker" label="Pracovník" outlined dense readonly class="q-mb-sm"/>
-                <q-input v-model="originalRecord.contract" label="Zakázka" outlined dense readonly class="q-mb-sm"/>
-                <q-input v-model="originalRecord.job" label="Práce" outlined dense readonly class="q-mb-sm"/>
-                <q-input v-model="originalRecord.place" label="Místo" outlined dense readonly class="q-mb-sm"/>
-                <q-input v-model="originalRecord.date" label="Datum" outlined dense readonly class="q-mb-sm"/>
-                <q-input v-model="originalRecord.timeFrom" label="Od" outlined dense readonly class="q-mb-sm"/>
-                <q-input v-model="originalRecord.timeTo" label="Do" outlined dense readonly class="q-mb-sm"/>
-                <q-input v-model="originalRecord.note" label="Poznámka" outlined dense readonly class="q-mb-sm"/>
-                <q-input v-model="originalRecord.km" label="Km" outlined dense readonly/>
+          <q-card-section class="q-pt-none" style="max-height:60vh; overflow-y:auto">
+            <div class="row q-col-gutter-sm">
+              <div class="col-6">
+                <div class="text-caption text-grey-7 q-mb-xs">Původní:</div>
+                <q-input v-model="originalRecord.worker" label="Pracovník" dense readonly filled class="q-mb-xs"/>
+                <q-input v-model="originalRecord.contract" label="Zakázka" dense readonly filled class="q-mb-xs"/>
+                <q-input v-model="originalRecord.job" label="Práce" dense readonly filled class="q-mb-xs"/>
+                <q-input v-model="originalRecord.place" label="Místo" dense readonly filled class="q-mb-xs"/>
+                <q-input v-model="originalRecord.date" label="Datum" dense readonly filled class="q-mb-xs"/>
+                <q-input v-model="originalRecord.timeFrom" label="Od" dense readonly filled class="q-mb-xs"/>
+                <q-input v-model="originalRecord.timeTo" label="Do" dense readonly filled class="q-mb-xs"/>
+                <q-input v-model="originalRecord.note" label="Poznámka" dense readonly filled type="textarea" rows="2"/>
               </div>
               
-              <div class="col">
-                <div class="text-subtitle2 q-mb-sm">Nové:</div>
-                <q-select v-model="editForm.workerId" :options="workerOptions" label="Pracovník" emit-value map-options outlined dense class="q-mb-sm"/>
-                <q-select v-model="editForm.contractId" :options="contractOptions" label="Zakázka" emit-value map-options outlined dense class="q-mb-sm"/>
-                <q-select v-model="editForm.jobId" :options="jobOptions" label="Práce" emit-value map-options outlined dense class="q-mb-sm"/>
-                <q-select v-model="editForm.placeId" :options="placeOptions" label="Místo" emit-value map-options outlined dense class="q-mb-sm"/>
+              <div class="col-6">
+                <div class="text-caption text-grey-7 q-mb-xs">Nové:</div>
+                <q-select v-model="editForm.workerId" :options="workerOptions" label="Pracovník" emit-value map-options dense outlined class="q-mb-xs"/>
+                <q-select v-model="editForm.contractId" :options="contractOptions" label="Zakázka" emit-value map-options dense outlined class="q-mb-xs"/>
+                <q-select v-model="editForm.jobId" :options="jobOptions" label="Práce" emit-value map-options dense outlined class="q-mb-xs"/>
+                <q-select v-model="editForm.placeId" :options="placeOptions" label="Místo" emit-value map-options dense outlined class="q-mb-xs"/>
                 
-                <q-input v-model="editForm.dateEdit" label="Datum" outlined dense readonly class="q-mb-sm">
+                <q-input v-model="editForm.dateEdit" label="Datum" dense outlined readonly class="q-mb-xs">
                   <template v-slot:append>
                     <q-icon name="event" class="cursor-pointer">
                       <q-popup-proxy cover>
@@ -603,7 +604,7 @@ window.app.component('admin-component', {
                   </template>
                 </q-input>
                 
-                <q-input v-model="editForm.timeFrom" label="Od" outlined dense class="q-mb-sm">
+                <q-input v-model="editForm.timeFrom" label="Od" dense outlined class="q-mb-xs">
                   <template v-slot:append>
                     <q-icon name="schedule" class="cursor-pointer">
                       <q-popup-proxy cover>
@@ -613,7 +614,7 @@ window.app.component('admin-component', {
                   </template>
                 </q-input>
                 
-                <q-input v-model="editForm.timeTo" label="Do" outlined dense class="q-mb-sm">
+                <q-input v-model="editForm.timeTo" label="Do" dense outlined class="q-mb-xs">
                   <template v-slot:append>
                     <q-icon name="schedule" class="cursor-pointer">
                       <q-popup-proxy cover>
@@ -623,24 +624,21 @@ window.app.component('admin-component', {
                   </template>
                 </q-input>
                 
-                <q-input v-model="editForm.note" label="Poznámka" outlined dense class="q-mb-sm"/>
-                
-                <q-checkbox v-model="editForm.kmManual" label="Km" dense class="q-mb-sm"/>
-                <q-input v-if="editForm.kmManual" v-model.number="editForm.kmJednosmer" label="Km jednosměr" type="number" outlined dense/>
+                <q-input v-model="editForm.note" label="Poznámka" dense outlined type="textarea" rows="2"/>
               </div>
             </div>
           </q-card-section>
 
           <q-card-actions align="right">
-            <q-btn flat label="Zrušit" color="grey" v-close-popup/>
-            <q-btn label="Uložit" color="primary" @click="saveEdit"/>
+            <q-btn flat label="Zrušit" color="grey" v-close-popup size="sm"/>
+            <q-btn label="Uložit" color="primary" @click="saveEdit" size="sm"/>
           </q-card-actions>
         </q-card>
       </q-dialog>
       
       <!-- DIALOG - DUPLIKACE -->
       <q-dialog v-model="duplicateDialog">
-        <q-card style="min-width: 400px">
+        <q-card style="width:100%; max-width:400px">
           <q-card-section>
             <div class="text-h6">Duplikovat</div>
           </q-card-section>
@@ -681,10 +679,7 @@ window.app.component('admin-component', {
               </template>
             </q-input>
             
-            <q-input v-model="editForm.note" label="Poznámka" outlined dense class="q-mb-sm"/>
-            
-            <q-checkbox v-model="editForm.kmManual" label="Km" dense class="q-mb-sm"/>
-            <q-input v-if="editForm.kmManual" v-model.number="editForm.kmJednosmer" label="Km jednosměr" type="number" outlined dense/>
+            <q-input v-model="editForm.note" label="Poznámka" outlined dense/>
           </q-card-section>
           
           <q-card-actions align="right">
@@ -696,7 +691,7 @@ window.app.component('admin-component', {
       
       <!-- DIALOG - OBĚD -->
       <q-dialog v-model="lunchDialog">
-        <q-card style="min-width: 350px">
+        <q-card style="width:100%; max-width:350px">
           <q-card-section>
             <div class="text-h6">Oběd</div>
           </q-card-section>
@@ -735,7 +730,7 @@ window.app.component('admin-component', {
       
       <!-- DIALOG - ZÁLOHA -->
       <q-dialog v-model="advanceDialog">
-        <q-card style="min-width: 350px">
+        <q-card style="width:100%; max-width:350px">
           <q-card-section>
             <div class="text-h6">Záloha</div>
           </q-card-section>
