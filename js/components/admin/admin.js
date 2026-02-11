@@ -1,5 +1,6 @@
-// ADMIN.JS - ČISTÁ FINÁLNÍ VERZE
-// Místo opraveno PŘESNĚ podle job (hledání podle názvu p[1])
+// OPRAVENÝ ADMIN.JS - KOMPAKTNÍ ZOBRAZENÍ V PŘEHLEDU DNE
+// Zobrazení na 2 řádky: Jméno | Zakázka | Práce | Čas | Místo | Hodiny | [ikony]
+//                       💬 Poznámka
 
 window.app.component('admin-component', {
   props: ['allSummary', 'allRecords', 'allAdvances', 'contracts', 'jobs', 'places', 'loading'],
@@ -162,7 +163,6 @@ window.app.component('admin-component', {
     openEditDialog(record, index) {
       this.editingRecord = { data: record, index: index };
       
-      // PŮVODNÍ HODNOTY
       this.originalRecord = {
         worker: record[6],
         contract: record[0],
@@ -175,7 +175,6 @@ window.app.component('admin-component', {
         km: record[12] || 0
       };
       
-      // EDITOVATELNÉ - najít IDs (STEJNĚ JAKO JOB!)
       const worker = this.workers.find(w => w[1] === record[6]);
       const contract = this.contracts.find(c => c[1] === record[0]);
       const job = this.jobs.find(j => j[1] === record[3]);
@@ -451,10 +450,11 @@ window.app.component('admin-component', {
         </div>
 
         <q-tabs v-model="summaryTab" dense class="q-mt-md">
-          <q-tab name="records" label="Směny"/>
+          <q-tab name="records" label="Záznamy"/>
           <q-tab name="advances" label="Zálohy"/>
         </q-tabs>
 
+        <!-- ZÁZNAMY -->
         <div v-if="summaryTab==='records'" class="q-mt-md">
           <div v-for="(record,idx) in selectedWorkerData.records" :key="idx" class="record-card">
             <div class="row items-center">
@@ -477,6 +477,7 @@ window.app.component('admin-component', {
           </div>
         </div>
 
+        <!-- ZÁLOHY -->
         <div v-if="summaryTab==='advances'" class="q-mt-md">
           <div v-for="(advance,idx) in selectedWorkerData.advances" :key="idx" class="record-card">
             <div class="row items-center">
@@ -492,7 +493,7 @@ window.app.component('admin-component', {
         </div>
       </div>
 
-      <!-- PŘEHLED DNE -->
+      <!-- PŘEHLED DNE - KOMPAKTNÍ 2 ŘÁDKY -->
       <div v-if="adminTab==='day'" class="q-pt-md">
         <div class="row q-gutter-xs q-mb-md items-center">
           <q-btn color="primary" label="Dnes" dense size="sm" @click="setToday"/>
@@ -519,29 +520,39 @@ window.app.component('admin-component', {
           Žádné záznamy
         </div>
 
-        <div v-for="(record,idx) in dayRecords" :key="idx" class="record-card">
-          <div class="row items-center">
-            <div class="col">
-              <div class="text-bold">{{ record[6] }}</div>
-              <div class="text-caption text-grey-7">{{ record[0] }} • {{ record[3] }}</div>
+        <!-- KOMPAKTNÍ ZOBRAZENÍ - 2 ŘÁDKY -->
+        <div v-for="(record,idx) in dayRecords" :key="idx" class="record-card" style="padding:8px 12px">
+          <!-- ŘÁDEK 1: Jméno | Zakázka | Práce | Čas | Místo | Hodiny | Ikony -->
+          <div class="row items-center no-wrap" style="font-size:0.85rem">
+            <div style="min-width:70px" class="q-mr-xs">
+              <div class="text-bold" style="font-size:0.9rem">{{ record[6] }}</div>
             </div>
-            <div class="text-right">
-              <div class="text-bold text-primary">{{ record[7].toFixed(2) }} hod</div>
+            <div style="min-width:60px" class="text-grey-8 q-mr-xs">{{ record[0] }}</div>
+            <div style="min-width:80px" class="text-grey-7 q-mr-xs">{{ record[3] }}</div>
+            <div style="min-width:70px" class="text-grey-7 q-mr-xs">
+              {{ timestampToTime(record[4]) }}-{{ timestampToTime(record[5]) }}
             </div>
-            <q-btn flat dense round icon="content_copy" size="sm" class="q-ml-xs" @click="openDuplicateDialog(record)">
+            <div style="min-width:60px" class="text-grey-7 q-mr-xs">{{ record[14] || '-' }}</div>
+            <div class="text-bold text-primary q-mr-xs" style="min-width:50px">
+              {{ record[7].toFixed(2) }}h
+            </div>
+            <q-btn flat dense round icon="content_copy" size="xs" @click="openDuplicateDialog(record)">
               <q-tooltip>Duplikovat</q-tooltip>
             </q-btn>
-            <q-btn flat dense round icon="edit" size="sm" class="q-ml-xs" @click="openEditDialog(record,idx)">
+            <q-btn flat dense round icon="edit" size="xs" @click="openEditDialog(record,idx)">
               <q-tooltip>Upravit</q-tooltip>
             </q-btn>
           </div>
-          <div class="text-caption text-grey-7 q-mt-sm">
-            {{ formatTimeRange(record[4],record[5]) }}
+          
+          <!-- ŘÁDEK 2: Poznámka (pokud existuje) -->
+          <div v-if="record[8]" class="text-caption text-grey-7 q-mt-xs" style="font-size:0.8rem;line-height:1.2">
+            💬 {{ record[8] }}
           </div>
-          <div v-if="record[12] > 0" class="text-caption text-orange q-mt-xs">
+          
+          <!-- KM (pokud existují) -->
+          <div v-if="record[12] > 0" class="text-caption text-orange q-mt-xs" style="font-size:0.75rem">
             🚗 {{ record[12] }} km
           </div>
-          <div v-if="record[8]" class="note-display">💬 {{ record[8] }}</div>
         </div>
       </div>
       
