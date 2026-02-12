@@ -161,7 +161,8 @@ window.app.component('admin-component', {
     },
     
     openEditDialog(record, index) {
-      this.editingRecord = { data: record, index: index };
+      // record[15] = sheetRowIndex (index řádku v sheetu) - přidáme do getDayRecords v kod.gs
+      this.editingRecord = { data: record, index: index, sheetRowIndex: record[16] };
       
       this.originalRecord = {
         worker: record[6],
@@ -249,6 +250,8 @@ window.app.component('admin-component', {
       const timeTo = this.dateTimeToTimestamp(this.editForm.dateEdit, this.editForm.timeTo);
       
       try {
+        // Použijeme updaterecord - přepíše PŮVODNÍ řádek (ne přidá nový)
+        // row_index = index záznamu v dayRecords → Apps Script najde správný řádek v sheetu
         const payload = {
           id_contract: this.editForm.contractId,
           id_worker: this.editForm.workerId,
@@ -256,16 +259,21 @@ window.app.component('admin-component', {
           id_place: this.editForm.placeId,
           time_fr: timeFr,
           time_to: timeTo,
-          note: this.editForm.note
+          note: this.editForm.note,
+          row_index: this.editingRecord.sheetRowIndex  // index řádku v sheetu
         };
         
         if (this.editForm.kmManual && this.editForm.kmJednosmer) {
           payload.km_jednosmer = this.editForm.kmJednosmer;
           payload.km_celkem = this.calculatedKmEdit;
           payload.km_rucne = 'Y';
+        } else {
+          payload.km_jednosmer = 0;
+          payload.km_celkem = 0;
+          payload.km_rucne = 'N';
         }
         
-        const res = await apiCall('saverecord', payload);
+        const res = await apiCall('updaterecord', payload);
         
         if (res.code === '000') {
           this.$emit('message', '✓ Záznam upraven');
@@ -297,7 +305,8 @@ window.app.component('admin-component', {
           id_place: this.editForm.placeId,
           time_fr: timeFr,
           time_to: timeTo,
-          note: this.editForm.note
+          note: this.editForm.note,
+          insert_after_date: this.editForm.dateEdit  // datum pro vložení za poslední záznam dne
         };
         
         if (this.editForm.kmManual && this.editForm.kmJednosmer) {
@@ -521,8 +530,11 @@ window.app.component('admin-component', {
         </div>
 
         <!-- KOMPAKTNÍ ZOBRAZENÍ - 2 ŘÁDKY -->
-        <div v-for="(record,idx) in dayRecords" :key="idx" class="record-card" style="padding:8px 12px">
-          <!-- ŘÁDEK 1: Jméno | Zakázka | Práce | Čas | Místo | Hodiny | Ikony -->
+        <!-- Červené pozadí = opravený záznam, bílé = normální -->
+        <div v-for="(record,idx) in dayRecords" :key="idx" class="record-card"
+             :style="record[15]==='opraveno' ? 'padding:8px 12px; background:#fff0f0; border-left:3px solid #e53935' : 'padding:8px 12px'">
+          
+          <!-- ŘÁDEK 1: Jméno | Zakázka | Práce | Čas | Místo | Hodiny -->
           <div class="row items-center no-wrap" style="font-size:0.85rem">
             <div style="min-width:70px" class="q-mr-xs">
               <div class="text-bold" style="font-size:0.9rem">{{ record[6] }}</div>
@@ -533,18 +545,26 @@ window.app.component('admin-component', {
               {{ timestampToTime(record[4]) }}-{{ timestampToTime(record[5]) }}
             </div>
             <div style="min-width:60px" class="text-grey-7 q-mr-xs">{{ record[14] || '-' }}</div>
-            <div class="text-bold text-primary q-mr-xs" style="min-width:50px">
+            <div class="text-bold text-primary" style="min-width:50px">
               {{ record[7].toFixed(2) }}h
             </div>
-            <q-btn flat dense round icon="content_copy" size="xs" @click="openDuplicateDialog(record)">
-              <q-tooltip>Duplikovat</q-tooltip>
-            </q-btn>
-            <q-btn flat dense round icon="edit" size="xs" @click="openEditDialog(record,idx)">
-              <q-tooltip>Upravit</q-tooltip>
-            </q-btn>
           </div>
           
-          <!-- ŘÁDEK 2: Poznámka (pokud existuje) -->
+          <!-- ŘÁDEK 2: Tlačítka - větší, s mezerou, 8px od pravého kraje -->
+          <div class="row justify-end q-mt-xs" style="padding-right:8px; gap:8px">
+            <q-btn
+              color="blue-7" icon="content_copy" label="Kopírovat"
+              dense size="sm" unelevated
+              style="min-width:100px"
+              @click="openDuplicateDialog(record)"/>
+            <q-btn
+              color="orange-8" icon="edit" label="Upravit"
+              dense size="sm" unelevated
+              style="min-width:100px"
+              @click="openEditDialog(record,idx)"/>
+          </div>
+
+          <!-- ŘÁDEK 3: Poznámka (pokud existuje) -->
           <div v-if="record[8]" class="text-caption text-grey-7 q-mt-xs" style="font-size:0.8rem;line-height:1.2">
             💬 {{ record[8] }}
           </div>
@@ -552,6 +572,11 @@ window.app.component('admin-component', {
           <!-- KM (pokud existují) -->
           <div v-if="record[12] > 0" class="text-caption text-orange q-mt-xs" style="font-size:0.75rem">
             🚗 {{ record[12] }} km
+          </div>
+          
+          <!-- Značka opraveno -->
+          <div v-if="record[15]==='opraveno'" class="text-caption q-mt-xs" style="color:#e53935;font-size:0.75rem">
+            ✏️ opraveno
           </div>
         </div>
       </div>
