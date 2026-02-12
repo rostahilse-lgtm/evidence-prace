@@ -530,14 +530,16 @@ window.app.component('admin-component', {
         </div>
 
         <!-- KOMPAKTNÍ ZOBRAZENÍ - 2 ŘÁDKY -->
-        <!-- Červené pozadí = opravený záznam, bílé = normální -->
-        <div v-for="(record,idx) in dayRecords" :key="idx" class="record-card"
-             :style="record[15]==='opraveno' ? 'padding:8px 12px; background:#fff0f0; border-left:3px solid #e53935' : 'padding:8px 12px'">
+        <!-- record[15] = 'opraveno' pokud byl záznam upraven -->
+        <div v-for="(record,idx) in dayRecords" :key="idx" class="record-card" style="padding:8px 12px">
           
-          <!-- ŘÁDEK 1: Jméno | Zakázka | Práce | Čas | Místo | Hodiny -->
+          <!-- ŘÁDEK 1: Jméno | Zakázka | Práce | Čas | Místo | Hodiny + ikonka opraveno -->
           <div class="row items-center no-wrap" style="font-size:0.85rem">
             <div style="min-width:70px" class="q-mr-xs">
-              <div class="text-bold" style="font-size:0.9rem">{{ record[6] }}</div>
+              <div class="text-bold" style="font-size:0.9rem">
+                {{ record[6] }}
+                <span v-if="record[15]==='opraveno'" title="Opraveno" style="font-size:0.75rem">✏️</span>
+              </div>
             </div>
             <div style="min-width:60px" class="text-grey-8 q-mr-xs">{{ record[0] }}</div>
             <div style="min-width:80px" class="text-grey-7 q-mr-xs">{{ record[3] }}</div>
@@ -572,11 +574,6 @@ window.app.component('admin-component', {
           <!-- KM (pokud existují) -->
           <div v-if="record[12] > 0" class="text-caption text-orange q-mt-xs" style="font-size:0.75rem">
             🚗 {{ record[12] }} km
-          </div>
-          
-          <!-- Značka opraveno -->
-          <div v-if="record[15]==='opraveno'" class="text-caption q-mt-xs" style="color:#e53935;font-size:0.75rem">
-            ✏️ opraveno
           </div>
         </div>
       </div>
@@ -624,8 +621,9 @@ window.app.component('admin-component', {
                 <q-input v-model="editForm.dateEdit" label="Datum" dense outlined readonly class="q-mb-xs">
                   <template v-slot:append>
                     <q-icon name="event" class="cursor-pointer">
-                      <q-popup-proxy cover>
-                        <q-date v-model="editForm.dateEdit" mask="DD. MM. YYYY" locale="cs" />
+                      <q-popup-proxy cover ref="editDateProxy">
+                        <q-date v-model="editForm.dateEdit" mask="DD. MM. YYYY" locale="cs"
+                          @update:model-value="$refs.editDateProxy.hide()" />
                       </q-popup-proxy>
                     </q-icon>
                   </template>
@@ -634,8 +632,9 @@ window.app.component('admin-component', {
                 <q-input v-model="editForm.timeFrom" label="Od" dense outlined class="q-mb-xs">
                   <template v-slot:append>
                     <q-icon name="schedule" class="cursor-pointer">
-                      <q-popup-proxy cover>
-                        <q-time v-model="editForm.timeFrom" mask="HH:mm" format24h />
+                      <q-popup-proxy cover ref="editTimeFromProxy">
+                        <q-time v-model="editForm.timeFrom" mask="HH:mm" format24h
+                          @update:model-value="val => { if(val && val.length===5) $refs.editTimeFromProxy.hide() }" />
                       </q-popup-proxy>
                     </q-icon>
                   </template>
@@ -644,8 +643,9 @@ window.app.component('admin-component', {
                 <q-input v-model="editForm.timeTo" label="Do" dense outlined class="q-mb-xs">
                   <template v-slot:append>
                     <q-icon name="schedule" class="cursor-pointer">
-                      <q-popup-proxy cover>
-                        <q-time v-model="editForm.timeTo" mask="HH:mm" format24h />
+                      <q-popup-proxy cover ref="editTimeToProxy">
+                        <q-time v-model="editForm.timeTo" mask="HH:mm" format24h
+                          @update:model-value="val => { if(val && val.length===5) $refs.editTimeToProxy.hide() }" />
                       </q-popup-proxy>
                     </q-icon>
                   </template>
@@ -679,8 +679,9 @@ window.app.component('admin-component', {
             <q-input v-model="editForm.dateEdit" label="Datum" outlined dense readonly class="q-mb-sm">
               <template v-slot:append>
                 <q-icon name="event" class="cursor-pointer">
-                  <q-popup-proxy cover>
-                    <q-date v-model="editForm.dateEdit" mask="DD. MM. YYYY" locale="cs" />
+                  <q-popup-proxy cover ref="dupDateProxy">
+                    <q-date v-model="editForm.dateEdit" mask="DD. MM. YYYY" locale="cs"
+                      @update:model-value="$refs.dupDateProxy.hide()" />
                   </q-popup-proxy>
                 </q-icon>
               </template>
@@ -689,8 +690,9 @@ window.app.component('admin-component', {
             <q-input v-model="editForm.timeFrom" label="Od" outlined dense class="q-mb-sm">
               <template v-slot:append>
                 <q-icon name="schedule" class="cursor-pointer">
-                  <q-popup-proxy cover>
-                    <q-time v-model="editForm.timeFrom" mask="HH:mm" format24h />
+                  <q-popup-proxy cover ref="dupTimeFromProxy">
+                    <q-time v-model="editForm.timeFrom" mask="HH:mm" format24h
+                      @update:model-value="val => { if(val && val.length===5) $refs.dupTimeFromProxy.hide() }" />
                   </q-popup-proxy>
                 </q-icon>
               </template>
@@ -699,8 +701,9 @@ window.app.component('admin-component', {
             <q-input v-model="editForm.timeTo" label="Do" outlined dense class="q-mb-sm">
               <template v-slot:append>
                 <q-icon name="schedule" class="cursor-pointer">
-                  <q-popup-proxy cover>
-                    <q-time v-model="editForm.timeTo" mask="HH:mm" format24h />
+                  <q-popup-proxy cover ref="dupTimeToProxy">
+                    <q-time v-model="editForm.timeTo" mask="HH:mm" format24h
+                      @update:model-value="val => { if(val && val.length===5) $refs.dupTimeToProxy.hide() }" />
                   </q-popup-proxy>
                 </q-icon>
               </template>
@@ -730,8 +733,9 @@ window.app.component('admin-component', {
             <q-input v-model="newLunch.date" label="Datum" outlined dense readonly class="q-mb-sm">
               <template v-slot:append>
                 <q-icon name="event" class="cursor-pointer">
-                  <q-popup-proxy cover>
-                    <q-date v-model="newLunch.date" mask="DD. MM. YYYY" locale="cs" />
+                  <q-popup-proxy cover ref="lunchDateProxy">
+                    <q-date v-model="newLunch.date" mask="DD. MM. YYYY" locale="cs"
+                      @update:model-value="$refs.lunchDateProxy.hide()" />
                   </q-popup-proxy>
                 </q-icon>
               </template>
@@ -740,8 +744,9 @@ window.app.component('admin-component', {
             <q-input v-model="newLunch.time" label="Čas" outlined dense>
               <template v-slot:append>
                 <q-icon name="schedule" class="cursor-pointer">
-                  <q-popup-proxy cover>
-                    <q-time v-model="newLunch.time" mask="HH:mm" format24h />
+                  <q-popup-proxy cover ref="lunchTimeProxy">
+                    <q-time v-model="newLunch.time" mask="HH:mm" format24h
+                      @update:model-value="val => { if(val && val.length===5) $refs.lunchTimeProxy.hide() }" />
                   </q-popup-proxy>
                 </q-icon>
               </template>
@@ -769,8 +774,9 @@ window.app.component('admin-component', {
             <q-input v-model="newAdvance.date" label="Datum" outlined dense readonly class="q-mb-sm">
               <template v-slot:append>
                 <q-icon name="event" class="cursor-pointer">
-                  <q-popup-proxy cover>
-                    <q-date v-model="newAdvance.date" mask="DD. MM. YYYY" locale="cs" />
+                  <q-popup-proxy cover ref="advanceDateProxy">
+                    <q-date v-model="newAdvance.date" mask="DD. MM. YYYY" locale="cs"
+                      @update:model-value="$refs.advanceDateProxy.hide()" />
                   </q-popup-proxy>
                 </q-icon>
               </template>
