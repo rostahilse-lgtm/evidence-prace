@@ -144,15 +144,18 @@ window.app.component('admin-component', {
         this.selectedDate = this.getTodayDate();
       }
       
-      const parts = this.selectedDate.split('. ');
-      const targetDate = new Date(parts[2], parts[1] - 1, parts[0]);
-      const nextDay = new Date(targetDate);
-      nextDay.setDate(nextDay.getDate() + 1);
-      
-      this.dayRecords = this.allRecords.filter(r => {
-        const recordDate = new Date(r[4]);
-        return recordDate >= targetDate && recordDate < nextDay;
-      });
+      // Volat API getdayrecords - vrátí záznamy se správným indexem řádku [16]
+      // Lokální filtr z allRecords index řádku nezná - úprava by selhala
+      try {
+        const res = await apiCall('getdayrecords', { date: this.selectedDate });
+        if (res.code === '000' && res.data) {
+          this.dayRecords = res.data;
+        } else {
+          this.dayRecords = [];
+        }
+      } catch (err) {
+        this.dayRecords = [];
+      }
     },
     
     setToday() {
