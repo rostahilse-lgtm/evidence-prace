@@ -33,7 +33,6 @@ window.app.component('admin-component', {
         kmRoundTrip: true
       },
       originalRecord: null,
-      lastAddedTimeFr: null,  // časová značka naposledy přidaného záznamu (pro ikonku ➕)
       newLunch: {
         workerId: null,
         date: null,
@@ -322,8 +321,7 @@ window.app.component('admin-component', {
         const res = await apiCall('saverecord', payload);
         
         if (res.code === '000') {
-          this.lastAddedTimeFr = timeFr;  // zapamatovat pro ikonku ➕
-          this.$emit('message', '✓ Kopie uložena');
+this.$emit('message', '✓ Kopie uložena');
           this.duplicateDialog = false;
           this.$emit('reload');
           this.loadDayRecords();
@@ -538,13 +536,13 @@ window.app.component('admin-component', {
         <!-- KOMPAKTNÍ ZOBRAZENÍ -->
         <div v-for="(record,idx) in dayRecords" :key="idx" class="record-card" style="padding:8px 12px">
           
-          <!-- ŘÁDEK 1: Jméno + ikonky stavu | Zakázka | Práce | Čas | Místo | Hodiny | Tlačítka -->
+          <!-- ŘÁDEK 1: Jméno | Zakázka | Práce | Čas | Místo | Hodiny -->
           <div class="row items-center no-wrap" style="font-size:0.85rem">
             <div style="min-width:80px" class="q-mr-xs">
               <div class="text-bold" style="font-size:0.9rem">
                 {{ record[6] }}
                 <span v-if="record[15]==='opraveno'" title="Opraveno" style="font-size:0.75rem">✏️</span>
-                <span v-if="record[4]===lastAddedTimeFr" title="Nově přidáno" style="font-size:0.75rem">➕</span>
+                <span v-if="record[15]==='nový'" title="Nově přidáno" style="font-size:0.75rem">➕</span>
               </div>
             </div>
             <div style="min-width:55px" class="text-grey-8 q-mr-xs" :title="record[0]">{{ record[0] }}</div>
@@ -553,29 +551,30 @@ window.app.component('admin-component', {
               {{ timestampToTime(record[4]) }}-{{ timestampToTime(record[5]) }}
             </div>
             <div style="min-width:45px" class="text-grey-7 q-mr-xs">{{ record[14] || '-' }}</div>
-            <div class="text-bold text-primary q-mr-xs" style="min-width:42px">
+            <div class="text-bold text-primary" style="min-width:42px">
               {{ record[7].toFixed(2) }}h
             </div>
-            <!-- Tlačítka jako ikony bez textu - úspora místa -->
-            <q-btn flat dense round color="blue-7" icon="content_copy" size="sm"
-              @click="openDuplicateDialog(record)">
-              <q-tooltip>Kopírovat</q-tooltip>
-            </q-btn>
-            <q-btn flat dense round color="orange-8" icon="edit" size="sm"
-              @click="openEditDialog(record,idx)">
-              <q-tooltip>Upravit</q-tooltip>
-            </q-btn>
           </div>
 
-          <!-- ŘÁDEK 2: Poznámka (pokud existuje) -->
-          <div v-if="record[8]" class="text-caption text-grey-7 q-mt-xs" style="font-size:0.8rem;line-height:1.2">
-            💬 {{ record[8] }}
+          <!-- ŘÁDEK 2: Poznámka vlevo + ikony vpravo na stejném řádku -->
+          <!-- Pokud není poznámka, ikony jsou samy vpravo -->
+          <div class="row items-center q-mt-xs" style="min-height:28px">
+            <div class="col text-caption text-grey-7" style="font-size:0.8rem;line-height:1.2">
+              <span v-if="record[8]">💬 {{ record[8] }}</span>
+              <span v-if="record[12] > 0" class="text-orange q-ml-xs">🚗 {{ record[12] }} km</span>
+            </div>
+            <div class="row" style="gap:5px; padding-right:5px; flex-shrink:0">
+              <q-btn flat dense round color="blue-7" icon="content_copy" size="sm"
+                @click="openDuplicateDialog(record)">
+                <q-tooltip>Kopírovat</q-tooltip>
+              </q-btn>
+              <q-btn flat dense round color="orange-8" icon="edit" size="sm"
+                @click="openEditDialog(record,idx)">
+                <q-tooltip>Upravit</q-tooltip>
+              </q-btn>
+            </div>
           </div>
-          
-          <!-- KM (pokud existují) -->
-          <div v-if="record[12] > 0" class="text-caption text-orange q-mt-xs" style="font-size:0.75rem">
-            🚗 {{ record[12] }} km
-          </div>
+
         </div>
       </div>
       
