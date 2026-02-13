@@ -33,6 +33,7 @@ window.app.component('admin-component', {
         kmRoundTrip: true
       },
       originalRecord: null,
+      lastAddedTimeFr: null,  // časová značka naposledy přidaného záznamu (pro ikonku ➕)
       newLunch: {
         workerId: null,
         date: null,
@@ -212,7 +213,7 @@ window.app.component('admin-component', {
         contractId: contract ? contract[0] : null,
         jobId: job ? job[0] : null,
         placeId: place ? place[0] : null,
-        dateEdit: this.getTodayDate(),
+        dateEdit: this.selectedDate || this.getTodayDate(),
         timeFrom: this.timestampToTime(record[4]),
         timeTo: this.timestampToTime(record[5]),
         note: record[8] || '',
@@ -321,6 +322,7 @@ window.app.component('admin-component', {
         const res = await apiCall('saverecord', payload);
         
         if (res.code === '000') {
+          this.lastAddedTimeFr = timeFr;  // zapamatovat pro ikonku ➕
           this.$emit('message', '✓ Kopie uložena');
           this.duplicateDialog = false;
           this.$emit('reload');
@@ -513,8 +515,9 @@ window.app.component('admin-component', {
             <q-input v-model="selectedDate" outlined dense label="Datum" readonly>
               <template v-slot:append>
                 <q-icon name="event" class="cursor-pointer">
-                  <q-popup-proxy cover @before-hide="loadDayRecords">
-                    <q-date v-model="selectedDate" mask="DD. MM. YYYY" locale="cs" />
+                  <q-popup-proxy cover ref="dayDateProxy">
+                    <q-date v-model="selectedDate" mask="DD. MM. YYYY" locale="cs"
+                      @update:model-value="$refs.dayDateProxy.hide(); loadDayRecords()" />
                   </q-popup-proxy>
                 </q-icon>
               </template>
@@ -532,44 +535,39 @@ window.app.component('admin-component', {
           Žádné záznamy
         </div>
 
-        <!-- KOMPAKTNÍ ZOBRAZENÍ - 2 ŘÁDKY -->
-        <!-- record[15] = 'opraveno' pokud byl záznam upraven -->
+        <!-- KOMPAKTNÍ ZOBRAZENÍ -->
         <div v-for="(record,idx) in dayRecords" :key="idx" class="record-card" style="padding:8px 12px">
           
-          <!-- ŘÁDEK 1: Jméno | Zakázka | Práce | Čas | Místo | Hodiny + ikonka opraveno -->
+          <!-- ŘÁDEK 1: Jméno + ikonky stavu | Zakázka | Práce | Čas | Místo | Hodiny | Tlačítka -->
           <div class="row items-center no-wrap" style="font-size:0.85rem">
-            <div style="min-width:70px" class="q-mr-xs">
+            <div style="min-width:80px" class="q-mr-xs">
               <div class="text-bold" style="font-size:0.9rem">
                 {{ record[6] }}
                 <span v-if="record[15]==='opraveno'" title="Opraveno" style="font-size:0.75rem">✏️</span>
+                <span v-if="record[4]===lastAddedTimeFr" title="Nově přidáno" style="font-size:0.75rem">➕</span>
               </div>
             </div>
-            <div style="min-width:60px" class="text-grey-8 q-mr-xs">{{ record[0] }}</div>
-            <div style="min-width:80px" class="text-grey-7 q-mr-xs">{{ record[3] }}</div>
-            <div style="min-width:70px" class="text-grey-7 q-mr-xs">
+            <div style="min-width:55px" class="text-grey-8 q-mr-xs" :title="record[0]">{{ record[0] }}</div>
+            <div style="min-width:55px" class="text-grey-7 q-mr-xs" :title="record[3]">{{ record[3] }}</div>
+            <div style="min-width:65px" class="text-grey-7 q-mr-xs">
               {{ timestampToTime(record[4]) }}-{{ timestampToTime(record[5]) }}
             </div>
-            <div style="min-width:60px" class="text-grey-7 q-mr-xs">{{ record[14] || '-' }}</div>
-            <div class="text-bold text-primary" style="min-width:50px">
+            <div style="min-width:45px" class="text-grey-7 q-mr-xs">{{ record[14] || '-' }}</div>
+            <div class="text-bold text-primary q-mr-xs" style="min-width:42px">
               {{ record[7].toFixed(2) }}h
             </div>
-          </div>
-          
-          <!-- ŘÁDEK 2: Tlačítka - větší, s mezerou, 8px od pravého kraje -->
-          <div class="row justify-end q-mt-xs" style="padding-right:8px; gap:8px">
-            <q-btn
-              color="blue-7" icon="content_copy" label="Kopírovat"
-              dense size="sm" unelevated
-              style="min-width:100px"
-              @click="openDuplicateDialog(record)"/>
-            <q-btn
-              color="orange-8" icon="edit" label="Upravit"
-              dense size="sm" unelevated
-              style="min-width:100px"
-              @click="openEditDialog(record,idx)"/>
+            <!-- Tlačítka jako ikony bez textu - úspora místa -->
+            <q-btn flat dense round color="blue-7" icon="content_copy" size="sm"
+              @click="openDuplicateDialog(record)">
+              <q-tooltip>Kopírovat</q-tooltip>
+            </q-btn>
+            <q-btn flat dense round color="orange-8" icon="edit" size="sm"
+              @click="openEditDialog(record,idx)">
+              <q-tooltip>Upravit</q-tooltip>
+            </q-btn>
           </div>
 
-          <!-- ŘÁDEK 3: Poznámka (pokud existuje) -->
+          <!-- ŘÁDEK 2: Poznámka (pokud existuje) -->
           <div v-if="record[8]" class="text-caption text-grey-7 q-mt-xs" style="font-size:0.8rem;line-height:1.2">
             💬 {{ record[8] }}
           </div>
