@@ -33,6 +33,14 @@ window.app.component('admin-component', {
         kmRoundTrip: true
       },
       originalRecord: null,
+      // FILTR ZDROJE DAT
+      dataSource: 'new',        // 'new' / 'history' / 'all'
+      filterDateFrom: null,     // DD. MM. YYYY nebo null
+      filterDateTo: null,       // DD. MM. YYYY nebo null
+      localSummary: null,       // přepíše allSummary když je filtr aktivní
+      localRecords: null,       // přepíše allRecords
+      localAdvances: null,      // přepíše allAdvances
+      filterLoading: false,
       newLunch: {
         workerId: null,
         date: null,
@@ -48,6 +56,19 @@ window.app.component('admin-component', {
   },
   
   computed: {
+    // Aktivní data - local (po filtru) nebo props (výchozí)
+    activeSummary() { return this.localSummary !== null ? this.localSummary : this.allSummary; },
+    activeRecords() { return this.localRecords !== null ? this.localRecords : this.allRecords; },
+    activeAdvances() { return this.localAdvances !== null ? this.localAdvances : this.allAdvances; },
+    // Popis aktivního zdroje pro zobrazení v headeru
+    sourceLabel() {
+      const labels = { new: 'Nové', history: 'Historie', all: 'Vše' };
+      let label = labels[this.dataSource] || 'Nové';
+      if (this.filterDateFrom || this.filterDateTo) {
+        label += ' ' + (this.filterDateFrom || '...') + ' → ' + (this.filterDateTo || '...');
+      }
+      return label;
+    },
     contractOptions() {
       return this.contracts.map(c => ({ label: c[0] + ' - ' + c[1], value: c[0] }));
     },
@@ -128,8 +149,8 @@ window.app.component('admin-component', {
     selectWorker(worker) {
       this.selectedWorkerData = {
         info: worker,
-        records: this.allRecords.filter(r => String(r[1]) === String(worker.id)),
-        advances: this.allAdvances.filter(a => String(a[0]) === String(worker.id))
+        records: this.activeRecords.filter(r => String(r[1]) === String(worker.id)),
+        advances: this.activeAdvances.filter(a => String(a[0]) === String(worker.id))
       };
       this.adminTab = 'detail';
     },
@@ -139,6 +160,49 @@ window.app.component('admin-component', {
       this.adminTab = 'workers';
     },
     
+    // Převede DD. MM. YYYY na timestamp
+    dateStrToTs(dateStr, endOfDay = false) {
+      if (!dateStr) return null;
+      const p = dateStr.split('. ');
+      const d = new Date(p[2], p[1] - 1, p[0]);
+      if (endOfDay) d.setHours(23, 59, 59, 999);
+      return d.getTime();
+    },
+
+    async applyFilter() {
+      this.filterLoading = true;
+      try {
+        const params = { source: this.dataSource };
+        if (this.filterDateFrom) params.date_from = this.dateStrToTs(this.filterDateFrom);
+        if (this.filterDateTo) params.date_to = this.dateStrToTs(this.filterDateTo, true);
+        
+        // Načíst summary, records, advances najednou
+        const [sumRes, recRes, advRes] = await Promise.all([
+          apiCall('getallsummary', params),
+          apiCall('getallrecords', params),
+          apiCall('getalladvances', params)
+        ]);
+        
+        if (sumRes.code === '000') this.localSummary = sumRes.data;
+        if (recRes.code === '000') this.localRecords = recRes.data;
+        if (advRes.code === '000') this.localAdvances = advRes.data;
+        
+      } catch (err) {
+        this.$emit('message', 'Chyba načítání: ' + err);
+      }
+      this.filterLoading = false;
+    },
+
+    resetFilter() {
+      this.dataSource = 'new';
+      this.filterDateFrom = null;
+      this.filterDateTo = null;
+      this.localSummary = null;
+      this.localRecords = null;
+      this.localAdvances = null;
+      this.$emit('reload');
+    },
+
     async loadDayRecords() {
       if (!this.selectedDate) {
         this.selectedDate = this.getTodayDate();
@@ -420,9 +484,52 @@ this.$emit('message', '✓ Kopie uložena');
         <q-tab name="stats" label="Statistiky"/>
       </q-tabs>
 
+      <!-- LIŠTA FILTRU ZDROJE DAT -->
+      <div class="q-px-sm q-py-xs" style="background:#f5f5f5; border-bottom:1px solid #e0e0e0">
+        <div class="row items-center q-gutter-xs q-mb-xs">
+          <q-btn :color="dataSource==='new'?'primary':'grey-5'" label="Nové" dense size="sm" unelevated
+            @click="dataSource='new'; applyFilter()"/>
+          <q-btn :color="dataSource==='history'?'deep-orange':'grey-5'" label="Historie" dense size="sm" unelevated
+            @click="dataSource='history'; applyFilter()"/>
+          <q-btn :color="dataSource==='all'?'teal':'grey-5'" label="Vše" dense size="sm" unelevated
+            @click="dataSource='all'; applyFilter()"/>
+          <q-spinner v-if="filterLoading" size="sm" color="primary" class="q-ml-xs"/>
+          <q-btn v-if="localSummary!==null" flat dense size="sm" icon="close" color="grey"
+            @click="resetFilter()">
+            <q-tooltip>Resetovat filtr</q-tooltip>
+          </q-btn>
+        </div>
+        <div class="row q-gutter-xs items-center">
+          <q-input v-model="filterDateFrom" label="Od" dense outlined readonly
+            style="max-width:130px; font-size:0.8rem">
+            <template v-slot:append>
+              <q-icon name="event" class="cursor-pointer" size="sm">
+                <q-popup-proxy cover ref="filterFromProxy">
+                  <q-date v-model="filterDateFrom" mask="DD. MM. YYYY" locale="cs"
+                    @update:model-value="$refs.filterFromProxy.hide()"/>
+                </q-popup-proxy>
+              </q-icon>
+            </template>
+          </q-input>
+          <q-input v-model="filterDateTo" label="Do" dense outlined readonly
+            style="max-width:130px; font-size:0.8rem">
+            <template v-slot:append>
+              <q-icon name="event" class="cursor-pointer" size="sm">
+                <q-popup-proxy cover ref="filterToProxy">
+                  <q-date v-model="filterDateTo" mask="DD. MM. YYYY" locale="cs"
+                    @update:model-value="$refs.filterToProxy.hide()"/>
+                </q-popup-proxy>
+              </q-icon>
+            </template>
+          </q-input>
+          <q-btn color="primary" label="Načíst" dense size="sm" unelevated
+            @click="applyFilter()" :loading="filterLoading"/>
+        </div>
+      </div>
+
       <!-- PRACOVNÍCI - KOMPAKTNÍ -->
       <div v-if="adminTab==='workers'" class="q-pt-md">
-        <div v-for="worker in allSummary" :key="worker.id" class="worker-card" @click="selectWorker(worker)">
+        <div v-for="worker in activeSummary" :key="worker.id" class="worker-card" @click="selectWorker(worker)">
           <div class="row items-center no-wrap">
             <div style="min-width:100px" class="q-mr-xs">
               <div class="text-bold text-caption">{{ worker.name }}</div>
@@ -581,11 +688,11 @@ this.$emit('message', '✓ Kopie uložena');
       <!-- STATISTIKY -->
       <div v-if="adminTab==='stats'">
         <statistics-component
-          :all-records="allRecords"
+          :all-records="activeRecords"
           :contracts="contracts"
           :jobs="jobs"
           :places="places"
-          :all-advances="allAdvances"
+          :all-advances="activeAdvances"
           @message="(msg) => $emit('message', msg)"
         />
       </div>
