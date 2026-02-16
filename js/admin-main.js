@@ -111,8 +111,12 @@ window.app = Vue.createApp({
     },
 
     async applyFilter() {
+      await this.applyFilterWithSource(this.dataSource);
+    },
+
+    async applyFilterWithSource(source) {
       this.filterLoading = true;
-      const params = { source: this.dataSource };
+      const params = { source: source };
       if (this.filterDateFrom) params.date_from = this.dateStrToTs(this.filterDateFrom);
       if (this.filterDateTo) params.date_to = this.dateStrToTs(this.filterDateTo, true);
       await this.loadAdminData(params);
@@ -166,11 +170,11 @@ window.app = Vue.createApp({
           <!-- Tlačítka výběru zdroje dat -->
           <q-btn-group flat>
             <q-btn :outline="dataSource!=='new'" color="white" label="Nové" size="sm" dense
-              @click="dataSource='new'; applyFilter()"/>
+              @click="dataSource='new'; applyFilterWithSource('new')"/>
             <q-btn :outline="dataSource!=='history'" color="white" label="Hist." size="sm" dense
-              @click="dataSource='history'; applyFilter()"/>
+              @click="dataSource='history'; applyFilterWithSource('history')"/>
             <q-btn :outline="dataSource!=='all'" color="white" label="Vše" size="sm" dense
-              @click="dataSource='all'; applyFilter()"/>
+              @click="dataSource='all'; applyFilterWithSource('all')"/>
           </q-btn-group>
           <q-spinner v-if="filterLoading" color="white" size="sm" class="q-ml-xs"/>
         </q-toolbar>
