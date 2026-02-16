@@ -160,49 +160,6 @@ window.app.component('admin-component', {
       this.adminTab = 'workers';
     },
     
-    // Převede DD. MM. YYYY na timestamp
-    dateStrToTs(dateStr, endOfDay = false) {
-      if (!dateStr) return null;
-      const p = dateStr.split('. ');
-      const d = new Date(p[2], p[1] - 1, p[0]);
-      if (endOfDay) d.setHours(23, 59, 59, 999);
-      return d.getTime();
-    },
-
-    async applyFilter() {
-      this.filterLoading = true;
-      try {
-        const params = { source: this.dataSource };
-        if (this.filterDateFrom) params.date_from = this.dateStrToTs(this.filterDateFrom);
-        if (this.filterDateTo) params.date_to = this.dateStrToTs(this.filterDateTo, true);
-        
-        // Načíst summary, records, advances najednou
-        const [sumRes, recRes, advRes] = await Promise.all([
-          apiCall('getallsummary', params),
-          apiCall('getallrecords', params),
-          apiCall('getalladvances', params)
-        ]);
-        
-        if (sumRes.code === '000') this.localSummary = sumRes.data;
-        if (recRes.code === '000') this.localRecords = recRes.data;
-        if (advRes.code === '000') this.localAdvances = advRes.data;
-        
-      } catch (err) {
-        this.$emit('message', 'Chyba načítání: ' + err);
-      }
-      this.filterLoading = false;
-    },
-
-    resetFilter() {
-      this.dataSource = 'new';
-      this.filterDateFrom = null;
-      this.filterDateTo = null;
-      this.localSummary = null;
-      this.localRecords = null;
-      this.localAdvances = null;
-      this.$emit('reload');
-    },
-
     async loadDayRecords() {
       if (!this.selectedDate) {
         this.selectedDate = this.getTodayDate();
@@ -484,48 +441,7 @@ this.$emit('message', '✓ Kopie uložena');
         <q-tab name="stats" label="Statistiky"/>
       </q-tabs>
 
-      <!-- LIŠTA FILTRU ZDROJE DAT -->
-      <div class="q-px-sm q-py-xs" style="background:#f5f5f5; border-bottom:1px solid #e0e0e0">
-        <div class="row items-center q-gutter-xs q-mb-xs">
-          <q-btn :color="dataSource==='new'?'primary':'grey-5'" label="Nové" dense size="sm" unelevated
-            @click="dataSource='new'; applyFilter()"/>
-          <q-btn :color="dataSource==='history'?'deep-orange':'grey-5'" label="Historie" dense size="sm" unelevated
-            @click="dataSource='history'; applyFilter()"/>
-          <q-btn :color="dataSource==='all'?'teal':'grey-5'" label="Vše" dense size="sm" unelevated
-            @click="dataSource='all'; applyFilter()"/>
-          <q-spinner v-if="filterLoading" size="sm" color="primary" class="q-ml-xs"/>
-          <q-btn v-if="localSummary!==null" flat dense size="sm" icon="close" color="grey"
-            @click="resetFilter()">
-            <q-tooltip>Resetovat filtr</q-tooltip>
-          </q-btn>
-        </div>
-        <div class="row q-gutter-xs items-center">
-          <q-input v-model="filterDateFrom" label="Od" dense outlined readonly
-            style="max-width:130px; font-size:0.8rem">
-            <template v-slot:append>
-              <q-icon name="event" class="cursor-pointer" size="sm">
-                <q-popup-proxy cover ref="filterFromProxy">
-                  <q-date v-model="filterDateFrom" mask="DD. MM. YYYY" locale="cs"
-                    @update:model-value="$refs.filterFromProxy.hide()"/>
-                </q-popup-proxy>
-              </q-icon>
-            </template>
-          </q-input>
-          <q-input v-model="filterDateTo" label="Do" dense outlined readonly
-            style="max-width:130px; font-size:0.8rem">
-            <template v-slot:append>
-              <q-icon name="event" class="cursor-pointer" size="sm">
-                <q-popup-proxy cover ref="filterToProxy">
-                  <q-date v-model="filterDateTo" mask="DD. MM. YYYY" locale="cs"
-                    @update:model-value="$refs.filterToProxy.hide()"/>
-                </q-popup-proxy>
-              </q-icon>
-            </template>
-          </q-input>
-          <q-btn color="primary" label="Načíst" dense size="sm" unelevated
-            @click="applyFilter()" :loading="filterLoading"/>
-        </div>
-      </div>
+
 
       <!-- PRACOVNÍCI - KOMPAKTNÍ -->
       <div v-if="adminTab==='workers'" class="q-pt-md">
