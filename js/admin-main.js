@@ -17,11 +17,18 @@ window.app = Vue.createApp({
       allSummary: [],
       allRecords: [],
       allAdvances: [],
-      dataSource: 'new'
+      dataSource: 'new',
+      filterDateFrom: null,
+      filterDateTo: null
     }
   },
 
-  computed: {},
+  computed: {
+    sourceLabel() {
+      const labels = { new: 'Nové', history: 'Historie', all: 'Vše' };
+      return labels[this.dataSource] || 'Nové';
+    }
+  },
 
   methods: {
     showMessage(msg) {
@@ -76,6 +83,9 @@ window.app = Vue.createApp({
       if (this.dataSource === 'history') {
         return this.loadHistoryData();
       }
+      if (this.dataSource === 'all') {
+        return this.loadAllData();
+      }
       this.loading = true;
       const [summary, records, advances] = await Promise.all([
         apiCall('getallsummary'),
@@ -98,6 +108,44 @@ window.app = Vue.createApp({
       if (summary.data) this.allSummary = summary.data;
       if (records.data) this.allRecords = records.data;
       if (advances.data) this.allAdvances = advances.data;
+      this.loading = false;
+    },
+
+    async loadAllData() {
+      this.loading = true;
+      const [newSum, newRec, newAdv, histSum, histRec, histAdv] = await Promise.all([
+        apiCall('getallsummary'),
+        apiCall('getallrecords'),
+        apiCall('getalladvances'),
+        apiCall('gethistorysummary'),
+        apiCall('gethistoryrecords'),
+        apiCall('gethistoryadvances')
+      ]);
+      
+      // Sloučit summary - sečíst hodnoty pro každého pracovníka
+      const combined = {};
+      if (newSum.data) {
+        newSum.data.forEach(w => {
+          combined[w.id] = {...w};
+        });
+      }
+      if (histSum.data) {
+        histSum.data.forEach(w => {
+          if (combined[w.id]) {
+            combined[w.id].totalEarnings += w.totalEarnings;
+            combined[w.id].totalPaid += w.totalPaid;
+            combined[w.id].balance += w.balance;
+          } else {
+            combined[w.id] = {...w};
+          }
+        });
+      }
+      this.allSummary = Object.values(combined);
+      
+      // Sloučit records a advances
+      this.allRecords = [...(newRec.data || []), ...(histRec.data || [])];
+      this.allAdvances = [...(newAdv.data || []), ...(histAdv.data || [])];
+      
       this.loading = false;
     },
 
@@ -134,12 +182,20 @@ window.app = Vue.createApp({
           <q-toolbar-title>
             <q-icon name="admin_panel_settings" class="q-mr-sm"/>
             ADMIN Panel - {{ currentUser.name }}
+            <q-chip dense color="white" text-color="red" size="sm" class="q-ml-xs">
+              {{ sourceLabel }}
+            </q-chip>
           </q-toolbar-title>
-          <q-btn-group flat>
-            <q-btn :color="dataSource==='new'?'white':'grey-5'" label="Nové" size="sm" dense
+          <q-btn-group>
+            <q-btn :color="dataSource==='new'?'blue':'grey-7'" :text-color="dataSource==='new'?'white':'grey-4'" 
+              label="Nové" size="sm" dense unelevated
               @click="dataSource='new'; loadAdminData()"/>
-            <q-btn :color="dataSource==='history'?'white':'grey-5'" label="Historie" size="sm" dense
+            <q-btn :color="dataSource==='history'?'green':'grey-7'" :text-color="dataSource==='history'?'white':'grey-4'"
+              label="Historie" size="sm" dense unelevated
               @click="dataSource='history'; loadAdminData()"/>
+            <q-btn :color="dataSource==='all'?'orange':'grey-7'" :text-color="dataSource==='all'?'white':'grey-4'"
+              label="Vše" size="sm" dense unelevated
+              @click="dataSource='all'; loadAdminData()"/>
           </q-btn-group>
         </q-toolbar>
       </q-header>
