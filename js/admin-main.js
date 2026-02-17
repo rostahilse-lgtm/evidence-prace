@@ -86,7 +86,7 @@ window.app = Vue.createApp({
     },
 
     async loadAdminData(params) {
-      this.loading = true;
+      // Nepoužíváme this.loading - to schovává celou komponentu!
       const p = params || { source: this.dataSource };
       if (this.filterDateFrom && !params) p.date_from = this.dateStrToTs(this.filterDateFrom);
       if (this.filterDateTo && !params) p.date_to = this.dateStrToTs(this.filterDateTo, true);
@@ -99,7 +99,6 @@ window.app = Vue.createApp({
       if (summary.data) this.allSummary = summary.data;
       if (records.data) this.allRecords = records.data;
       if (advances.data) this.allAdvances = advances.data;
-      this.loading = false;
     },
 
     dateStrToTs(dateStr, endOfDay = false) {
