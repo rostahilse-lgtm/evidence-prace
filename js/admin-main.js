@@ -16,7 +16,8 @@ window.app = Vue.createApp({
       lunches: [],
       allSummary: [],
       allRecords: [],
-      allAdvances: []
+      allAdvances: [],
+      dataSource: 'new'
     }
   },
 
@@ -72,11 +73,27 @@ window.app = Vue.createApp({
     },
 
     async loadAdminData() {
+      if (this.dataSource === 'history') {
+        return this.loadHistoryData();
+      }
       this.loading = true;
       const [summary, records, advances] = await Promise.all([
         apiCall('getallsummary'),
         apiCall('getallrecords'),
         apiCall('getalladvances')
+      ]);
+      if (summary.data) this.allSummary = summary.data;
+      if (records.data) this.allRecords = records.data;
+      if (advances.data) this.allAdvances = advances.data;
+      this.loading = false;
+    },
+
+    async loadHistoryData() {
+      this.loading = true;
+      const [summary, records, advances] = await Promise.all([
+        apiCall('gethistorysummary'),
+        apiCall('gethistoryrecords'),
+        apiCall('gethistoryadvances')
       ]);
       if (summary.data) this.allSummary = summary.data;
       if (records.data) this.allRecords = records.data;
@@ -118,6 +135,12 @@ window.app = Vue.createApp({
             <q-icon name="admin_panel_settings" class="q-mr-sm"/>
             ADMIN Panel - {{ currentUser.name }}
           </q-toolbar-title>
+          <q-btn-group flat>
+            <q-btn :color="dataSource==='new'?'white':'grey-5'" label="Nové" size="sm" dense
+              @click="dataSource='new'; loadAdminData()"/>
+            <q-btn :color="dataSource==='history'?'white':'grey-5'" label="Historie" size="sm" dense
+              @click="dataSource='history'; loadAdminData()"/>
+          </q-btn-group>
         </q-toolbar>
       </q-header>
 
