@@ -16,25 +16,11 @@ window.app = Vue.createApp({
       lunches: [],
       allSummary: [],
       allRecords: [],
-      allAdvances: [],
-      // FILTR ZDROJE DAT
-      dataSource: 'new',
-      filterDateFrom: null,
-      filterDateTo: null,
-      filterLoading: false
+      allAdvances: []
     }
   },
 
-  computed: {
-    sourceLabel() {
-      const labels = { new: 'Nové', history: 'Historie', all: 'Vše' };
-      let label = labels[this.dataSource] || 'Nové';
-      if (this.filterDateFrom || this.filterDateTo) {
-        label += ' ' + (this.filterDateFrom || '...') + '→' + (this.filterDateTo || '...');
-      }
-      return label;
-    }
-  },
+  computed: {},
 
   methods: {
     showMessage(msg) {
@@ -85,48 +71,17 @@ window.app = Vue.createApp({
       this.loading = false;
     },
 
-    async loadAdminData(params) {
-      // Nepoužíváme this.loading - to schovává celou komponentu!
-      const p = params || { source: this.dataSource };
-      if (this.filterDateFrom && !params) p.date_from = this.dateStrToTs(this.filterDateFrom);
-      if (this.filterDateTo && !params) p.date_to = this.dateStrToTs(this.filterDateTo, true);
-
+    async loadAdminData() {
+      this.loading = true;
       const [summary, records, advances] = await Promise.all([
-        apiCall('getallsummary', p),
-        apiCall('getallrecords', p),
-        apiCall('getalladvances', p)
+        apiCall('getallsummary'),
+        apiCall('getallrecords'),
+        apiCall('getalladvances')
       ]);
       if (summary.data) this.allSummary = summary.data;
       if (records.data) this.allRecords = records.data;
       if (advances.data) this.allAdvances = advances.data;
-    },
-
-    dateStrToTs(dateStr, endOfDay = false) {
-      if (!dateStr) return null;
-      const p = dateStr.split('. ');
-      const d = new Date(parseInt(p[2]), parseInt(p[1]) - 1, parseInt(p[0]));
-      if (endOfDay) d.setHours(23, 59, 59, 999);
-      return d.getTime();
-    },
-
-    async applyFilter() {
-      await this.applyFilterWithSource(this.dataSource);
-    },
-
-    async applyFilterWithSource(source) {
-      this.filterLoading = true;
-      const params = { source: source };
-      if (this.filterDateFrom) params.date_from = this.dateStrToTs(this.filterDateFrom);
-      if (this.filterDateTo) params.date_to = this.dateStrToTs(this.filterDateTo, true);
-      await this.loadAdminData(params);
-      this.filterLoading = false;
-    },
-
-    resetFilter() {
-      this.dataSource = 'new';
-      this.filterDateFrom = null;
-      this.filterDateTo = null;
-      this.loadAdminData({ source: 'new' });
+      this.loading = false;
     },
 
     logout() {
@@ -162,52 +117,8 @@ window.app = Vue.createApp({
           <q-toolbar-title>
             <q-icon name="admin_panel_settings" class="q-mr-sm"/>
             ADMIN Panel - {{ currentUser.name }}
-            <q-badge color="white" text-color="red" class="q-ml-sm" style="font-size:0.7rem">
-              {{ sourceLabel }}
-            </q-badge>
           </q-toolbar-title>
-          <!-- Tlačítka výběru zdroje dat -->
-          <q-btn-group flat>
-            <q-btn :outline="dataSource!=='new'" color="white" label="Nové" size="sm" dense
-              @click="dataSource='new'; applyFilterWithSource('new')"/>
-            <q-btn :outline="dataSource!=='history'" color="white" label="Hist." size="sm" dense
-              @click="dataSource='history'; applyFilterWithSource('history')"/>
-            <q-btn :outline="dataSource!=='all'" color="white" label="Vše" size="sm" dense
-              @click="dataSource='all'; applyFilterWithSource('all')"/>
-          </q-btn-group>
-          <q-spinner v-if="filterLoading" color="white" size="sm" class="q-ml-xs"/>
         </q-toolbar>
-        <!-- Datum od/do filtr -->
-        <div class="row q-px-sm q-pb-xs q-gutter-xs items-center" style="background:rgba(0,0,0,0.15)">
-          <q-input v-model="filterDateFrom" label="Od" dense dark borderless readonly
-            style="max-width:110px; font-size:0.75rem">
-            <template v-slot:append>
-              <q-icon name="event" class="cursor-pointer" size="xs">
-                <q-popup-proxy cover ref="fromProxy">
-                  <q-date v-model="filterDateFrom" mask="DD. MM. YYYY" locale="cs"
-                    @update:model-value="$refs.fromProxy.hide()"/>
-                </q-popup-proxy>
-              </q-icon>
-            </template>
-          </q-input>
-          <q-input v-model="filterDateTo" label="Do" dense dark borderless readonly
-            style="max-width:110px; font-size:0.75rem">
-            <template v-slot:append>
-              <q-icon name="event" class="cursor-pointer" size="xs">
-                <q-popup-proxy cover ref="toProxy">
-                  <q-date v-model="filterDateTo" mask="DD. MM. YYYY" locale="cs"
-                    @update:model-value="$refs.toProxy.hide()"/>
-                </q-popup-proxy>
-              </q-icon>
-            </template>
-          </q-input>
-          <q-btn color="white" text-color="red" label="Načíst" dense size="sm" unelevated
-            @click="applyFilter()" :loading="filterLoading"/>
-          <q-btn v-if="filterDateFrom||filterDateTo" flat color="white" icon="close" dense size="sm"
-            @click="resetFilter()">
-            <q-tooltip>Reset filtru</q-tooltip>
-          </q-btn>
-        </div>
       </q-header>
 
       <q-page-container>
@@ -251,7 +162,7 @@ window.app = Vue.createApp({
             :jobs="jobs"
             :loading="loading"
             @message="showMessage"
-            @reload="applyFilter"
+            @reload="loadAdminData"
           />
 
           <statistics-component
