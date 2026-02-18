@@ -80,74 +80,18 @@ window.app = Vue.createApp({
     },
 
     async loadAdminData() {
-      if (this.dataSource === 'history') {
-        return this.loadHistoryData();
-      }
-      if (this.dataSource === 'all') {
-        return this.loadAllData();
-      }
       this.loading = true;
+      const params = { source: this.dataSource };
+      
       const [summary, records, advances] = await Promise.all([
-        apiCall('getallsummary'),
-        apiCall('getallrecords'),
-        apiCall('getalladvances')
+        apiCall('getallsummary', params),
+        apiCall('getallrecords', params),
+        apiCall('getalladvances', params)
       ]);
+      
       if (summary.data) this.allSummary = summary.data;
       if (records.data) this.allRecords = records.data;
       if (advances.data) this.allAdvances = advances.data;
-      this.loading = false;
-    },
-
-    async loadHistoryData() {
-      this.loading = true;
-      const [summary, records, advances] = await Promise.all([
-        apiCall('gethistorysummary'),
-        apiCall('gethistoryrecords'),
-        apiCall('gethistoryadvances')
-      ]);
-      if (summary.data) this.allSummary = summary.data;
-      if (records.data) this.allRecords = records.data;
-      if (advances.data) this.allAdvances = advances.data;
-      this.loading = false;
-    },
-
-    async loadAllData() {
-      this.loading = true;
-      const [newSum, newRec, newAdv, histSum, histRec, histAdv] = await Promise.all([
-        apiCall('getallsummary'),
-        apiCall('getallrecords'),
-        apiCall('getalladvances'),
-        apiCall('gethistorysummary'),
-        apiCall('gethistoryrecords'),
-        apiCall('gethistoryadvances')
-      ]);
-      
-      // Sloučit summary - sečíst hodnoty pro každého pracovníka
-      const combined = {};
-      if (newSum.data) {
-        newSum.data.forEach(w => {
-          combined[w.id] = {...w};
-        });
-      }
-      if (histSum.data) {
-        histSum.data.forEach(w => {
-          if (combined[w.id]) {
-            combined[w.id].totalEarnings += w.totalEarnings;
-            combined[w.id].totalPaid += w.totalPaid;
-            combined[w.id].balance += w.balance;
-          } else {
-            combined[w.id] = {...w};
-          }
-        });
-      }
-      this.allSummary = Object.values(combined);
-      
-      // Sloučit records a advances - seřadit od nejnovějších
-      const allRec = [...(newRec.data || []), ...(histRec.data || [])];
-      const allAdv = [...(newAdv.data || []), ...(histAdv.data || [])];
-      this.allRecords = allRec.sort((a, b) => b[4] - a[4]); // seřadit podle timestamp
-      this.allAdvances = allAdv.sort((a, b) => b[1] - a[1]);
-      
       this.loading = false;
     },
 
