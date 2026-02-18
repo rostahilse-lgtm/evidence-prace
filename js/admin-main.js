@@ -142,9 +142,11 @@ window.app = Vue.createApp({
       }
       this.allSummary = Object.values(combined);
       
-      // Sloučit records a advances
-      this.allRecords = [...(newRec.data || []), ...(histRec.data || [])];
-      this.allAdvances = [...(newAdv.data || []), ...(histAdv.data || [])];
+      // Sloučit records a advances - seřadit od nejnovějších
+      const allRec = [...(newRec.data || []), ...(histRec.data || [])];
+      const allAdv = [...(newAdv.data || []), ...(histAdv.data || [])];
+      this.allRecords = allRec.sort((a, b) => b[4] - a[4]); // seřadit podle timestamp
+      this.allAdvances = allAdv.sort((a, b) => b[1] - a[1]);
       
       this.loading = false;
     },
@@ -198,6 +200,34 @@ window.app = Vue.createApp({
               @click="dataSource='all'; loadAdminData()"/>
           </q-btn-group>
         </q-toolbar>
+        <!-- Datum od/do - ZATÍM BEZ FUNKCE -->
+        <div class="row q-px-sm q-pb-xs q-gutter-xs items-center" style="background:rgba(0,0,0,0.15)">
+          <q-input v-model="filterDateFrom" label="Od" dense dark borderless readonly
+            style="max-width:110px; font-size:0.75rem" bg-color="transparent">
+            <template v-slot:append>
+              <q-icon name="event" class="cursor-pointer" size="xs">
+                <q-popup-proxy cover ref="fromProxy">
+                  <q-date v-model="filterDateFrom" mask="DD. MM. YYYY" locale="cs"
+                    @update:model-value="$refs.fromProxy.hide()"/>
+                </q-popup-proxy>
+              </q-icon>
+            </template>
+          </q-input>
+          <q-input v-model="filterDateTo" label="Do" dense dark borderless readonly
+            style="max-width:110px; font-size:0.75rem" bg-color="transparent">
+            <template v-slot:append>
+              <q-icon name="event" class="cursor-pointer" size="xs">
+                <q-popup-proxy cover ref="toProxy">
+                  <q-date v-model="filterDateTo" mask="DD. MM. YYYY" locale="cs"
+                    @update:model-value="$refs.toProxy.hide()"/>
+                </q-popup-proxy>
+              </q-icon>
+            </template>
+          </q-input>
+          <q-btn color="white" text-color="red" label="Načíst" dense size="sm" unelevated disabled>
+            <q-tooltip>Zatím nefunguje</q-tooltip>
+          </q-btn>
+        </div>
       </q-header>
 
       <q-page-container>
