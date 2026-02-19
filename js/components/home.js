@@ -29,9 +29,11 @@ window.app.component('home-component', {
   },
 
   computed: {
-    // Přečte nastavení z localStorage
+    // Přečte nastavení z localStorage, pokud není nastaveno použije DEFAULT_CLOUD_SHIFT z config.js
     cloudShiftEnabled() {
-      return localStorage.getItem('cloudShift') === 'true';
+      const saved = localStorage.getItem('cloudShift');
+      if (saved !== null) return saved === 'true';
+      return typeof DEFAULT_CLOUD_SHIFT !== 'undefined' ? DEFAULT_CLOUD_SHIFT : false;
     },
     contractOptions() {
       return this.contracts.map(c => ({ label: c[0] + ' - ' + c[1], value: c[0] }));
