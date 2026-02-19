@@ -17,16 +17,21 @@ window.app = Vue.createApp({
       allSummary: [],
       allRecords: [],
       allAdvances: [],
+      // ZDROJ DAT
       dataSource: 'new',
-      filterDateFrom: null,
-      filterDateTo: null
+      histDateFrom: '',
+      histDateTo: ''
     }
   },
 
   computed: {
-    sourceLabel() {
-      const labels = { new: 'Nové', history: 'Historie', all: 'Vše' };
-      return labels[this.dataSource] || 'Nové';
+    dataSourceLabel() {
+      if (this.dataSource === 'new') return 'NOVÉ';
+      if (this.dataSource === 'history') return 'HISTORIE';
+      return 'VŠE';
+    },
+    showDateFilter() {
+      return this.dataSource === 'history' || this.dataSource === 'all';
     }
   },
 
@@ -38,6 +43,15 @@ window.app = Vue.createApp({
         this.message = '';
         this.showMessageDialog = false;
       }, 4000);
+    },
+
+    setDataSource(source) {
+      this.dataSource = source;
+      // Pokud přepneme na 'new', načteme rovnou bez datumu
+      if (source === 'new') {
+        this.loadAdminData();
+      }
+      // Pro history a all čekáme na klik NAČÍST (nebo rovnou načteme bez filtru)
     },
 
     async handleLogin(worker) {
@@ -81,17 +95,31 @@ window.app = Vue.createApp({
 
     async loadAdminData() {
       this.loading = true;
+
+      // Sestavit parametry podle zdroje a datumu
       const params = { source: this.dataSource };
-      
+      if (this.showDateFilter && this.histDateFrom) {
+        params.date_from = new Date(this.histDateFrom).getTime();
+      }
+      if (this.showDateFilter && this.histDateTo) {
+        params.date_to = new Date(this.histDateTo).getTime();
+      }
+
       const [summary, records, advances] = await Promise.all([
         apiCall('getallsummary', params),
         apiCall('getallrecords', params),
         apiCall('getalladvances', params)
       ]);
-      
       if (summary.data) this.allSummary = summary.data;
       if (records.data) this.allRecords = records.data;
       if (advances.data) this.allAdvances = advances.data;
+
+      const label = this.dataSourceLabel;
+      const dateInfo = (this.showDateFilter && this.histDateFrom && this.histDateTo)
+        ? ` (${this.histDateFrom} – ${this.histDateTo})`
+        : '';
+      this.showMessage(`✓ Načteno: ${label}${dateInfo}`);
+
       this.loading = false;
     },
 
@@ -125,52 +153,60 @@ window.app = Vue.createApp({
     <q-layout view="hHh lpR fFf">
       <q-header v-if="isLoggedIn" class="bg-red text-white">
         <q-toolbar>
-          <q-toolbar-title>
-            <q-icon name="admin_panel_settings" class="q-mr-sm"/>
-            ADMIN Panel - {{ currentUser.name }}
-            <q-chip dense color="white" text-color="red" size="sm" class="q-ml-xs">
-              {{ sourceLabel }}
-            </q-chip>
+          <q-toolbar-title style="font-size:1rem">
+            <q-icon name="admin_panel_settings" class="q-mr-xs"/>
+            {{ currentUser.name }}
+            <q-badge color="white" text-color="red" class="q-ml-sm" style="font-size:0.7rem">{{ dataSourceLabel }}</q-badge>
           </q-toolbar-title>
-          <q-btn-group>
-            <q-btn :color="dataSource==='new'?'blue':'grey-7'" :text-color="dataSource==='new'?'white':'grey-4'" 
-              label="Nové" size="sm" dense unelevated
-              @click="dataSource='new'; loadAdminData()"/>
-            <q-btn :color="dataSource==='history'?'green':'grey-7'" :text-color="dataSource==='history'?'white':'grey-4'"
-              label="Historie" size="sm" dense unelevated
-              @click="dataSource='history'; loadAdminData()"/>
-            <q-btn :color="dataSource==='all'?'orange':'grey-7'" :text-color="dataSource==='all'?'white':'grey-4'"
-              label="Vše" size="sm" dense unelevated
-              @click="dataSource='all'; loadAdminData()"/>
+
+          <!-- PŘEPÍNAČ ZDROJE -->
+          <q-btn-group flat>
+            <q-btn
+              dense flat size="sm" label="NOVÉ"
+              :color="dataSource==='new' ? 'white' : 'red-3'"
+              @click="setDataSource('new')"
+            />
+            <q-btn
+              dense flat size="sm" label="HIST"
+              :color="dataSource==='history' ? 'white' : 'red-3'"
+              @click="setDataSource('history')"
+            />
+            <q-btn
+              dense flat size="sm" label="VŠE"
+              :color="dataSource==='all' ? 'white' : 'red-3'"
+              @click="setDataSource('all')"
+            />
           </q-btn-group>
+
+          <q-btn flat round dense icon="logout" @click="logout" class="q-ml-sm"/>
         </q-toolbar>
-        <!-- Datum od/do - ZATÍM BEZ FUNKCE -->
-        <div class="row q-px-sm q-pb-xs q-gutter-xs items-center" style="background:rgba(0,0,0,0.15)">
-          <q-input v-model="filterDateFrom" label="Od" dense dark borderless readonly
-            style="max-width:110px; font-size:0.75rem" bg-color="transparent">
-            <template v-slot:append>
-              <q-icon name="event" class="cursor-pointer" size="xs">
-                <q-popup-proxy cover ref="fromProxy">
-                  <q-date v-model="filterDateFrom" mask="DD. MM. YYYY" locale="cs"
-                    @update:model-value="$refs.fromProxy.hide()"/>
-                </q-popup-proxy>
-              </q-icon>
-            </template>
-          </q-input>
-          <q-input v-model="filterDateTo" label="Do" dense dark borderless readonly
-            style="max-width:110px; font-size:0.75rem" bg-color="transparent">
-            <template v-slot:append>
-              <q-icon name="event" class="cursor-pointer" size="xs">
-                <q-popup-proxy cover ref="toProxy">
-                  <q-date v-model="filterDateTo" mask="DD. MM. YYYY" locale="cs"
-                    @update:model-value="$refs.toProxy.hide()"/>
-                </q-popup-proxy>
-              </q-icon>
-            </template>
-          </q-input>
-          <q-btn color="white" text-color="red" label="Načíst" dense size="sm" unelevated disabled>
-            <q-tooltip>Zatím nefunguje</q-tooltip>
-          </q-btn>
+
+        <!-- ŘÁDEK S DATUMY - jen pro HIST a VŠE -->
+        <div v-if="showDateFilter" class="row q-px-sm q-pb-sm q-gutter-xs items-center">
+          <q-input
+            v-model="histDateFrom"
+            type="date"
+            dense outlined dark
+            label="Od"
+            style="max-width:140px; background:rgba(255,255,255,0.15)"
+            class="col"
+          />
+          <q-input
+            v-model="histDateTo"
+            type="date"
+            dense outlined dark
+            label="Do"
+            style="max-width:140px; background:rgba(255,255,255,0.15)"
+            class="col"
+          />
+          <q-btn
+            dense unelevated
+            label="NAČÍST"
+            color="white"
+            text-color="red"
+            @click="loadAdminData"
+            :loading="loading"
+          />
         </div>
       </q-header>
 
@@ -236,9 +272,7 @@ window.app = Vue.createApp({
 
           <settings-component
             v-if="isLoggedIn && currentView === 'settings' && !loading"
-            :current-user="currentUser"
             @message="showMessage"
-            @logout="logout"
           />
         </q-page>
       </q-page-container>
