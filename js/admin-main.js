@@ -163,17 +163,17 @@ window.app = Vue.createApp({
           <q-btn-group flat>
             <q-btn
               dense flat size="sm" label="NOVÉ"
-              :color="dataSource==='new' ? 'white' : 'red-3'"
+              :color="dataSource==='new' ? 'white' : 'red-9'"
               @click="setDataSource('new')"
             />
             <q-btn
               dense flat size="sm" label="HIST"
-              :color="dataSource==='history' ? 'white' : 'red-3'"
+              :color="dataSource==='history' ? 'white' : 'red-9'"
               @click="setDataSource('history')"
             />
             <q-btn
               dense flat size="sm" label="VŠE"
-              :color="dataSource==='all' ? 'white' : 'red-3'"
+              :color="dataSource==='all' ? 'white' : 'red-9'"
               @click="setDataSource('all')"
             />
           </q-btn-group>
