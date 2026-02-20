@@ -1,4 +1,3 @@
-
 window.app = Vue.createApp({
   data() {
     return {
@@ -49,13 +48,22 @@ window.app = Vue.createApp({
     
     async loadUserData() {
       this.loading = true;
+      // Načíst nastavení zdroje dat z localStorage
+      const source = localStorage.getItem('dataSource') || 'new';
+      const dateFrom = localStorage.getItem('dataDateFrom') || '';
+      const dateTo = localStorage.getItem('dataDateTo') || '';
+
+      const params = { id_worker: this.currentUser.id, source };
+      if (dateFrom) params.date_from = new Date(dateFrom).getTime();
+      if (dateTo) params.date_to = new Date(dateTo + 'T23:59:59').getTime();
+
       const [c, j, p, s, r, a] = await Promise.all([
         apiCall('get', { type: 'contracts' }),
         apiCall('get', { type: 'jobs' }),
         apiCall('get', { type: 'places' }),
         apiCall('getsummary', { id_worker: this.currentUser.id }),
-        apiCall('getrecords', { id_worker: this.currentUser.id }),
-        apiCall('getadvances', { id_worker: this.currentUser.id })
+        apiCall('getrecords', params),
+        apiCall('getadvances', params)
       ]);
       if (c.data) this.contracts = c.data;
       if (j.data) this.jobs = j.data;
@@ -111,9 +119,6 @@ window.app = Vue.createApp({
         <q-toolbar>
           <q-toolbar-title>{{ currentUser.name }}</q-toolbar-title>
           <span v-if="isAdmin" class="admin-badge q-ml-sm">ADMIN</span>
-          <q-btn v-if="isAdmin" flat dense label="Panel" icon="book" 
-            href="https://evidence-prace.vercel.app/admin.html" target="_blank" class="q-ml-md" />
-          <q-btn flat round dense icon="logout" @click="logout" />
         </q-toolbar>
       </q-header>
 
@@ -157,7 +162,6 @@ window.app = Vue.createApp({
             :all-advances="allAdvances"
             :contracts="contracts"
             :jobs="jobs"
-            :places="places"
             :loading="loading"
             @message="showMessage"
             @reload="loadAdminData"
@@ -166,6 +170,8 @@ window.app = Vue.createApp({
           <settings-component
             v-if="isLoggedIn && currentView === 'settings' && !loading"
             @message="showMessage"
+            @logout="logout"
+            @reload="loadUserData"
           />
         </q-page>
       </q-page-container>
@@ -192,5 +198,3 @@ setTimeout(() => {
   window.app.use(Quasar);
   window.app.mount('#app');
 }, 100);
-
-
