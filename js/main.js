@@ -1,3 +1,7 @@
+// Evidence práce 2026 - main.js
+// v2026-02-21 - Oprava destructuringu (places přidány správně), logout zachován v headeru,
+//               přidán zdroj dat za jménem (čte z localStorage 'dataSource')
+
 window.app = Vue.createApp({
   data() {
     return {
@@ -21,6 +25,15 @@ window.app = Vue.createApp({
     }
   },
 
+  computed: {
+    dataSourceLabel() {
+      const s = localStorage.getItem('dataSource') || 'new';
+      if (s === 'history') return '· HIST';
+      if (s === 'all') return '· VŠE';
+      return '';
+    }
+  },
+
   methods: {
     showMessage(msg) {
       this.message = msg;
@@ -30,7 +43,7 @@ window.app = Vue.createApp({
         this.showMessageDialog = false;
       }, 4000);
     },
-    
+
     async handleLogin(worker) {
       this.currentUser = {
         id: worker[0],
@@ -45,38 +58,32 @@ window.app = Vue.createApp({
       if (this.isAdmin) await this.loadAdminData();
       this.showMessage('Přihlášen: ' + this.currentUser.name);
     },
-    
+
     async loadUserData() {
       this.loading = true;
-      // Načíst nastavení zdroje dat z localStorage
       const source = localStorage.getItem('dataSource') || 'new';
-      const dateFrom = localStorage.getItem('dataDateFrom') || '';
-      const dateTo = localStorage.getItem('dataDateTo') || '';
 
-      const params = { id_worker: this.currentUser.id, source };
-      if (dateFrom) params.date_from = new Date(dateFrom).getTime();
-      if (dateTo) params.date_to = new Date(dateTo + 'T23:59:59').getTime();
-
-      const [c, j, p, s, r, a] = await Promise.all([
+      // POZOR: pořadí musí odpovídat destructuringu níže!
+      const [c, j, s, r, a, p] = await Promise.all([
         apiCall('get', { type: 'contracts' }),
         apiCall('get', { type: 'jobs' }),
-        apiCall('get', { type: 'places' }),
         apiCall('getsummary', { id_worker: this.currentUser.id }),
-        apiCall('getrecords', params),
-        apiCall('getadvances', params)
+        apiCall('getrecords', { id_worker: this.currentUser.id, source }),
+        apiCall('getadvances', { id_worker: this.currentUser.id, source }),
+        apiCall('get', { type: 'places' })
       ]);
       if (c.data) this.contracts = c.data;
       if (j.data) this.jobs = j.data;
-      if (p.data) this.places = p.data;
       if (s.data) this.summary = s.data;
       if (r.data) this.records = r.data;
       if (a.data) {
         this.advances = a.data.filter(adv => adv[5] !== 'oběd');
         this.lunches = a.data.filter(adv => adv[5] === 'oběd');
       }
+      if (p.data) this.places = p.data;
       this.loading = false;
     },
-    
+
     async loadAdminData() {
       this.loading = true;
       const [summary, records, advances] = await Promise.all([
@@ -89,7 +96,7 @@ window.app = Vue.createApp({
       if (advances.data) this.allAdvances = advances.data;
       this.loading = false;
     },
-    
+
     logout() {
       this.isLoggedIn = false;
       this.currentUser = null;
@@ -98,7 +105,7 @@ window.app = Vue.createApp({
       this.showMessage('Odhlášen');
     }
   },
-  
+
   async mounted() {
     const savedId = localStorage.getItem('workerId');
     if (savedId) {
@@ -117,8 +124,11 @@ window.app = Vue.createApp({
     <q-layout view="hHh lpR fFf">
       <q-header v-if="isLoggedIn" class="bg-primary text-white">
         <q-toolbar>
-          <q-toolbar-title>{{ currentUser.name }}</q-toolbar-title>
+          <q-toolbar-title>{{ currentUser.name }}<span class="text-caption q-ml-sm">{{ dataSourceLabel }}</span></q-toolbar-title>
           <span v-if="isAdmin" class="admin-badge q-ml-sm">ADMIN</span>
+          <q-btn v-if="isAdmin" flat dense label="PANEL" icon-right="open_in_new"
+            size="sm" class="q-ml-sm" tag="a" href="admin.html" target="_blank" />
+          <q-btn flat round dense icon="logout" @click="logout" />
         </q-toolbar>
       </q-header>
 
@@ -128,7 +138,7 @@ window.app = Vue.createApp({
             <q-spinner color="primary" size="3em" />
           </div>
 
-          <login-component 
+          <login-component
             v-if="!isLoggedIn && !loading"
             :loading="loading"
             @login="handleLogin"
@@ -138,7 +148,6 @@ window.app = Vue.createApp({
           <home-component
             v-if="isLoggedIn && currentView === 'home' && !loading"
             :current-user="currentUser"
-            :is-admin="isAdmin"
             :contracts="contracts"
             :jobs="jobs"
             :places="places"
