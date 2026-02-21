@@ -1,6 +1,6 @@
 // Evidence práce 2026 - main.js
-// v2026-02-21 - Oprava destructuringu (places přidány správně), logout zachován v headeru,
-//               přidán zdroj dat za jménem (čte z localStorage 'dataSource')
+// v2026-02-21a - Oprava: odebran source z getrecords/getadvances (nepodporují ho) → oprava Přehledů
+// v2026-02-21  - Oprava destructuringu, places přidány, logout v headeru, zdroj dat za jménem
 
 window.app = Vue.createApp({
   data() {
@@ -68,8 +68,8 @@ window.app = Vue.createApp({
         apiCall('get', { type: 'contracts' }),
         apiCall('get', { type: 'jobs' }),
         apiCall('getsummary', { id_worker: this.currentUser.id }),
-        apiCall('getrecords', { id_worker: this.currentUser.id, source }),
-        apiCall('getadvances', { id_worker: this.currentUser.id, source }),
+        apiCall('getrecords', { id_worker: this.currentUser.id }),
+        apiCall('getadvances', { id_worker: this.currentUser.id }),
         apiCall('get', { type: 'places' })
       ]);
       if (c.data) this.contracts = c.data;
