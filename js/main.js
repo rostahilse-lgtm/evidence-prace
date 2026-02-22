@@ -31,7 +31,7 @@ window.app = Vue.createApp({
       const s = localStorage.getItem('dataSource') || 'new';
       if (s === 'history') return '· HIST';
       if (s === 'all') return '· VŠE';
-      return '';
+    return '· NOVÉ';
     }
   },
 
@@ -209,3 +209,4 @@ setTimeout(() => {
   window.app.use(Quasar);
   window.app.mount('#app');
 }, 100);
+
