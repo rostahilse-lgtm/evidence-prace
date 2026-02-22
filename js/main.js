@@ -1,6 +1,7 @@
 // Evidence práce 2026 - main.js
-// v2026-02-21a - Oprava: odebran source z getrecords/getadvances (nepodporují ho) → oprava Přehledů
-// v2026-02-21  - Oprava destructuringu, places přidány, logout v headeru, zdroj dat za jménem
+// v2026-02-22 - source parametr obnoven v getrecords/getadvances, logout odstraněn z headeru
+// v2026-02-21a - Oprava: odebran source (chybně) → oprava Přehledů
+// v2026-02-21  - Oprava destructuringu, places přidány, zdroj dat za jménem
 
 window.app = Vue.createApp({
   data() {
@@ -63,13 +64,12 @@ window.app = Vue.createApp({
       this.loading = true;
       const source = localStorage.getItem('dataSource') || 'new';
 
-      // POZOR: pořadí musí odpovídat destructuringu níže!
       const [c, j, s, r, a, p] = await Promise.all([
         apiCall('get', { type: 'contracts' }),
         apiCall('get', { type: 'jobs' }),
         apiCall('getsummary', { id_worker: this.currentUser.id }),
-        apiCall('getrecords', { id_worker: this.currentUser.id }),
-        apiCall('getadvances', { id_worker: this.currentUser.id }),
+        apiCall('getrecords', { id_worker: this.currentUser.id, source }),
+        apiCall('getadvances', { id_worker: this.currentUser.id, source }),
         apiCall('get', { type: 'places' })
       ]);
       if (c.data) this.contracts = c.data;
@@ -124,11 +124,13 @@ window.app = Vue.createApp({
     <q-layout view="hHh lpR fFf">
       <q-header v-if="isLoggedIn" class="bg-primary text-white">
         <q-toolbar>
-          <q-toolbar-title>{{ currentUser.name }}<span class="text-caption q-ml-sm">{{ dataSourceLabel }}</span></q-toolbar-title>
+          <q-toolbar-title>
+            {{ currentUser.name }}
+            <span class="text-caption q-ml-sm">{{ dataSourceLabel }}</span>
+          </q-toolbar-title>
           <span v-if="isAdmin" class="admin-badge q-ml-sm">ADMIN</span>
           <q-btn v-if="isAdmin" flat dense label="PANEL" icon-right="open_in_new"
             size="sm" class="q-ml-sm" tag="a" href="admin.html" target="_blank" />
-          <q-btn flat round dense icon="logout" @click="logout" />
         </q-toolbar>
       </q-header>
 
