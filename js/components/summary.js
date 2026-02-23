@@ -1,3 +1,6 @@
+// summary.js - Evidence práce 2026
+// v2026-02-23 - Oprava: record[7].toFixed → parseFloat aby fungovalo i pro rozpracované záznamy
+
 window.app.component('summary-component', {
   props: ['summary', 'records', 'advances', 'lunches'],
   
@@ -58,7 +61,7 @@ window.app.component('summary-component', {
               <div class="text-caption text-grey-7">{{ record[3] }} • {{ record[14] || 'Nezadáno' }}</div>
             </div>
             <div class="text-right">
-              <div class="text-bold text-primary">{{ record[7].toFixed(2) }} hod</div>
+              <div class="text-bold text-primary">{{ (parseFloat(record[7]) || 0).toFixed(2) }} hod</div>
               <div class="text-caption">Vydělal: {{ calculateEarnings(record) }} Kč</div>
             </div>
           </div>
