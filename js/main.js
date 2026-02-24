@@ -1,4 +1,5 @@
 // Evidence práce 2026 - main.js
+// v2026-02-24 - Oprava: getsummary nyní dostává source parametr (souhrn počítá správně pro NOVÉ/HIST/VŠE)
 // v2026-02-22 - source parametr obnoven v getrecords/getadvances, logout odstraněn z headeru
 // v2026-02-21a - Oprava: odebran source (chybně) → oprava Přehledů
 // v2026-02-21  - Oprava destructuringu, places přidány, zdroj dat za jménem
@@ -31,7 +32,7 @@ window.app = Vue.createApp({
       const s = localStorage.getItem('dataSource') || 'new';
       if (s === 'history') return '· HIST';
       if (s === 'all') return '· VŠE';
-    return '· NOVÉ';
+      return '· NOVÉ';
     }
   },
 
@@ -67,7 +68,7 @@ window.app = Vue.createApp({
       const [c, j, s, r, a, p] = await Promise.all([
         apiCall('get', { type: 'contracts' }),
         apiCall('get', { type: 'jobs' }),
-        apiCall('getsummary', { id_worker: this.currentUser.id }),
+        apiCall('getsummary', { id_worker: this.currentUser.id, source }),  // ← OPRAVA: přidán source
         apiCall('getrecords', { id_worker: this.currentUser.id, source }),
         apiCall('getadvances', { id_worker: this.currentUser.id, source }),
         apiCall('get', { type: 'places' })
@@ -209,4 +210,3 @@ setTimeout(() => {
   window.app.use(Quasar);
   window.app.mount('#app');
 }, 100);
-
