@@ -1,6 +1,5 @@
-// OPRAVENÝ ADMIN.JS - KOMPAKTNÍ ZOBRAZENÍ V PŘEHLEDU DNE
-// Zobrazení na 2 řádky: Jméno | Zakázka | Práce | Čas | Místo | Hodiny | [ikony]
-//                       💬 Poznámka
+// ADMIN.JS
+// v2026-02-24 - Oprava: loadDayRecords vrácen na lokální filtrování z allRecords (přehled dne funguje)
 
 window.app.component('admin-component', {
   props: ['allSummary', 'allRecords', 'allAdvances', 'contracts', 'jobs', 'places', 'loading'],
@@ -33,13 +32,9 @@ window.app.component('admin-component', {
         kmRoundTrip: true
       },
       originalRecord: null,
-      // FILTR ZDROJE DAT
-      dataSource: 'new',        // 'new' / 'history' / 'all'
-      filterDateFrom: null,     // DD. MM. YYYY nebo null
-      filterDateTo: null,       // DD. MM. YYYY nebo null
-      localSummary: null,       // přepíše allSummary když je filtr aktivní
-      localRecords: null,       // přepíše allRecords
-      localAdvances: null,      // přepíše allAdvances
+      localSummary: null,
+      localRecords: null,
+      localAdvances: null,
       filterLoading: false,
       newLunch: {
         workerId: null,
@@ -56,19 +51,9 @@ window.app.component('admin-component', {
   },
   
   computed: {
-    // Aktivní data - local (po filtru) nebo props (výchozí)
     activeSummary() { return this.localSummary !== null ? this.localSummary : this.allSummary; },
     activeRecords() { return this.localRecords !== null ? this.localRecords : this.allRecords; },
     activeAdvances() { return this.localAdvances !== null ? this.localAdvances : this.allAdvances; },
-    // Popis aktivního zdroje pro zobrazení v headeru
-    sourceLabel() {
-      const labels = { new: 'Nové', history: 'Historie', all: 'Vše' };
-      let label = labels[this.dataSource] || 'Nové';
-      if (this.filterDateFrom || this.filterDateTo) {
-        label += ' ' + (this.filterDateFrom || '...') + ' → ' + (this.filterDateTo || '...');
-      }
-      return label;
-    },
     contractOptions() {
       return this.contracts.map(c => ({ label: c[0] + ' - ' + c[1], value: c[0] }));
     },
@@ -100,10 +85,7 @@ window.app.component('admin-component', {
   methods: {
     getTodayDate() {
       const d = new Date();
-      const day = String(d.getDate()).padStart(2, '0');
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      const year = d.getFullYear();
-      return `${day}. ${month}. ${year}`;
+      return `${String(d.getDate()).padStart(2, '0')}. ${String(d.getMonth() + 1).padStart(2, '0')}. ${d.getFullYear()}`;
     },
     
     getCurrentTime() {
@@ -112,24 +94,17 @@ window.app.component('admin-component', {
     },
     
     formatShortDateTime(ts) {
-      const d = new Date(ts);
-      const day = String(d.getDate()).padStart(2, '0');
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      const hours = String(d.getHours()).padStart(2, '0');
-      const minutes = String(d.getMinutes()).padStart(2, '0');
-      return `${day}. ${month}. ${hours}:${minutes}`;
+      const d = new Date(Number(ts));
+      return `${String(d.getDate()).padStart(2, '0')}. ${String(d.getMonth() + 1).padStart(2, '0')}. ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
     },
     
     timestampToDate(ts) {
-      const d = new Date(ts);
-      const day = String(d.getDate()).padStart(2, '0');
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      const year = d.getFullYear();
-      return `${day}. ${month}. ${year}`;
+      const d = new Date(Number(ts));
+      return `${String(d.getDate()).padStart(2, '0')}. ${String(d.getMonth() + 1).padStart(2, '0')}. ${d.getFullYear()}`;
     },
     
     timestampToTime(ts) {
-      const d = new Date(ts);
+      const d = new Date(Number(ts));
       return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
     },
     
@@ -160,23 +135,29 @@ window.app.component('admin-component', {
       this.adminTab = 'workers';
     },
     
-    async loadDayRecords() {
+    // OPRAVA: lokální filtrování z allRecords místo API volání
+    loadDayRecords() {
       if (!this.selectedDate) {
         this.selectedDate = this.getTodayDate();
       }
       
-      // Volat API getdayrecords - vrátí záznamy se správným indexem řádku [16]
-      // Lokální filtr z allRecords index řádku nezná - úprava by selhala
-      try {
-        const res = await apiCall('getdayrecords', { date: this.selectedDate });
-        if (res.code === '000' && res.data) {
-          this.dayRecords = res.data;
-        } else {
-          this.dayRecords = [];
-        }
-      } catch (err) {
+      const cleaned = this.selectedDate.trim().replace(/\s+/g, ' ');
+      const parts = cleaned.split('.').map(p => parseInt(p.trim(), 10));
+      if (parts.length !== 3 || isNaN(parts[0]) || isNaN(parts[1]) || isNaN(parts[2])) {
         this.dayRecords = [];
+        return;
       }
+      
+      const [dd, mm, yyyy] = parts;
+      const startOfDay = new Date(yyyy, mm - 1, dd, 0, 0, 0, 0).getTime();
+      const endOfDay = new Date(yyyy, mm - 1, dd, 23, 59, 59, 999).getTime();
+      
+      this.dayRecords = this.allRecords
+        .filter(r => {
+          const ts = Number(r[4]);
+          return !isNaN(ts) && ts >= startOfDay && ts <= endOfDay;
+        })
+        .sort((a, b) => Number(a[4]) - Number(b[4]));
     },
     
     setToday() {
@@ -185,8 +166,7 @@ window.app.component('admin-component', {
     },
     
     openEditDialog(record, index) {
-      // record[15] = sheetRowIndex (index řádku v sheetu) - přidáme do getDayRecords v kod.gs
-      this.editingRecord = { data: record, index: index, sheetRowIndex: record[16] };
+      this.editingRecord = { data: record, index: index };
       
       this.originalRecord = {
         worker: record[6],
@@ -274,8 +254,6 @@ window.app.component('admin-component', {
       const timeTo = this.dateTimeToTimestamp(this.editForm.dateEdit, this.editForm.timeTo);
       
       try {
-        // Použijeme updaterecord - přepíše PŮVODNÍ řádek (ne přidá nový)
-        // row_index = index záznamu v dayRecords → Apps Script najde správný řádek v sheetu
         const payload = {
           id_contract: this.editForm.contractId,
           id_worker: this.editForm.workerId,
@@ -283,8 +261,7 @@ window.app.component('admin-component', {
           id_place: this.editForm.placeId,
           time_fr: timeFr,
           time_to: timeTo,
-          note: this.editForm.note,
-          row_index: this.editingRecord.sheetRowIndex  // index řádku v sheetu
+          note: this.editForm.note
         };
         
         if (this.editForm.kmManual && this.editForm.kmJednosmer) {
@@ -297,7 +274,7 @@ window.app.component('admin-component', {
           payload.km_rucne = 'N';
         }
         
-        const res = await apiCall('updaterecord', payload);
+        const res = await apiCall('saverecord', payload);
         
         if (res.code === '000') {
           this.$emit('message', '✓ Záznam upraven');
@@ -329,8 +306,7 @@ window.app.component('admin-component', {
           id_place: this.editForm.placeId,
           time_fr: timeFr,
           time_to: timeTo,
-          note: this.editForm.note,
-          insert_after_date: this.editForm.dateEdit  // datum pro vložení za poslední záznam dne
+          note: this.editForm.note
         };
         
         if (this.editForm.kmManual && this.editForm.kmJednosmer) {
@@ -342,7 +318,7 @@ window.app.component('admin-component', {
         const res = await apiCall('saverecord', payload);
         
         if (res.code === '000') {
-this.$emit('message', '✓ Kopie uložena');
+          this.$emit('message', '✓ Kopie uložena');
           this.duplicateDialog = false;
           this.$emit('reload');
           this.loadDayRecords();
@@ -420,6 +396,9 @@ this.$emit('message', '✓ Kopie uložena');
     selectedDate() { 
       if (this.adminTab === 'day') this.loadDayRecords(); 
     },
+    allRecords() {
+      if (this.adminTab === 'day') this.loadDayRecords();
+    },
     'editForm.contractId'() {
       if (!this.editForm.kmManual) {
         this.editForm.kmJednosmer = this.selectedContractKm;
@@ -441,9 +420,7 @@ this.$emit('message', '✓ Kopie uložena');
         <q-tab name="stats" label="Statistiky"/>
       </q-tabs>
 
-
-
-      <!-- PRACOVNÍCI - KOMPAKTNÍ -->
+      <!-- PRACOVNÍCI -->
       <div v-if="adminTab==='workers'" class="q-pt-md">
         <div v-for="worker in activeSummary" :key="worker.id" class="worker-card" @click="selectWorker(worker)">
           <div class="row items-center no-wrap">
@@ -489,7 +466,6 @@ this.$emit('message', '✓ Kopie uložena');
           <q-tab name="advances" label="Zálohy"/>
         </q-tabs>
 
-        <!-- ZÁZNAMY -->
         <div v-if="summaryTab==='records'" class="q-mt-md">
           <div v-for="(record,idx) in selectedWorkerData.records" :key="idx" class="record-card">
             <div class="row items-center">
@@ -498,7 +474,7 @@ this.$emit('message', '✓ Kopie uložena');
                 <div class="text-caption text-grey-7">{{ record[3] }} • {{ record[14] || 'Nezadáno' }}</div>
               </div>
               <div class="text-right">
-                <div class="text-bold text-primary">{{ record[7].toFixed(2) }} hod</div>
+                <div class="text-bold text-primary">{{ (parseFloat(record[7]) || 0).toFixed(2) }} hod</div>
                 <div class="text-caption">{{ record[2] }} Kč/hod</div>
               </div>
             </div>
@@ -512,7 +488,6 @@ this.$emit('message', '✓ Kopie uložena');
           </div>
         </div>
 
-        <!-- ZÁLOHY -->
         <div v-if="summaryTab==='advances'" class="q-mt-md">
           <div v-for="(advance,idx) in selectedWorkerData.advances" :key="idx" class="record-card">
             <div class="row items-center">
@@ -528,7 +503,7 @@ this.$emit('message', '✓ Kopie uložena');
         </div>
       </div>
 
-      <!-- PŘEHLED DNE - KOMPAKTNÍ 2 ŘÁDKY -->
+      <!-- PŘEHLED DNE -->
       <div v-if="adminTab==='day'" class="q-pt-md">
         <div class="row q-gutter-xs q-mb-md items-center">
           <q-btn color="primary" label="Dnes" dense size="sm" @click="setToday"/>
@@ -553,36 +528,26 @@ this.$emit('message', '✓ Kopie uložena');
         </div>
 
         <div v-if="dayRecords.length===0" class="text-center text-grey-7 q-mt-lg">
-          Žádné záznamy
+          Žádné záznamy pro {{ selectedDate }}
         </div>
 
-        <!-- KOMPAKTNÍ ZOBRAZENÍ -->
         <div v-for="(record,idx) in dayRecords" :key="idx" class="record-card" style="padding:8px 12px">
-          
-          <!-- ŘÁDEK 1: Jméno | Zakázka | Práce | Čas | Místo | Hodiny -->
           <div class="row items-center no-wrap" style="font-size:0.85rem">
             <div style="min-width:80px" class="q-mr-xs">
-              <div class="text-bold" style="font-size:0.9rem">
-                {{ record[6] }}
-                <span v-if="record[15]==='opraveno'" title="Opraveno" style="font-size:0.75rem">✏️</span>
-                <span v-if="record[15]==='nový'" title="Nově přidáno" style="font-size:0.75rem">➕</span>
-              </div>
+              <div class="text-bold" style="font-size:0.9rem">{{ record[6] }}</div>
             </div>
-            <div style="min-width:55px" class="text-grey-8 q-mr-xs" :title="record[0]">{{ record[0] }}</div>
-            <div style="min-width:55px" class="text-grey-7 q-mr-xs" :title="record[3]">{{ record[3] }}</div>
+            <div style="min-width:55px" class="text-grey-8 q-mr-xs">{{ record[0] }}</div>
+            <div style="min-width:55px" class="text-grey-7 q-mr-xs">{{ record[3] }}</div>
             <div style="min-width:65px" class="text-grey-7 q-mr-xs">
               {{ timestampToTime(record[4]) }}-{{ timestampToTime(record[5]) }}
             </div>
             <div style="min-width:45px" class="text-grey-7 q-mr-xs">{{ record[14] || '-' }}</div>
             <div class="text-bold text-primary" style="min-width:42px">
-              {{ record[7].toFixed(2) }}h
+              {{ (parseFloat(record[7]) || 0).toFixed(2) }}h
             </div>
           </div>
-
-          <!-- ŘÁDEK 2: Poznámka vlevo + ikony vpravo na stejném řádku -->
-          <!-- Pokud není poznámka, ikony jsou samy vpravo -->
           <div class="row items-center q-mt-xs" style="min-height:28px">
-            <div class="col text-caption text-grey-7" style="font-size:0.8rem;line-height:1.2">
+            <div class="col text-caption text-grey-7">
               <span v-if="record[8]">💬 {{ record[8] }}</span>
               <span v-if="record[12] > 0" class="text-orange q-ml-xs">🚗 {{ record[12] }} km</span>
             </div>
@@ -597,7 +562,6 @@ this.$emit('message', '✓ Kopie uložena');
               </q-btn>
             </div>
           </div>
-
         </div>
       </div>
       
@@ -613,13 +577,12 @@ this.$emit('message', '✓ Kopie uložena');
         />
       </div>
 
-      <!-- DIALOG - ÚPRAVA (KOMPAKTNÍ) -->
+      <!-- DIALOG - ÚPRAVA -->
       <q-dialog v-model="editDialog">
         <q-card style="width:95%; max-width:500px">
           <q-card-section>
             <div class="text-h6">Upravit záznam</div>
           </q-card-section>
-
           <q-card-section class="q-pt-none" style="max-height:60vh; overflow-y:auto">
             <div class="row q-col-gutter-sm">
               <div class="col-6">
@@ -633,14 +596,12 @@ this.$emit('message', '✓ Kopie uložena');
                 <q-input v-model="originalRecord.timeTo" label="Do" dense readonly filled class="q-mb-xs"/>
                 <q-input v-model="originalRecord.note" label="Poznámka" dense readonly filled type="textarea" rows="2"/>
               </div>
-              
               <div class="col-6">
                 <div class="text-caption text-grey-7 q-mb-xs">Nové:</div>
                 <q-select v-model="editForm.workerId" :options="workerOptions" label="Pracovník" emit-value map-options dense outlined class="q-mb-xs"/>
                 <q-select v-model="editForm.contractId" :options="contractOptions" label="Zakázka" emit-value map-options dense outlined class="q-mb-xs"/>
                 <q-select v-model="editForm.jobId" :options="jobOptions" label="Práce" emit-value map-options dense outlined class="q-mb-xs"/>
                 <q-select v-model="editForm.placeId" :options="placeOptions" label="Místo" emit-value map-options dense outlined class="q-mb-xs"/>
-                
                 <q-input v-model="editForm.dateEdit" label="Datum" dense outlined readonly class="q-mb-xs">
                   <template v-slot:append>
                     <q-icon name="event" class="cursor-pointer">
@@ -651,7 +612,6 @@ this.$emit('message', '✓ Kopie uložena');
                     </q-icon>
                   </template>
                 </q-input>
-                
                 <q-input v-model="editForm.timeFrom" label="Od" dense outlined class="q-mb-xs">
                   <template v-slot:append>
                     <q-icon name="schedule" class="cursor-pointer">
@@ -662,7 +622,6 @@ this.$emit('message', '✓ Kopie uložena');
                     </q-icon>
                   </template>
                 </q-input>
-                
                 <q-input v-model="editForm.timeTo" label="Do" dense outlined class="q-mb-xs">
                   <template v-slot:append>
                     <q-icon name="schedule" class="cursor-pointer">
@@ -673,12 +632,10 @@ this.$emit('message', '✓ Kopie uložena');
                     </q-icon>
                   </template>
                 </q-input>
-                
                 <q-input v-model="editForm.note" label="Poznámka" dense outlined type="textarea" rows="2"/>
               </div>
             </div>
           </q-card-section>
-
           <q-card-actions align="right">
             <q-btn flat label="Zrušit" color="grey" v-close-popup size="sm"/>
             <q-btn label="Uložit" color="primary" @click="saveEdit" size="sm"/>
@@ -692,13 +649,11 @@ this.$emit('message', '✓ Kopie uložena');
           <q-card-section>
             <div class="text-h6">Duplikovat</div>
           </q-card-section>
-          
           <q-card-section class="q-pt-none">
             <q-select v-model="editForm.workerId" :options="workerOptions" label="Pracovník" emit-value map-options outlined dense class="q-mb-sm"/>
             <q-select v-model="editForm.contractId" :options="contractOptions" label="Zakázka" emit-value map-options outlined dense class="q-mb-sm"/>
             <q-select v-model="editForm.jobId" :options="jobOptions" label="Práce" emit-value map-options outlined dense class="q-mb-sm"/>
             <q-select v-model="editForm.placeId" :options="placeOptions" label="Místo" emit-value map-options outlined dense class="q-mb-sm"/>
-            
             <q-input v-model="editForm.dateEdit" label="Datum" outlined dense readonly class="q-mb-sm">
               <template v-slot:append>
                 <q-icon name="event" class="cursor-pointer">
@@ -709,7 +664,6 @@ this.$emit('message', '✓ Kopie uložena');
                 </q-icon>
               </template>
             </q-input>
-            
             <q-input v-model="editForm.timeFrom" label="Od" outlined dense class="q-mb-sm">
               <template v-slot:append>
                 <q-icon name="schedule" class="cursor-pointer">
@@ -720,7 +674,6 @@ this.$emit('message', '✓ Kopie uložena');
                 </q-icon>
               </template>
             </q-input>
-            
             <q-input v-model="editForm.timeTo" label="Do" outlined dense class="q-mb-sm">
               <template v-slot:append>
                 <q-icon name="schedule" class="cursor-pointer">
@@ -731,10 +684,8 @@ this.$emit('message', '✓ Kopie uložena');
                 </q-icon>
               </template>
             </q-input>
-            
             <q-input v-model="editForm.note" label="Poznámka" outlined dense/>
           </q-card-section>
-          
           <q-card-actions align="right">
             <q-btn flat label="Zrušit" color="grey" v-close-popup />
             <q-btn label="Uložit" color="primary" @click="saveDuplicate" />
@@ -748,11 +699,8 @@ this.$emit('message', '✓ Kopie uložena');
           <q-card-section>
             <div class="text-h6">Oběd</div>
           </q-card-section>
-          
           <q-card-section class="q-pt-none">
-            <q-select v-model="newLunch.workerId" :options="workerOptions" 
-              label="Pracovník *" emit-value map-options outlined dense class="q-mb-sm"/>
-            
+            <q-select v-model="newLunch.workerId" :options="workerOptions" label="Pracovník *" emit-value map-options outlined dense class="q-mb-sm"/>
             <q-input v-model="newLunch.date" label="Datum" outlined dense readonly class="q-mb-sm">
               <template v-slot:append>
                 <q-icon name="event" class="cursor-pointer">
@@ -763,7 +711,6 @@ this.$emit('message', '✓ Kopie uložena');
                 </q-icon>
               </template>
             </q-input>
-            
             <q-input v-model="newLunch.time" label="Čas" outlined dense>
               <template v-slot:append>
                 <q-icon name="schedule" class="cursor-pointer">
@@ -775,7 +722,6 @@ this.$emit('message', '✓ Kopie uložena');
               </template>
             </q-input>
           </q-card-section>
-          
           <q-card-actions align="right">
             <q-btn flat label="Zrušit" color="grey" v-close-popup />
             <q-btn label="Uložit" color="primary" @click="saveLunch" />
@@ -789,11 +735,8 @@ this.$emit('message', '✓ Kopie uložena');
           <q-card-section>
             <div class="text-h6">Záloha</div>
           </q-card-section>
-          
           <q-card-section class="q-pt-none">
-            <q-select v-model="newAdvance.workerId" :options="workerOptions" 
-              label="Pracovník *" emit-value map-options outlined dense class="q-mb-sm"/>
-            
+            <q-select v-model="newAdvance.workerId" :options="workerOptions" label="Pracovník *" emit-value map-options outlined dense class="q-mb-sm"/>
             <q-input v-model="newAdvance.date" label="Datum" outlined dense readonly class="q-mb-sm">
               <template v-slot:append>
                 <q-icon name="event" class="cursor-pointer">
@@ -804,13 +747,9 @@ this.$emit('message', '✓ Kopie uložena');
                 </q-icon>
               </template>
             </q-input>
-            
-            <q-input v-model.number="newAdvance.amount" label="Částka (Kč) *" 
-              type="number" outlined dense class="q-mb-sm"/>
-            
+            <q-input v-model.number="newAdvance.amount" label="Částka (Kč) *" type="number" outlined dense class="q-mb-sm"/>
             <q-input v-model="newAdvance.reason" label="Důvod *" outlined dense/>
           </q-card-section>
-          
           <q-card-actions align="right">
             <q-btn flat label="Zrušit" color="grey" v-close-popup />
             <q-btn label="Uložit" color="primary" @click="saveAdvance" />
