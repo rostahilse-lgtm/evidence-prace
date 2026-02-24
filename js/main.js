@@ -1,5 +1,5 @@
 // Evidence práce 2026 - main.js
-// v2026-02-24c - Oprava: loadAdminData dostává source → přehled dne + pracovníci z historie
+// v2026-02-24d - Oprava: getallsummary bez source (admin vidí vždy všechny součty pracovníků)
 //              - reload tlačítko načte i admin data (pokud je admin)
 // v2026-02-24b - dataSource reaktivní → štítek za jménem
 // v2026-02-24  - getsummary dostává source parametr
@@ -89,12 +89,12 @@ window.app = Vue.createApp({
 
     async loadAdminData() {
       this.loading = true;
-      const source = localStorage.getItem('dataSource') || 'new';  // ← přidán source
+      const source = localStorage.getItem('dataSource') || 'new';
 
       const [summary, records, advances] = await Promise.all([
-        apiCall('getallsummary', { source }),
-        apiCall('getallrecords', { source }),
-        apiCall('getalladvances', { source })
+        apiCall('getallsummary'),            // ← bez source: admin vidí vždy všechny součty
+        apiCall('getallrecords', { source }), // záznamy sledují source (přehled dne)
+        apiCall('getalladvances', { source }) // zálohy sledují source
       ]);
       if (summary.data) this.allSummary = summary.data;
       if (records.data) this.allRecords = records.data;
