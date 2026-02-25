@@ -1,6 +1,6 @@
 // home.js
-// v2026-02-25 - Oběd: výběr datumu (default dnes), výběr ze dvou cen, zobrazení ceny
-//             - nic nesmazáno, přidány: lunchDate, lunchPrice, lunchPrices, loadLunchPrices()
+// v2026-02-25b - Oprava: česká lokalizace datumů (csLocale objekt), oprava UNDEFINED ceny oběda
+//              - nic jsem nesmazal, pouze opravil chyby co nefungovaly
 
 window.app.component('home-component', {
   props: ['currentUser', 'isAdmin', 'contracts', 'jobs', 'places', 'loading'],
@@ -67,6 +67,16 @@ window.app.component('home-component', {
     todayDate() {
       return getTodayDate();
     },
+    // Česká lokalizace pro q-date (locale="cs" jako string nefunguje, musí být objekt)
+    csLocale() {
+      return {
+        days: ['Neděle', 'Pondělí', 'Úterý', 'Středa', 'Čtvrtek', 'Pátek', 'Sobota'],
+        daysShort: ['Ne', 'Po', 'Út', 'St', 'Čt', 'Pá', 'So'],
+        months: ['Leden', 'Únor', 'Březen', 'Duben', 'Květen', 'Červen', 'Červenec', 'Srpen', 'Září', 'Říjen', 'Listopad', 'Prosinec'],
+        monthsShort: ['Led', 'Úno', 'Bře', 'Dub', 'Kvě', 'Čvn', 'Čvc', 'Srp', 'Zář', 'Říj', 'Lis', 'Pro'],
+        firstDayOfWeek: 1
+      };
+    },
     calculatedKm() {
       if (!this.isAdmin) return 0;
       if (this.kmManual && this.kmManualValue) {
@@ -96,13 +106,15 @@ window.app.component('home-component', {
 
     async loadLunchPrices(dateStr) {
       this.lunchPricesLoading = true;
+      this.lunchPrice = null;  // reset vybrané ceny při změně datumu
       try {
         const ts = this.lunchDateToTimestamp(dateStr);
         const res = await apiCall('getlunchprice', { date: ts });
-        if (res.code === '000' && res.data) {
+        // Validace: res.data musí existovat A mít price1 (číslo > 0)
+        if (res.code === '000' && res.data && res.data.price1 != null && res.data.price1 !== '') {
           this.lunchPrices = res.data;  // { price1: 99, price2: 145 }
-          // automaticky vyber první cenu pokud ještě nevybráno
-          if (!this.lunchPrice) this.lunchPrice = res.data.price1;
+          // automaticky vyber první cenu
+          this.lunchPrice = res.data.price1;
         } else {
           this.lunchPrices = null;
         }
@@ -445,7 +457,7 @@ window.app.component('home-component', {
           <template v-slot:append>
             <q-icon name="event" class="cursor-pointer" color="primary">
               <q-popup-proxy cover ref="lunchDateProxy">
-                <q-date v-model="lunchDate" mask="DD. MM. YYYY" locale="cs"
+                <q-date v-model="lunchDate" mask="DD. MM. YYYY" :locale="csLocale"
                   @update:model-value="$refs.lunchDateProxy.hide()"/>
               </q-popup-proxy>
             </q-icon>
