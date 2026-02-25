@@ -1,4 +1,4 @@
 
-const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbwze0wuMABepDAsOXmAKxS0GBvkXdOjaVvt7EUqW6g_VD3Oj2XfijiHlLVqAO74kF45/exec';
+const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycby6y0qILjMSVCNaNOmVWsKlAggEZ78-iiOIRk_TYaCL38v25jTEJ6_qOX9RbYRqdtmn/exec';
 
 const DEFAULT_CLOUD_SHIFT = true;
