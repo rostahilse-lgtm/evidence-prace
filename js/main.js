@@ -1,7 +1,9 @@
 // Evidence práce 2026 - main.js
-// v2026-02-22 - source parametr obnoven v getrecords/getadvances, logout odstraněn z headeru
-// v2026-02-21a - Oprava: odebran source (chybně) → oprava Přehledů
-// v2026-02-21  - Oprava destructuringu, places přidány, zdroj dat za jménem
+// v2026-02-24f - Oprava: getallsummary dostává source ze rozcestníku (jako všechny ostatní funkce)
+//              - reload tlačítko načte i admin data (pokud je admin)
+// v2026-02-24b - dataSource reaktivní → štítek za jménem
+// v2026-02-24  - getsummary dostává source parametr
+// v2026-02-22  - source parametr v getrecords/getadvances
 
 window.app = Vue.createApp({
   data() {
@@ -22,16 +24,17 @@ window.app = Vue.createApp({
       lunches: [],
       allSummary: [],
       allRecords: [],
-      allAdvances: []
+      allAdvances: [],
+      dataSource: localStorage.getItem('dataSource') || 'new'
     }
   },
 
   computed: {
     dataSourceLabel() {
-      const s = localStorage.getItem('dataSource') || 'new';
-      if (s === 'history') return '· HIST';
-      if (s === 'all') return '· VŠE';
-   return ''; 
+      if (this.dataSource === 'history') return '· HIST';
+      if (this.dataSource === 'all') return '· VŠE';
+      return '· NOVÉ';
+
     }
   },
 
@@ -63,11 +66,12 @@ window.app = Vue.createApp({
     async loadUserData() {
       this.loading = true;
       const source = localStorage.getItem('dataSource') || 'new';
+      this.dataSource = source;  // ← aktualizuje štítek okamžitě
 
       const [c, j, s, r, a, p] = await Promise.all([
         apiCall('get', { type: 'contracts' }),
         apiCall('get', { type: 'jobs' }),
-        apiCall('getsummary', { id_worker: this.currentUser.id }),
+        apiCall('getsummary', { id_worker: this.currentUser.id, source }),
         apiCall('getrecords', { id_worker: this.currentUser.id, source }),
         apiCall('getadvances', { id_worker: this.currentUser.id, source }),
         apiCall('get', { type: 'places' })
@@ -86,15 +90,23 @@ window.app = Vue.createApp({
 
     async loadAdminData() {
       this.loading = true;
+      const source = localStorage.getItem('dataSource') || 'new';
+
       const [summary, records, advances] = await Promise.all([
-        apiCall('getallsummary'),
-        apiCall('getallrecords'),
-        apiCall('getalladvances')
+        apiCall('getallsummary', { source }),  // ← rozcestník ovládá vše
+        apiCall('getallrecords', { source }),
+        apiCall('getalladvances', { source })
       ]);
       if (summary.data) this.allSummary = summary.data;
       if (records.data) this.allRecords = records.data;
       if (advances.data) this.allAdvances = advances.data;
       this.loading = false;
+    },
+
+    // Reload volá obě funkce - uživatelská data i admin data
+    async reloadAll() {
+      await this.loadUserData();
+      if (this.isAdmin) await this.loadAdminData();
     },
 
     logout() {
@@ -155,7 +167,7 @@ window.app = Vue.createApp({
             :places="places"
             :loading="loading"
             @message="showMessage"
-            @reload="loadUserData"
+            @reload="reloadAll"
           />
 
           <summary-component
@@ -175,14 +187,14 @@ window.app = Vue.createApp({
             :jobs="jobs"
             :loading="loading"
             @message="showMessage"
-            @reload="loadAdminData"
+            @reload="reloadAll"
           />
 
           <settings-component
             v-if="isLoggedIn && currentView === 'settings' && !loading"
             @message="showMessage"
             @logout="logout"
-            @reload="loadUserData"
+            @reload="reloadAll"
           />
         </q-page>
       </q-page-container>

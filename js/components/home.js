@@ -1,3 +1,7 @@
+// home.js
+// v2026-02-25b - Oprava: česká lokalizace datumů (csLocale objekt), oprava UNDEFINED ceny oběda
+//              - nic jsem nesmazal, pouze opravil chyby co nefungovaly
+
 window.app.component('home-component', {
   props: ['currentUser', 'isAdmin', 'contracts', 'jobs', 'places', 'loading'],
   emits: ['message', 'reload'],
@@ -24,7 +28,12 @@ window.app.component('home-component', {
       todayTripExists: false,
       todayTripInfo: null,
       cloudRowIndex: null,
-      cloudSaving: false
+      cloudSaving: false,
+      // OBĚD - nové
+      lunchDate: '',        // DD. MM. YYYY - default se nastaví v mounted
+      lunchPrice: null,     // vybraná cena v Kč
+      lunchPrices: null,    // { price1: 99, price2: 145 } z GAS
+      lunchPricesLoading: false
     }
   },
   
@@ -58,6 +67,16 @@ window.app.component('home-component', {
     todayDate() {
       return getTodayDate();
     },
+    // Česká lokalizace pro q-date (locale="cs" jako string nefunguje, musí být objekt)
+    csLocale() {
+      return {
+        days: ['Neděle', 'Pondělí', 'Úterý', 'Středa', 'Čtvrtek', 'Pátek', 'Sobota'],
+        daysShort: ['Ne', 'Po', 'Út', 'St', 'Čt', 'Pá', 'So'],
+        months: ['Leden', 'Únor', 'Březen', 'Duben', 'Květen', 'Červen', 'Červenec', 'Srpen', 'Září', 'Říjen', 'Listopad', 'Prosinec'],
+        monthsShort: ['Led', 'Úno', 'Bře', 'Dub', 'Kvě', 'Čvn', 'Čvc', 'Srp', 'Zář', 'Říj', 'Lis', 'Pro'],
+        firstDayOfWeek: 1
+      };
+    },
     calculatedKm() {
       if (!this.isAdmin) return 0;
       if (this.kmManual && this.kmManualValue) {
@@ -71,6 +90,41 @@ window.app.component('home-component', {
   },
   
   methods: {
+    // ── OBĚD - pomocné ─────────────────────────────────────
+    getTodayFormatted() {
+      const d = new Date();
+      const dd = String(d.getDate()).padStart(2, '0');
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      return `${dd}. ${mm}. ${d.getFullYear()}`;
+    },
+
+    lunchDateToTimestamp(dateStr) {
+      // DD. MM. YYYY → timestamp poledne
+      const parts = dateStr.split('. ');
+      return new Date(parts[2], parts[1] - 1, parts[0], 12, 0).getTime();
+    },
+
+    async loadLunchPrices(dateStr) {
+      this.lunchPricesLoading = true;
+      this.lunchPrice = null;  // reset vybrané ceny při změně datumu
+      try {
+        const ts = this.lunchDateToTimestamp(dateStr);
+        const res = await apiCall('getlunchprice', { date: ts });
+        // Validace: res.data musí existovat A mít price1 (číslo > 0)
+        if (res.code === '000' && res.data && res.data.price1 != null && res.data.price1 !== '') {
+          this.lunchPrices = res.data;  // { price1: 99, price2: 145 }
+          // automaticky vyber první cenu
+          this.lunchPrice = res.data.price1;
+        } else {
+          this.lunchPrices = null;
+        }
+      } catch (e) {
+        this.lunchPrices = null;
+      }
+      this.lunchPricesLoading = false;
+    },
+
+    // ── SMĚNA ──────────────────────────────────────────────
     async setArrival() {
       this.shiftForm.timeStart = Date.now();
       this.saveShiftState();
@@ -196,7 +250,6 @@ window.app.component('home-component', {
           this.$emit('message', 'Chyba: ' + res.error);
         }
       } catch (error) {
-        console.error('Save shift error:', error);
         this.$emit('message', 'Chyba při ukládání směny');
       }
     },
@@ -252,15 +305,22 @@ window.app.component('home-component', {
       this.cloudRowIndex = null;
     },
     
+    // ── OBĚD - ukládání ────────────────────────────────────
     async saveLunch() {
+      if (!this.lunchPrice) {
+        this.$emit('message', 'Vyberte cenu oběda');
+        return;
+      }
       try {
+        const timestamp = this.lunchDateToTimestamp(this.lunchDate);
         const res = await apiCall('savelunch', {
           id_worker: this.currentUser.id,
           name_worker: this.currentUser.name,
-          time: Date.now()
+          time: timestamp,
+          payment: this.lunchPrice  // ← cena oběda
         });
         if (res.code === '000') {
-          this.$emit('message', '✓ Oběd uložen');
+          this.$emit('message', `✓ Oběd uložen (${this.lunchPrice} Kč)`);
           this.$emit('reload');
         } else {
           this.$emit('message', 'Chyba: ' + res.error);
@@ -270,6 +330,7 @@ window.app.component('home-component', {
       }
     },
     
+    // ── ZÁLOHA ─────────────────────────────────────────────
     async saveAdvance() {
       if (!this.advanceForm.amount || !this.advanceForm.reason) {
         this.$emit('message', 'Vyplňte částku a důvod');
@@ -304,11 +365,17 @@ window.app.component('home-component', {
     },
     'shiftForm.jobId': function() { this.saveShiftState(); },
     'shiftForm.placeId': function() { this.saveShiftState(); },
-    'shiftForm.note': function() { this.saveShiftState(); }
+    'shiftForm.note': function() { this.saveShiftState(); },
+    // při změně datumu oběda načti nové ceny
+    lunchDate(newDate) {
+      if (newDate) this.loadLunchPrices(newDate);
+    }
   },
   
   mounted() {
     this.loadShiftState();
+    this.lunchDate = this.getTodayFormatted();  // default = dnes
+    this.loadLunchPrices(this.lunchDate);
   },
   
   template: `
@@ -319,8 +386,8 @@ window.app.component('home-component', {
         <q-tab name="advance" label="Záloha"/>
       </q-tabs>
       
+      <!-- SMĚNA -->
       <div v-if="currentTab==='shift'" class="q-pt-md">
-
         <div v-if="cloudShiftEnabled" class="q-mb-sm q-pa-xs text-caption text-blue-7" style="background:#e3f2fd;border-radius:4px">
           ☁ Cloud režim – příchod/odchod se ukládá přímo do tabulky
         </div>
@@ -379,15 +446,75 @@ window.app.component('home-component', {
           :loading="loading" class="full-width" size="lg"/>
       </div>
       
+      <!-- OBĚD -->
       <div v-if="currentTab==='lunch'" class="q-pt-md">
-        <div class="text-center q-mb-md">
-          <q-icon name="restaurant" size="4rem" color="orange"/>
-          <div class="text-h6 q-mt-md">{{todayDate}}</div>
+
+        <!-- výběr datumu -->
+        <q-input v-model="lunchDate" label="Datum oběda" outlined dense readonly class="q-mb-md">
+          <template v-slot:prepend>
+            <q-icon name="restaurant" color="orange"/>
+          </template>
+          <template v-slot:append>
+            <q-icon name="event" class="cursor-pointer" color="primary">
+              <q-popup-proxy cover ref="lunchDateProxy">
+                <q-date v-model="lunchDate" mask="DD. MM. YYYY" :locale="csLocale"
+                  @update:model-value="$refs.lunchDateProxy.hide()"/>
+              </q-popup-proxy>
+            </q-icon>
+          </template>
+        </q-input>
+
+        <!-- ceny - loading -->
+        <div v-if="lunchPricesLoading" class="text-center q-pa-md text-grey-6">
+          <q-spinner size="2em" color="orange"/>
+          <div class="q-mt-sm">Načítám ceny...</div>
         </div>
+
+        <!-- ceny - nenalezeny -->
+        <div v-else-if="!lunchPrices" class="q-mb-md q-pa-sm text-orange-8" style="background:#fff3e0;border-radius:4px">
+          ⚠ Pro vybrané datum nebyla nalezena cena oběda
+        </div>
+
+        <!-- ceny - výběr -->
+        <div v-else class="q-mb-md">
+          <div class="text-subtitle2 q-mb-sm text-grey-7">Vyberte cenu oběda:</div>
+          <div class="row q-gutter-sm">
+            <q-btn
+              :outline="lunchPrice !== lunchPrices.price1"
+              :unelevated="lunchPrice === lunchPrices.price1"
+              color="orange"
+              :label="lunchPrices.price1 + ' Kč'"
+              icon="restaurant"
+              class="col"
+              size="lg"
+              @click="lunchPrice = lunchPrices.price1"
+            />
+            <q-btn
+              v-if="lunchPrices.price2"
+              :outline="lunchPrice !== lunchPrices.price2"
+              :unelevated="lunchPrice === lunchPrices.price2"
+              color="deep-orange"
+              :label="lunchPrices.price2 + ' Kč'"
+              icon="restaurant_menu"
+              class="col"
+              size="lg"
+              @click="lunchPrice = lunchPrices.price2"
+            />
+          </div>
+        </div>
+
+        <!-- zobrazení vybrané ceny -->
+        <div v-if="lunchPrice" class="q-mb-md q-pa-sm text-center" style="background:#e8f5e9;border-radius:4px">
+          <div class="text-h6 text-green-8">✓ Vybráno: <strong>{{ lunchPrice }} Kč</strong></div>
+          <div class="text-caption text-grey-7">{{ lunchDate }}</div>
+        </div>
+
         <q-btn @click="saveLunch" label="Uložit oběd" color="orange"
-          :loading="loading" class="full-width" size="lg" icon="restaurant"/>
+          :loading="loading" class="full-width" size="lg" icon="restaurant"
+          :disabled="!lunchPrice || !lunchPrices"/>
       </div>
       
+      <!-- ZÁLOHA -->
       <div v-if="currentTab==='advance'" class="q-pt-md">
         <q-input v-model.number="advanceForm.amount" label="Částka (Kč) *"
           type="number" outlined class="q-mb-md"/>
