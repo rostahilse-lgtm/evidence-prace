@@ -199,6 +199,14 @@ window.app = Vue.createApp({
             @message="showMessage"
           />
 
+          <!-- STAVEBNÍ DENÍK (admin vidí vše, ostatní jen sebe) -->
+          <stavebni-denik-component
+            v-if="isLoggedIn && currentView === 'denik' && !loading"
+            :all-records="statsRecords"
+            :contracts="contracts"
+            @message="showMessage"
+          />
+
           <!-- ADMIN panel -->
           <admin-component
             v-if="isLoggedIn && isAdmin && currentView === 'admin' && !loading"
@@ -228,6 +236,7 @@ window.app = Vue.createApp({
           <q-tab name="home" icon="home" label="Domů" />
           <q-tab name="summary" icon="assessment" label="Přehledy" />
           <q-tab v-if="currentUser && currentUser.canStats" name="stats" icon="bar_chart" label="Statistiky" />
+          <q-tab v-if="currentUser && currentUser.canDenik" name="denik" icon="menu_book" label="Deník" />
           <q-tab v-if="isAdmin" name="admin" icon="admin_panel_settings" label="Admin" />
           <q-tab name="settings" icon="settings" label="Nastavení" />
         </q-tabs>
