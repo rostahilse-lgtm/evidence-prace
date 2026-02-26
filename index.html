@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="cs">
 <head>
@@ -9,6 +8,7 @@
   <!-- PWA -->
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#1976D2">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Evidence práce">
@@ -31,16 +31,18 @@
   <script src="js/utils.js"></script>
   <script src="js/api.js"></script>
 
-  <!-- 3. MAIN -->
-  <script src="js/main.js"></script>
-
-  <!-- 4. KOMPONENTY -->
+  <!-- 3. KOMPONENTY -->
   <script src="js/components/login.js"></script>
   <script src="js/components/home.js"></script>
   <script src="js/components/summary.js"></script>
   <script src="js/components/settings.js"></script>
   <script src="js/components/admin/admin.js"></script>
-  
+  <script src="js/components/admin/statistics.js"></script>
+  <script src="js/components/stavebni-denik.js"></script>
+
+  <!-- 4. MAIN - musí být poslední -->
+  <script src="js/main.js"></script>
+
   <!-- PWA Service Worker -->
   <script>
     if ('serviceWorker' in navigator) {
@@ -53,7 +55,3 @@
   </script>
 </body>
 </html>
-
-
-
-
