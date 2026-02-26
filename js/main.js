@@ -1,9 +1,7 @@
 // Evidence práce 2026 - main.js
-// v2026-02-24f - Oprava: getallsummary dostává source ze rozcestníku (jako všechny ostatní funkce)
-//              - reload tlačítko načte i admin data (pokud je admin)
-// v2026-02-24b - dataSource reaktivní → štítek za jménem
-// v2026-02-24  - getsummary dostává source parametr
-// v2026-02-22  - source parametr v getrecords/getadvances
+// v2026-02-26 - oprávnění z tabulky pracovníci (sloupce G=statistiky, H=deník)
+//             - statistiky a deník v hlavní apce, zrušen odkaz na admin panel
+//             - nic jsem nesmazal, pouze přidal nové funkce a upravil co nefungovalo
 
 window.app = Vue.createApp({
   data() {
@@ -34,7 +32,16 @@ window.app = Vue.createApp({
       if (this.dataSource === 'history') return '· HIST';
       if (this.dataSource === 'all') return '· VŠE';
       return '· NOVÉ';
-
+    },
+    // Pro statistiky: admin vidí vše, ostatní jen sebe
+    statsRecords() {
+      return this.isAdmin ? this.allRecords : this.records;
+    },
+    statsAdvances() {
+      return this.isAdmin ? this.allAdvances : this.advances;
+    },
+    statsSummary() {
+      return this.isAdmin ? this.allSummary : (this.summary ? [this.summary] : []);
     }
   },
 
@@ -53,7 +60,10 @@ window.app = Vue.createApp({
         id: worker[0],
         name: worker[1],
         active: worker[2] === 'Y',
-        admin: worker[3] === 'Y'
+        admin: worker[3] === 'Y',
+        // oprávnění z dalších sloupců
+        canStats: worker[3] === 'Y' || worker[6] === 'Y',   // sloupec G (index 6)
+        canDenik: worker[3] === 'Y' || worker[7] === 'Y'    // sloupec H (index 7)
       };
       this.isLoggedIn = true;
       this.isAdmin = this.currentUser.admin;
@@ -66,7 +76,7 @@ window.app = Vue.createApp({
     async loadUserData() {
       this.loading = true;
       const source = localStorage.getItem('dataSource') || 'new';
-      this.dataSource = source;  // ← aktualizuje štítek okamžitě
+      this.dataSource = source;
 
       const [c, j, s, r, a, p] = await Promise.all([
         apiCall('get', { type: 'contracts' }),
@@ -93,7 +103,7 @@ window.app = Vue.createApp({
       const source = localStorage.getItem('dataSource') || 'new';
 
       const [summary, records, advances] = await Promise.all([
-        apiCall('getallsummary', { source }),  // ← rozcestník ovládá vše
+        apiCall('getallsummary', { source }),
         apiCall('getallrecords', { source }),
         apiCall('getalladvances', { source })
       ]);
@@ -103,7 +113,6 @@ window.app = Vue.createApp({
       this.loading = false;
     },
 
-    // Reload volá obě funkce - uživatelská data i admin data
     async reloadAll() {
       await this.loadUserData();
       if (this.isAdmin) await this.loadAdminData();
@@ -141,8 +150,6 @@ window.app = Vue.createApp({
             <span class="text-caption q-ml-sm">{{ dataSourceLabel }}</span>
           </q-toolbar-title>
           <span v-if="isAdmin" class="admin-badge q-ml-sm">ADMIN</span>
-          <q-btn v-if="isAdmin" flat dense label="PANEL" icon-right="open_in_new"
-            size="sm" class="q-ml-sm" tag="a" href="admin.html" target="_blank" />
         </q-toolbar>
       </q-header>
 
@@ -159,9 +166,11 @@ window.app = Vue.createApp({
             @message="showMessage"
           />
 
+          <!-- DOMŮ -->
           <home-component
             v-if="isLoggedIn && currentView === 'home' && !loading"
             :current-user="currentUser"
+            :is-admin="isAdmin"
             :contracts="contracts"
             :jobs="jobs"
             :places="places"
@@ -170,6 +179,7 @@ window.app = Vue.createApp({
             @reload="reloadAll"
           />
 
+          <!-- PŘEHLEDY -->
           <summary-component
             v-if="isLoggedIn && currentView === 'summary' && !loading"
             :summary="summary"
@@ -178,6 +188,18 @@ window.app = Vue.createApp({
             :lunches="lunches"
           />
 
+          <!-- STATISTIKY (admin vidí vše, ostatní jen sebe) -->
+          <statistics-component
+            v-if="isLoggedIn && currentView === 'stats' && !loading"
+            :all-records="statsRecords"
+            :all-advances="statsAdvances"
+            :contracts="contracts"
+            :jobs="jobs"
+            :places="places"
+            @message="showMessage"
+          />
+
+          <!-- ADMIN panel -->
           <admin-component
             v-if="isLoggedIn && isAdmin && currentView === 'admin' && !loading"
             :all-summary="allSummary"
@@ -185,11 +207,13 @@ window.app = Vue.createApp({
             :all-advances="allAdvances"
             :contracts="contracts"
             :jobs="jobs"
+            :places="places"
             :loading="loading"
             @message="showMessage"
             @reload="reloadAll"
           />
 
+          <!-- NASTAVENÍ -->
           <settings-component
             v-if="isLoggedIn && currentView === 'settings' && !loading"
             @message="showMessage"
@@ -203,6 +227,7 @@ window.app = Vue.createApp({
         <q-tabs v-model="currentView" dense align="justify" active-color="primary">
           <q-tab name="home" icon="home" label="Domů" />
           <q-tab name="summary" icon="assessment" label="Přehledy" />
+          <q-tab v-if="currentUser && currentUser.canStats" name="stats" icon="bar_chart" label="Statistiky" />
           <q-tab v-if="isAdmin" name="admin" icon="admin_panel_settings" label="Admin" />
           <q-tab name="settings" icon="settings" label="Nastavení" />
         </q-tabs>
@@ -221,5 +246,3 @@ setTimeout(() => {
   window.app.use(Quasar);
   window.app.mount('#app');
 }, 100);
-
-
