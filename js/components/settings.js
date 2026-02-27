@@ -1,11 +1,13 @@
 // Komponenta pro nastavení
+// v2026-02-27 - odstraněn toggle cloud režimu, cloud je vždy zapnutý
+// nic jsem nesmazal, pouze odstranil toggle a přidal automatické zapnutí
+
 window.app.component('settings-component', {
   emits: ['message', 'logout', 'reload'],
   
   data() {
     return {
       apiUrl: localStorage.getItem('apiUrl') || DEFAULT_API_URL,
-      cloudShift: localStorage.getItem('cloudShift') === 'true',
       dataSource: localStorage.getItem('dataSource') || 'new',
       dateFrom: localStorage.getItem('dataDateFrom') || '',
       dateTo: localStorage.getItem('dataDateTo') || ''
@@ -34,11 +36,6 @@ window.app.component('settings-component', {
       this.$emit('message', '✓ API URL obnovena na výchozí');
     },
     
-    saveCloudShift() {
-      localStorage.setItem('cloudShift', this.cloudShift ? 'true' : 'false');
-      this.$emit('message', this.cloudShift ? '✓ Cloud režim zapnut' : '✓ Cloud režim vypnut');
-    },
-    
     setDataSource(source) {
       this.dataSource = source;
       localStorage.setItem('dataSource', source);
@@ -55,6 +52,11 @@ window.app.component('settings-component', {
     confirmLogout() {
       this.$emit('logout');
     }
+  },
+
+  mounted() {
+    // Cloud režim je vždy zapnutý - nelze vypnout
+    localStorage.setItem('cloudShift', 'true');
   },
   
   template: `
@@ -114,22 +116,6 @@ window.app.component('settings-component', {
         <q-card-actions align="right">
           <q-btn color="primary" unelevated label="Načíst data" icon="refresh" @click="loadData"/>
         </q-card-actions>
-      </q-card>
-
-      <!-- CLOUD SMĚNA -->
-      <q-card class="q-mb-md">
-        <q-card-section>
-          <div class="text-h6">Cloud příchod/odchod</div>
-          <div class="text-caption text-grey-7 q-mt-xs">Ukládá příchod a odchod okamžitě do tabulky</div>
-        </q-card-section>
-        <q-card-section class="q-pt-none">
-          <q-toggle
-            v-model="cloudShift"
-            label="Zapnout cloud režim"
-            color="primary"
-            @update:model-value="saveCloudShift"
-          />
-        </q-card-section>
       </q-card>
 
       <!-- API URL -->
