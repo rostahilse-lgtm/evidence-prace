@@ -1,6 +1,7 @@
 // home.js
 // v2026-02-25b - Oprava: česká lokalizace datumů (csLocale objekt), oprava UNDEFINED ceny oběda
-//              - nic jsem nesmazal, pouze opravil chyby co nefungovaly
+// v2026-02-27 - přidána funkce checkCloudShift: načte rozpracovanou šichtu z tabulky na novém zařízení
+//              - nic jsem nesmazal, pouze přidal nové funkce
 
 window.app.component('home-component', {
   props: ['currentUser', 'isAdmin', 'contracts', 'jobs', 'places', 'loading'],
@@ -29,10 +30,9 @@ window.app.component('home-component', {
       todayTripInfo: null,
       cloudRowIndex: null,
       cloudSaving: false,
-      // OBĚD - nové
-      lunchDate: '',        // DD. MM. YYYY - default se nastaví v mounted
-      lunchPrice: null,     // vybraná cena v Kč
-      lunchPrices: null,    // { price1: 99, price2: 145 } z GAS
+      lunchDate: '',
+      lunchPrice: null,
+      lunchPrices: null,
       lunchPricesLoading: false
     }
   },
@@ -67,7 +67,6 @@ window.app.component('home-component', {
     todayDate() {
       return getTodayDate();
     },
-    // Česká lokalizace pro q-date (locale="cs" jako string nefunguje, musí být objekt)
     csLocale() {
       return {
         days: ['Neděle', 'Pondělí', 'Úterý', 'Středa', 'Čtvrtek', 'Pátek', 'Sobota'],
@@ -90,7 +89,6 @@ window.app.component('home-component', {
   },
   
   methods: {
-    // ── OBĚD - pomocné ─────────────────────────────────────
     getTodayFormatted() {
       const d = new Date();
       const dd = String(d.getDate()).padStart(2, '0');
@@ -99,21 +97,18 @@ window.app.component('home-component', {
     },
 
     lunchDateToTimestamp(dateStr) {
-      // DD. MM. YYYY → timestamp poledne
       const parts = dateStr.split('. ');
       return new Date(parts[2], parts[1] - 1, parts[0], 12, 0).getTime();
     },
 
     async loadLunchPrices(dateStr) {
       this.lunchPricesLoading = true;
-      this.lunchPrice = null;  // reset vybrané ceny při změně datumu
+      this.lunchPrice = null;
       try {
         const ts = this.lunchDateToTimestamp(dateStr);
         const res = await apiCall('getlunchprice', { date: ts });
-        // Validace: res.data musí existovat A mít price1 (číslo > 0)
         if (res.code === '000' && res.data && res.data.price1 != null && res.data.price1 !== '') {
-          this.lunchPrices = res.data;  // { price1: 99, price2: 145 }
-          // automaticky vyber první cenu
+          this.lunchPrices = res.data;
           this.lunchPrice = res.data.price1;
         } else {
           this.lunchPrices = null;
@@ -124,7 +119,6 @@ window.app.component('home-component', {
       this.lunchPricesLoading = false;
     },
 
-    // ── SMĚNA ──────────────────────────────────────────────
     async setArrival() {
       this.shiftForm.timeStart = Date.now();
       this.saveShiftState();
@@ -280,9 +274,31 @@ window.app.component('home-component', {
           this.shiftForm.placeId = state.placeId;
           this.shiftForm.note = state.note;
           this.cloudRowIndex = state.cloudRowIndex || null;
+          return true; // načteno z localStorage
         } else {
           this.clearShiftState();
         }
+      }
+      return false; // nic v localStorage
+    },
+
+    // NOVÁ FUNKCE v2026-02-27: načte rozpracovanou šichtu z tabulky na novém zařízení
+    async checkCloudShift() {
+      try {
+        const res = await apiCall('getdayrecords', { date: getTodayDate() });
+        if (res.code !== '000' || !res.data) return;
+        // Najdi záznam tohoto pracovníka se stavem 'rozpracováno'
+        const rozpracovany = res.data.find(r =>
+          String(r[1]) === String(this.currentUser.id) && r[15] === 'rozpracováno'
+        );
+        if (rozpracovany) {
+          this.shiftForm.timeStart = Number(rozpracovany[4]);
+          this.cloudRowIndex = rozpracovany[16]; // row index vrácený z GAS
+          this.saveShiftState();
+          this.$emit('message', '☁ Načtena rozpracovaná šichta: ' + formatTime(this.shiftForm.timeStart));
+        }
+      } catch (e) {
+        // tiše selže - nevadí
       }
     },
     
@@ -305,7 +321,6 @@ window.app.component('home-component', {
       this.cloudRowIndex = null;
     },
     
-    // ── OBĚD - ukládání ────────────────────────────────────
     async saveLunch() {
       if (!this.lunchPrice) {
         this.$emit('message', 'Vyberte cenu oběda');
@@ -317,7 +332,7 @@ window.app.component('home-component', {
           id_worker: this.currentUser.id,
           name_worker: this.currentUser.name,
           time: timestamp,
-          payment: this.lunchPrice  // ← cena oběda
+          payment: this.lunchPrice
         });
         if (res.code === '000') {
           this.$emit('message', `✓ Oběd uložen (${this.lunchPrice} Kč)`);
@@ -330,7 +345,6 @@ window.app.component('home-component', {
       }
     },
     
-    // ── ZÁLOHA ─────────────────────────────────────────────
     async saveAdvance() {
       if (!this.advanceForm.amount || !this.advanceForm.reason) {
         this.$emit('message', 'Vyplňte částku a důvod');
@@ -366,15 +380,18 @@ window.app.component('home-component', {
     'shiftForm.jobId': function() { this.saveShiftState(); },
     'shiftForm.placeId': function() { this.saveShiftState(); },
     'shiftForm.note': function() { this.saveShiftState(); },
-    // při změně datumu oběda načti nové ceny
     lunchDate(newDate) {
       if (newDate) this.loadLunchPrices(newDate);
     }
   },
   
-  mounted() {
-    this.loadShiftState();
-    this.lunchDate = this.getTodayFormatted();  // default = dnes
+  async mounted() {
+    const nactenoZLocalStorage = this.loadShiftState();
+    // Pokud nic v localStorage → zkus načíst z tabulky (nové zařízení)
+    if (!nactenoZLocalStorage || !this.shiftForm.timeStart) {
+      await this.checkCloudShift();
+    }
+    this.lunchDate = this.getTodayFormatted();
     this.loadLunchPrices(this.lunchDate);
   },
   
@@ -448,8 +465,6 @@ window.app.component('home-component', {
       
       <!-- OBĚD -->
       <div v-if="currentTab==='lunch'" class="q-pt-md">
-
-        <!-- výběr datumu -->
         <q-input v-model="lunchDate" label="Datum oběda" outlined dense readonly class="q-mb-md">
           <template v-slot:prepend>
             <q-icon name="restaurant" color="orange"/>
@@ -464,18 +479,15 @@ window.app.component('home-component', {
           </template>
         </q-input>
 
-        <!-- ceny - loading -->
         <div v-if="lunchPricesLoading" class="text-center q-pa-md text-grey-6">
           <q-spinner size="2em" color="orange"/>
           <div class="q-mt-sm">Načítám ceny...</div>
         </div>
 
-        <!-- ceny - nenalezeny -->
         <div v-else-if="!lunchPrices" class="q-mb-md q-pa-sm text-orange-8" style="background:#fff3e0;border-radius:4px">
           ⚠ Pro vybrané datum nebyla nalezena cena oběda
         </div>
 
-        <!-- ceny - výběr -->
         <div v-else class="q-mb-md">
           <div class="text-subtitle2 q-mb-sm text-grey-7">Vyberte cenu oběda:</div>
           <div class="row q-gutter-sm">
@@ -503,7 +515,6 @@ window.app.component('home-component', {
           </div>
         </div>
 
-        <!-- zobrazení vybrané ceny -->
         <div v-if="lunchPrice" class="q-mb-md q-pa-sm text-center" style="background:#e8f5e9;border-radius:4px">
           <div class="text-h6 text-green-8">✓ Vybráno: <strong>{{ lunchPrice }} Kč</strong></div>
           <div class="text-caption text-grey-7">{{ lunchDate }}</div>
