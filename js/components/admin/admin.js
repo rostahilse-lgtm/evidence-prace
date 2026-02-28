@@ -55,6 +55,21 @@ window.app.component('admin-component', {
     jobOptions() { return this.jobs.map(j => ({ label: j[1], value: j[0] })); },
     placeOptions() { return this.places ? this.places.map(p => ({ label: p[1], value: p[0] })) : []; },
     workerOptions() { return this.workers.map(w => ({ label: w[1], value: w[0] })); },
+    todayShifts() {
+      const today = new Date(); today.setHours(0,0,0,0);
+      const todayTs = today.getTime(); const tomorrowTs = todayTs + 86400000;
+      const map = {};
+      this.allRecords.forEach(r => {
+        const ts = Number(r[4]);
+        if (ts >= todayTs && ts < tomorrowTs) {
+          const id = String(r[1]); const status = String(r[15] || "").trim();
+          if (!map[id] || status === "rozpracováno") {
+            map[id] = { timeFrom: ts, timeTo: r[5] ? Number(r[5]) : null, status: status };
+          }
+        }
+      });
+      return map;
+    },
     selectedContractKm() {
       if (!this.editForm.contractId) return 0;
       const contract = this.contracts.find(c => c[0] === this.editForm.contractId);
@@ -282,6 +297,16 @@ window.app.component('admin-component', {
             <div class="col" @click="selectWorker(worker)" style="cursor:pointer">
               <div class="text-bold text-caption">{{ worker.name }}</div>
               <div class="text-caption text-grey-5" style="font-size:0.7rem">ID: {{ worker.id }}</div>
+              <!-- DNEŠNÍ ŠICHTA -->
+              <div v-if="todayShifts[String(worker.id)]" class="q-mt-xs">
+                <span v-if="todayShifts[String(worker.id)].status === 'rozpracováno'" class="text-caption text-green-7">
+                  ▶ {{ new Date(todayShifts[String(worker.id)].timeFrom).toLocaleTimeString('cs-CZ', {hour:'2-digit',minute:'2-digit'}) }} – pracuje
+                </span>
+                <span v-else class="text-caption text-grey-6">
+                  {{ new Date(todayShifts[String(worker.id)].timeFrom).toLocaleTimeString('cs-CZ', {hour:'2-digit',minute:'2-digit'}) }}
+                  – {{ todayShifts[String(worker.id)].timeTo ? new Date(todayShifts[String(worker.id)].timeTo).toLocaleTimeString('cs-CZ', {hour:'2-digit',minute:'2-digit'}) : '?' }}
+                </span>
+              </div>
             </div>
             <div class="text-caption text-grey-7 q-mr-xs" style="min-width:60px;text-align:right">
               <div>{{ worker.totalEarnings }} Kč</div>
