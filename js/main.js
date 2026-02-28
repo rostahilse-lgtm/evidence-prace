@@ -1,7 +1,7 @@
 // Evidence práce 2026 - main.js
-// v2026-02-26 - oprávnění z tabulky pracovníci (sloupce G=statistiky, H=deník)
-//             - statistiky a deník v hlavní apce, zrušen odkaz na admin panel
-//             - nic jsem nesmazal, pouze přidal nové funkce a upravil co nefungovalo
+// v2026-02-27 - přesun Admin mezi Přehledy a Nástroje, Nástroje obsahují Statistiky+Deník
+//             - přidána funkce přihlásit jako pracovník (impersonace) s tlačítkem Zpět
+//             - nic jsem nesmazal, pouze přidal nové funkce
 
 window.app = Vue.createApp({
   data() {
@@ -23,7 +23,13 @@ window.app = Vue.createApp({
       allSummary: [],
       allRecords: [],
       allAdvances: [],
-      dataSource: localStorage.getItem('dataSource') || 'new'
+      dataSource: localStorage.getItem('dataSource') || 'new',
+      // IMPERSONACE
+      impersonating: false,
+      realUser: null,
+      realIsAdmin: false,
+      // NÁSTROJE submenu
+      toolsView: 'stats'
     }
   },
 
@@ -33,15 +39,11 @@ window.app = Vue.createApp({
       if (this.dataSource === 'all') return '· VŠE';
       return '· NOVÉ';
     },
-    // Pro statistiky: admin vidí vše, ostatní jen sebe
     statsRecords() {
       return this.isAdmin ? this.allRecords : this.records;
     },
     statsAdvances() {
       return this.isAdmin ? this.allAdvances : this.advances;
-    },
-    statsSummary() {
-      return this.isAdmin ? this.allSummary : (this.summary ? [this.summary] : []);
     }
   },
 
@@ -61,9 +63,8 @@ window.app = Vue.createApp({
         name: worker[1],
         active: worker[2] === 'Y',
         admin: worker[3] === 'Y',
-        // oprávnění z dalších sloupců
-        canStats: worker[3] === 'Y' || worker[6] === 'Y',   // sloupec G (index 6)
-        canDenik: worker[3] === 'Y' || worker[7] === 'Y'    // sloupec H (index 7)
+        canStats: worker[3] === 'Y' || worker[6] === 'Y',
+        canDenik: worker[3] === 'Y' || worker[7] === 'Y'
       };
       this.isLoggedIn = true;
       this.isAdmin = this.currentUser.admin;
@@ -71,6 +72,40 @@ window.app = Vue.createApp({
       await this.loadUserData();
       if (this.isAdmin) await this.loadAdminData();
       this.showMessage('Přihlášen: ' + this.currentUser.name);
+    },
+
+    // IMPERSONACE - přihlásit jako pracovník
+    async loginAs(worker) {
+      // Ulož skutečného admina
+      this.realUser = this.currentUser;
+      this.realIsAdmin = this.isAdmin;
+      this.impersonating = true;
+      // Přihlas jako vybraný pracovník (bez uložení do localStorage)
+      this.currentUser = {
+        id: worker[0],
+        name: worker[1],
+        active: worker[2] === 'Y',
+        admin: worker[3] === 'Y',
+        canStats: worker[3] === 'Y' || worker[6] === 'Y',
+        canDenik: worker[3] === 'Y' || worker[7] === 'Y'
+      };
+      this.isAdmin = false; // impersonovaný není admin
+      await this.loadUserData();
+      this.currentView = 'home';
+      this.showMessage('Zobrazuji jako: ' + this.currentUser.name);
+    },
+
+    // IMPERSONACE - návrat zpět
+    async returnToAdmin() {
+      this.currentUser = this.realUser;
+      this.isAdmin = this.realIsAdmin;
+      this.impersonating = false;
+      this.realUser = null;
+      localStorage.setItem('workerId', this.currentUser.id);
+      await this.loadUserData();
+      await this.loadAdminData();
+      this.currentView = 'admin';
+      this.showMessage('Zpět jako: ' + this.currentUser.name);
     },
 
     async loadUserData() {
@@ -101,7 +136,6 @@ window.app = Vue.createApp({
     async loadAdminData() {
       this.loading = true;
       const source = localStorage.getItem('dataSource') || 'new';
-
       const [summary, records, advances] = await Promise.all([
         apiCall('getallsummary', { source }),
         apiCall('getallrecords', { source }),
@@ -122,6 +156,8 @@ window.app = Vue.createApp({
       this.isLoggedIn = false;
       this.currentUser = null;
       this.isAdmin = false;
+      this.impersonating = false;
+      this.realUser = null;
       localStorage.removeItem('workerId');
       this.showMessage('Odhlášen');
     }
@@ -145,9 +181,12 @@ window.app = Vue.createApp({
     <q-layout view="hHh lpR fFf">
       <q-header v-if="isLoggedIn" class="bg-primary text-white">
         <q-toolbar>
+          <!-- Zpět tlačítko při impersonaci -->
+          <q-btn v-if="impersonating" flat dense icon="arrow_back" label="Zpět" @click="returnToAdmin" class="q-mr-sm"/>
           <q-toolbar-title>
             {{ currentUser.name }}
-            <span class="text-caption q-ml-sm">{{ dataSourceLabel }}</span>
+            <span v-if="impersonating" class="text-caption q-ml-sm text-yellow">· NÁHLED</span>
+            <span v-else class="text-caption q-ml-sm">{{ dataSourceLabel }}</span>
           </q-toolbar-title>
           <span v-if="isAdmin" class="admin-badge q-ml-sm">ADMIN</span>
         </q-toolbar>
@@ -188,25 +227,6 @@ window.app = Vue.createApp({
             :lunches="lunches"
           />
 
-          <!-- STATISTIKY (admin vidí vše, ostatní jen sebe) -->
-          <statistics-component
-            v-if="isLoggedIn && currentView === 'stats' && !loading"
-            :all-records="statsRecords"
-            :all-advances="statsAdvances"
-            :contracts="contracts"
-            :jobs="jobs"
-            :places="places"
-            @message="showMessage"
-          />
-
-          <!-- STAVEBNÍ DENÍK (admin vidí vše, ostatní jen sebe) -->
-          <stavebni-denik-component
-            v-if="isLoggedIn && currentView === 'denik' && !loading"
-            :all-records="statsRecords"
-            :contracts="contracts"
-            @message="showMessage"
-          />
-
           <!-- ADMIN panel -->
           <admin-component
             v-if="isLoggedIn && isAdmin && currentView === 'admin' && !loading"
@@ -219,7 +239,31 @@ window.app = Vue.createApp({
             :loading="loading"
             @message="showMessage"
             @reload="reloadAll"
+            @login-as="loginAs"
           />
+
+          <!-- NÁSTROJE (Statistiky + Deník) -->
+          <div v-if="isLoggedIn && currentView === 'tools' && !loading">
+            <q-tabs v-model="toolsView" dense align="justify" class="text-primary q-mb-md">
+              <q-tab v-if="currentUser && currentUser.canStats" name="stats" icon="bar_chart" label="Statistiky"/>
+              <q-tab v-if="currentUser && currentUser.canDenik" name="denik" icon="menu_book" label="Deník"/>
+            </q-tabs>
+            <statistics-component
+              v-if="toolsView === 'stats' && currentUser && currentUser.canStats"
+              :all-records="statsRecords"
+              :all-advances="statsAdvances"
+              :contracts="contracts"
+              :jobs="jobs"
+              :places="places"
+              @message="showMessage"
+            />
+            <stavebni-denik-component
+              v-if="toolsView === 'denik' && currentUser && currentUser.canDenik"
+              :all-records="statsRecords"
+              :contracts="contracts"
+              @message="showMessage"
+            />
+          </div>
 
           <!-- NASTAVENÍ -->
           <settings-component
@@ -235,9 +279,8 @@ window.app = Vue.createApp({
         <q-tabs v-model="currentView" dense align="justify" active-color="primary">
           <q-tab name="home" icon="home" label="Domů" />
           <q-tab name="summary" icon="assessment" label="Přehledy" />
-          <q-tab v-if="currentUser && currentUser.canStats" name="stats" icon="bar_chart" label="Statistiky" />
-          <q-tab v-if="currentUser && currentUser.canDenik" name="denik" icon="menu_book" label="Deník" />
           <q-tab v-if="isAdmin" name="admin" icon="admin_panel_settings" label="Admin" />
+          <q-tab v-if="currentUser && (currentUser.canStats || currentUser.canDenik)" name="tools" icon="widgets" label="Nástroje" />
           <q-tab name="settings" icon="settings" label="Nastavení" />
         </q-tabs>
       </q-footer>
