@@ -251,6 +251,7 @@ window.app = Vue.createApp({
             <statistics-component
               v-if="toolsView === 'stats' && currentUser && currentUser.canStats"
               :all-records="statsRecords"
+              :is-admin="isAdmin"
               :all-advances="statsAdvances"
               :contracts="contracts"
               :jobs="jobs"
@@ -260,6 +261,7 @@ window.app = Vue.createApp({
             <stavebni-denik-component
               v-if="toolsView === 'denik' && currentUser && currentUser.canDenik"
               :all-records="statsRecords"
+              :is-admin="isAdmin"
               :contracts="contracts"
               @message="showMessage"
             />
