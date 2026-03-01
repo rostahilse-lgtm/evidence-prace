@@ -220,7 +220,7 @@ window.app.component('statistics-component', {
           <div class="text-subtitle2 q-mb-sm">Filtry</div>
           <q-select v-model="filters.contracts" :options="contractOptions" label="Zakázky" emit-value map-options multiple outlined dense class="q-mb-sm"/>
           <q-select v-model="filters.jobs" :options="jobOptions" label="Práce" emit-value map-options multiple outlined dense class="q-mb-sm"/>
-          <q-select v-model="filters.places" :options="placeOptions" label="Místa práce" emit-value map-options multiple outlined dense class="q-mb-sm"/>
+          <q-select v-if="isAdmin" v-model="filters.places" :options="placeOptions" label="Místa práce" emit-value map-options multiple outlined dense class="q-mb-sm"/>
           <q-select v-if="isAdmin" v-model="filters.workers" :options="workerOptions" label="Pracovníci" emit-value map-options multiple outlined dense class="q-mb-sm"/>
           <div class="row q-gutter-sm q-mb-sm">
             <div class="col">
@@ -238,7 +238,7 @@ window.app.component('statistics-component', {
               </q-input>
             </div>
           </div>
-          <q-select v-model="filters.withKm" :options="[{label:'--- Všechny záznamy ---',value:null},{label:'Pouze s cestami (km > 0)',value:true},{label:'Pouze bez cest (km = 0)',value:false}]" label="Kilometry" emit-value map-options outlined dense class="q-mb-sm"/>
+          <q-select v-if="isAdmin" v-model="filters.withKm" :options="[{label:'--- Všechny záznamy ---',value:null},{label:'Pouze s cestami (km > 0)',value:true},{label:'Pouze bez cest (km = 0)',value:false}]" label="Kilometry" emit-value map-options outlined dense class="q-mb-sm"/>
           <div class="row q-gutter-sm">
             <q-btn label="Použít filtry" color="primary" icon="filter_list" @click="applyFilters" class="col"/>
             <q-btn label="Zobrazit vše" color="teal" outline icon="list" @click="showAll" class="col"/>
@@ -271,8 +271,8 @@ window.app.component('statistics-component', {
             </q-card>
           </div>
 
-          <!-- Řádek 2: dny -->
-          <div class="row q-gutter-sm q-mb-sm">
+          <!-- Řádek 2: dny (jen admin) -->
+          <div v-if="isAdmin" class="row q-gutter-sm q-mb-sm">
             <q-card class="col text-center" flat bordered>
               <q-card-section class="q-pa-sm">
                 <div class="text-caption text-grey-7">Dní celkem</div>
