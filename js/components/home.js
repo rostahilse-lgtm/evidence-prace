@@ -4,6 +4,9 @@
 // v2026-03-01 - přidána záložka Rozpracované: kluci mohou kdykoli doplnit nedokončený záznam
 //             - prodlouženo uchování lokálního stavu ze 1 dne na 7 dní
 //             - NIC JSEM NESMAZAL, pouze přidal nové funkce
+// v2026-03-04 - OPRAVA: výběr času odchodu v Rozpracovaných nahrazen Quasar time pickerem (místo textového pole)
+//             - NOVÉ: při uložení doplnění se posílá opraveno:'Y' → v tabulce se zapíše 'opraveno' do sloupce P
+//             - nic jsem nesmazal, pouze opravil výběr času a přidal příznak opraveno
 
 window.app.component('home-component', {
   props: ['currentUser', 'isAdmin', 'contracts', 'jobs', 'places', 'loading'],
@@ -39,7 +42,7 @@ window.app.component('home-component', {
       // ROZPRACOVANÉ
       nedokoncene: [],
       nedokonceneLoading: false,
-      doplnForm: null,  // { rowIndex, timeStart, timeEnd, contractId, jobId, placeId, note }
+      doplnForm: null,  // { rowIndex, timeStart, timeEnd, timeEndStr, contractId, jobId, placeId, note }
       doplnSaving: false
     }
   },
@@ -79,7 +82,7 @@ window.app.component('home-component', {
         days: ['Neděle', 'Pondělí', 'Úterý', 'Středa', 'Čtvrtek', 'Pátek', 'Sobota'],
         daysShort: ['Ne', 'Po', 'Út', 'St', 'Čt', 'Pá', 'So'],
         months: ['Leden', 'Únor', 'Březen', 'Duben', 'Květen', 'Červen', 'Červenec', 'Srpen', 'Září', 'Říjen', 'Listopad', 'Prosinec'],
-        monthsShort: ['Led', 'Úno', 'Bře', 'Dub', 'Kvě', 'Čvn', 'Čvc', 'Srp', 'Zář', 'Říj', 'Lis', 'Pro'],
+        monthsShort: ['Led', 'Úno', 'Bře', 'Dub', 'Kvě', 'Čvn', 'Čvc', 'Srp', 'Září', 'Říj', 'Lis', 'Pro'],
         firstDayOfWeek: 1
       };
     },
@@ -312,7 +315,7 @@ window.app.component('home-component', {
       }
     },
     
-    // ── ROZPRACOVANÉ ───────────────────────────────────────
+    // ── ROZPRACOVANÉ ──────────────────────────────────────────
     async loadNedokoncene() {
       this.nedokonceneLoading = true;
       try {
@@ -324,11 +327,13 @@ window.app.component('home-component', {
       this.nedokonceneLoading = false;
     },
 
+    // OPRAVA v2026-03-04: přidáno timeEndStr pro time picker
     zacitDoplnovat(r) {
       this.doplnForm = {
         rowIndex: r[16],
         timeStart: Number(r[4]),
         timeEnd: null,
+        timeEndStr: '',    // OPRAVA: pro Quasar time picker
         contractId: null,
         jobId: null,
         placeId: null,
@@ -340,6 +345,7 @@ window.app.component('home-component', {
       this.doplnForm = null;
     },
 
+    // OPRAVA v2026-03-04: přidáno opraveno:'Y' do payloadu → zapíše 'opraveno' do sloupce P
     async ulozitDoplneni() {
       if (!this.doplnForm.contractId || !this.doplnForm.jobId || !this.doplnForm.placeId) {
         this.$emit('message', 'Vyplňte zakázku, práci a místo práce');
@@ -363,7 +369,8 @@ window.app.component('home-component', {
           id_place: this.doplnForm.placeId,
           time_fr: this.doplnForm.timeStart,
           time_to: this.doplnForm.timeEnd,
-          note: this.doplnForm.note
+          note: this.doplnForm.note,
+          opraveno: 'Y'    // NOVÉ: zapíše 'opraveno' do sloupce P v tabulce
         };
         const res = await apiCall('completerecord', payload);
         if (res.code === '000') {
@@ -380,7 +387,7 @@ window.app.component('home-component', {
       this.doplnSaving = false;
     },
 
-        clearShiftState() {
+    clearShiftState() {
       localStorage.removeItem('shiftState_' + this.currentUser.id);
       this.shiftForm = {
         contractId: null,
@@ -651,20 +658,31 @@ window.app.component('home-component', {
             <div class="text-caption text-grey-6">Čas příchodu nelze měnit</div>
           </div>
 
-          <div class="q-mb-md q-pa-sm" style="background:#e3f2fd;border-radius:4px">
-            <div class="text-caption text-grey-7 q-mb-xs">Čas odchodu *</div>
-            <div class="row items-center q-gutter-sm">
-              <q-input v-model="doplnForm.timeEndStr" label="Odchod (HH:MM)" outlined dense class="col"
-                hint="Datum příchodu se použije automaticky"
-                @update:model-value="val => {
-                  if (val && val.match(/^\d{2}:\d{2}$/)) {
-                    const d = new Date(doplnForm.timeStart);
-                    const [h,m] = val.split(':');
-                    d.setHours(parseInt(h), parseInt(m), 0);
-                    doplnForm.timeEnd = d.getTime();
-                  }
-                }"/>
-            </div>
+          <!-- OPRAVA v2026-03-04: nahrazen textový input za Quasar time picker -->
+          <div class="q-mb-md">
+            <q-input v-model="doplnForm.timeEndStr" label="Čas odchodu *" outlined dense readonly
+              hint="Datum příchodu se použije automaticky">
+              <template v-slot:prepend>
+                <q-icon name="logout" color="orange"/>
+              </template>
+              <template v-slot:append>
+                <q-icon name="schedule" class="cursor-pointer" color="primary">
+                  <q-popup-proxy cover ref="doplnTimeProxy">
+                    <q-time v-model="doplnForm.timeEndStr" mask="HH:mm" format24h
+                      @update:model-value="val => {
+                        if (val && val.length === 5) {
+                          $refs.doplnTimeProxy.hide();
+                          const d = new Date(doplnForm.timeStart);
+                          const [h, m] = val.split(':');
+                          d.setHours(parseInt(h), parseInt(m), 0);
+                          doplnForm.timeEnd = d.getTime();
+                        }
+                      }"
+                    />
+                  </q-popup-proxy>
+                </q-icon>
+              </template>
+            </q-input>
           </div>
 
           <q-select v-model="doplnForm.contractId" :options="contractOptions"
