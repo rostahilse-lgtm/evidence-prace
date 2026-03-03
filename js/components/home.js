@@ -1,7 +1,9 @@
 // home.js
 // v2026-02-25b - Oprava: česká lokalizace datumů (csLocale objekt), oprava UNDEFINED ceny oběda
-// v2026-02-27 - přidána funkce checkCloudShift: načte rozpracovanou šichtu z tabulky na novém zařízení
-//              - nic jsem nesmazal, pouze přidal nové funkce
+// v2026-02-27 - přidána funkce checkCloudShift
+// v2026-03-01 - přidána záložka Rozpracované: kluci mohou kdykoli doplnit nedokončený záznam
+//             - prodlouženo uchování lokálního stavu ze 1 dne na 7 dní
+//             - NIC JSEM NESMAZAL, pouze přidal nové funkce
 
 window.app.component('home-component', {
   props: ['currentUser', 'isAdmin', 'contracts', 'jobs', 'places', 'loading'],
@@ -33,7 +35,12 @@ window.app.component('home-component', {
       lunchDate: '',
       lunchPrice: null,
       lunchPrices: null,
-      lunchPricesLoading: false
+      lunchPricesLoading: false,
+      // ROZPRACOVANÉ
+      nedokoncene: [],
+      nedokonceneLoading: false,
+      doplnForm: null,  // { rowIndex, timeStart, timeEnd, contractId, jobId, placeId, note }
+      doplnSaving: false
     }
   },
   
@@ -266,7 +273,10 @@ window.app.component('home-component', {
       const saved = localStorage.getItem('shiftState_' + this.currentUser.id);
       if (saved) {
         const state = JSON.parse(saved);
-        if (state.date === getTodayDate()) {
+        // Prodlouženo na 7 dní (dříve jen dnešek)
+        const stateDate = new Date(state.date.split(". ").reverse().join("-"));
+        const daysAgo = (Date.now() - stateDate.getTime()) / 86400000;
+        if (daysAgo < 7) {
           this.shiftForm.timeStart = state.timeStart;
           this.shiftForm.timeEnd = state.timeEnd;
           this.shiftForm.contractId = state.contractId;
@@ -302,7 +312,75 @@ window.app.component('home-component', {
       }
     },
     
-    clearShiftState() {
+    // ── ROZPRACOVANÉ ───────────────────────────────────────
+    async loadNedokoncene() {
+      this.nedokonceneLoading = true;
+      try {
+        const res = await apiCall('getrecords', { id_worker: this.currentUser.id, source: 'new' });
+        if (res.code === '000' && res.data) {
+          this.nedokoncene = res.data.filter(r => String(r[15] || '').trim() === 'rozpracováno');
+        }
+      } catch(e) { /* tiše */ }
+      this.nedokonceneLoading = false;
+    },
+
+    zacitDoplnovat(r) {
+      this.doplnForm = {
+        rowIndex: r[16],
+        timeStart: Number(r[4]),
+        timeEnd: null,
+        contractId: null,
+        jobId: null,
+        placeId: null,
+        note: ''
+      };
+    },
+
+    zrusitDoplneni() {
+      this.doplnForm = null;
+    },
+
+    async ulozitDoplneni() {
+      if (!this.doplnForm.contractId || !this.doplnForm.jobId || !this.doplnForm.placeId) {
+        this.$emit('message', 'Vyplňte zakázku, práci a místo práce');
+        return;
+      }
+      if (!this.doplnForm.note || this.doplnForm.note.trim() === '') {
+        this.$emit('message', 'Poznámka je povinná');
+        return;
+      }
+      if (!this.doplnForm.timeEnd) {
+        this.$emit('message', 'Zadejte čas odchodu');
+        return;
+      }
+      this.doplnSaving = true;
+      try {
+        const payload = {
+          row_index: this.doplnForm.rowIndex,
+          id_contract: this.doplnForm.contractId,
+          id_worker: this.currentUser.id,
+          id_job: this.doplnForm.jobId,
+          id_place: this.doplnForm.placeId,
+          time_fr: this.doplnForm.timeStart,
+          time_to: this.doplnForm.timeEnd,
+          note: this.doplnForm.note
+        };
+        const res = await apiCall('completerecord', payload);
+        if (res.code === '000') {
+          this.$emit('message', '✓ Záznam doplněn a uložen');
+          this.doplnForm = null;
+          await this.loadNedokoncene();
+          this.$emit('reload');
+        } else {
+          this.$emit('message', 'Chyba: ' + (res.error || ''));
+        }
+      } catch(e) {
+        this.$emit('message', 'Chyba při ukládání');
+      }
+      this.doplnSaving = false;
+    },
+
+        clearShiftState() {
       localStorage.removeItem('shiftState_' + this.currentUser.id);
       this.shiftForm = {
         contractId: null,
@@ -382,6 +460,9 @@ window.app.component('home-component', {
     'shiftForm.note': function() { this.saveShiftState(); },
     lunchDate(newDate) {
       if (newDate) this.loadLunchPrices(newDate);
+    },
+    currentTab(val) {
+      if (val === 'nedokoncene') this.loadNedokoncene();
     }
   },
   
@@ -401,6 +482,7 @@ window.app.component('home-component', {
         <q-tab name="shift" label="Směna"/>
         <q-tab name="lunch" label="Oběd"/>
         <q-tab name="advance" label="Záloha"/>
+        <q-tab name="nedokoncene" label="Rozpracované"/>
       </q-tabs>
       
       <!-- SMĚNA -->
@@ -533,6 +615,76 @@ window.app.component('home-component', {
           outlined class="q-mb-md" type="textarea" rows="2"/>
         <q-btn @click="saveAdvance" label="Uložit zálohu" color="primary"
           :loading="loading" class="full-width" size="lg"/>
+      </div>
+
+      <!-- ROZPRACOVANÉ -->
+      <div v-if="currentTab==='nedokoncene'" class="q-pt-md">
+        <div class="q-mb-sm q-pa-xs text-caption text-orange-8" style="background:#fff3e0;border-radius:4px">
+          ⚠ Záznamy kde chybí zakázka, práce nebo odchod. Doplňte je kdykoli.
+        </div>
+
+        <div v-if="nedokonceneLoading" class="text-center q-pa-md">
+          <q-spinner color="orange" size="2em"/>
+        </div>
+
+        <div v-else-if="nedokoncene.length === 0" class="text-center text-grey-7 q-mt-lg">
+          ✓ Žádné rozpracované záznamy
+        </div>
+
+        <!-- SEZNAM ROZPRACOVANÝCH -->
+        <div v-else-if="!doplnForm">
+          <div v-for="(r, idx) in nedokoncene" :key="idx" class="record-card q-mb-sm">
+            <div class="row items-center">
+              <div class="col">
+                <div class="text-bold text-orange-8">Příchod: {{ new Date(Number(r[4])).toLocaleString("cs-CZ", {day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}) }}</div>
+                <div class="text-caption text-grey-7">{{ r[0] || "Zakázka nevyplněna" }} • {{ r[3] || "Práce nevyplněna" }}</div>
+              </div>
+              <q-btn color="orange" icon="edit" label="Doplnit" size="sm" unelevated @click="zacitDoplnovat(r)"/>
+            </div>
+          </div>
+        </div>
+
+        <!-- FORMULÁŘ DOPLNĚNÍ -->
+        <div v-else>
+          <div class="q-mb-md q-pa-sm text-center" style="background:#fff3e0;border-radius:4px">
+            <div class="text-bold text-orange-8">Příchod: {{ new Date(doplnForm.timeStart).toLocaleString("cs-CZ", {day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}) }}</div>
+            <div class="text-caption text-grey-6">Čas příchodu nelze měnit</div>
+          </div>
+
+          <div class="q-mb-md q-pa-sm" style="background:#e3f2fd;border-radius:4px">
+            <div class="text-caption text-grey-7 q-mb-xs">Čas odchodu *</div>
+            <div class="row items-center q-gutter-sm">
+              <q-input v-model="doplnForm.timeEndStr" label="Odchod (HH:MM)" outlined dense class="col"
+                hint="Datum příchodu se použije automaticky"
+                @update:model-value="val => {
+                  if (val && val.match(/^\d{2}:\d{2}$/)) {
+                    const d = new Date(doplnForm.timeStart);
+                    const [h,m] = val.split(':');
+                    d.setHours(parseInt(h), parseInt(m), 0);
+                    doplnForm.timeEnd = d.getTime();
+                  }
+                }"/>
+            </div>
+          </div>
+
+          <q-select v-model="doplnForm.contractId" :options="contractOptions"
+            label="Zakázka *" emit-value map-options outlined class="q-mb-md"/>
+
+          <q-select v-model="doplnForm.jobId" :options="jobOptions"
+            label="Práce *" emit-value map-options outlined class="q-mb-md"/>
+
+          <q-select v-model="doplnForm.placeId" :options="placeOptions"
+            label="Místo práce *" emit-value map-options outlined class="q-mb-md"/>
+
+          <q-input v-model="doplnForm.note" label="Poznámka *"
+            outlined class="q-mb-md" type="textarea" rows="3"/>
+
+          <div class="row q-gutter-sm">
+            <q-btn @click="ulozitDoplneni" label="Uložit záznam" color="primary"
+              :loading="doplnSaving" class="col" size="lg" unelevated/>
+            <q-btn @click="zrusitDoplneni" label="Zpět" color="grey" outline size="lg"/>
+          </div>
+        </div>
       </div>
     </div>
   `
