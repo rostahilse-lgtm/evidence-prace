@@ -7,6 +7,8 @@
 // v2026-03-04 - OPRAVA: výběr času odchodu v Rozpracovaných nahrazen Quasar time pickerem (místo textového pole)
 //             - NOVÉ: při uložení doplnění se posílá opraveno:'Y' → v tabulce se zapíše 'opraveno' do sloupce P
 //             - nic jsem nesmazal, pouze opravil výběr času a přidal příznak opraveno
+// v2026-03-04c - NOVÉ: vyhledávání v selectech Zakázka, Práce, Místo práce — po zmáčknutí naskočí klávesnice
+//              - nic jsem nesmazal, pouze přidal filter metody a use-input na selecty
 
 window.app.component('home-component', {
   props: ['currentUser', 'isAdmin', 'contracts', 'jobs', 'places', 'loading'],
@@ -43,7 +45,11 @@ window.app.component('home-component', {
       nedokoncene: [],
       nedokonceneLoading: false,
       doplnForm: null,  // { rowIndex, timeStart, timeEnd, timeEndStr, contractId, jobId, placeId, note }
-      doplnSaving: false
+      doplnSaving: false,
+      // NOVÉ v2026-03-04c: filtrované seznamy pro vyhledávání v selectech
+      contractOptionsFiltered: [],
+      jobOptionsFiltered: [],
+      placeOptionsFiltered: []
     }
   },
   
@@ -258,6 +264,46 @@ window.app.component('home-component', {
       }
     },
     
+    // NOVÉ v2026-03-04c: filter metody pro vyhledávání v selectech
+    filterContracts(val, update) {
+      update(() => {
+        if (val === '') {
+          this.contractOptionsFiltered = this.contractOptions;
+        } else {
+          const needle = val.toLowerCase();
+          this.contractOptionsFiltered = this.contractOptions.filter(
+            o => o.label.toLowerCase().includes(needle)
+          );
+        }
+      });
+    },
+
+    filterJobs(val, update) {
+      update(() => {
+        if (val === '') {
+          this.jobOptionsFiltered = this.jobOptions;
+        } else {
+          const needle = val.toLowerCase();
+          this.jobOptionsFiltered = this.jobOptions.filter(
+            o => o.label.toLowerCase().includes(needle)
+          );
+        }
+      });
+    },
+
+    filterPlaces(val, update) {
+      update(() => {
+        if (val === '') {
+          this.placeOptionsFiltered = this.placeOptions;
+        } else {
+          const needle = val.toLowerCase();
+          this.placeOptionsFiltered = this.placeOptions.filter(
+            o => o.label.toLowerCase().includes(needle)
+          );
+        }
+      });
+    },
+
     saveShiftState() {
       const state = {
         timeStart: this.shiftForm.timeStart,
@@ -517,14 +563,20 @@ window.app.component('home-component', {
           <div class="text-primary text-bold q-mt-sm">Odpracováno: {{workedHours}} hod</div>
         </div>
         
-        <q-select v-model="shiftForm.contractId" :options="contractOptions"
-          label="Zakázka *" emit-value map-options outlined class="q-mb-md"/>
+        <q-select v-model="shiftForm.contractId" :options="contractOptionsFiltered"
+          label="Zakázka *" emit-value map-options outlined class="q-mb-md"
+          use-input hide-selected fill-input input-debounce="0"
+          @filter="filterContracts" @focus="filterContracts('', v => contractOptionsFiltered = contractOptions)"/>
         
-        <q-select v-model="shiftForm.jobId" :options="jobOptions"
-          label="Práce *" emit-value map-options outlined class="q-mb-md"/>
+        <q-select v-model="shiftForm.jobId" :options="jobOptionsFiltered"
+          label="Práce *" emit-value map-options outlined class="q-mb-md"
+          use-input hide-selected fill-input input-debounce="0"
+          @filter="filterJobs" @focus="filterJobs('', v => jobOptionsFiltered = jobOptions)"/>
         
-        <q-select v-model="shiftForm.placeId" :options="placeOptions"
-          label="Místo práce *" emit-value map-options outlined class="q-mb-md"/>
+        <q-select v-model="shiftForm.placeId" :options="placeOptionsFiltered"
+          label="Místo práce *" emit-value map-options outlined class="q-mb-md"
+          use-input hide-selected fill-input input-debounce="0"
+          @filter="filterPlaces" @focus="filterPlaces('', v => placeOptionsFiltered = placeOptions)"/>
         
         <q-input v-model="shiftForm.note" label="Poznámka *"
           outlined class="q-mb-md" type="textarea" rows="3"/>
@@ -685,14 +737,20 @@ window.app.component('home-component', {
             </q-input>
           </div>
 
-          <q-select v-model="doplnForm.contractId" :options="contractOptions"
-            label="Zakázka *" emit-value map-options outlined class="q-mb-md"/>
+          <q-select v-model="doplnForm.contractId" :options="contractOptionsFiltered"
+            label="Zakázka *" emit-value map-options outlined class="q-mb-md"
+            use-input hide-selected fill-input input-debounce="0"
+            @filter="filterContracts" @focus="filterContracts('', v => contractOptionsFiltered = contractOptions)"/>
 
-          <q-select v-model="doplnForm.jobId" :options="jobOptions"
-            label="Práce *" emit-value map-options outlined class="q-mb-md"/>
+          <q-select v-model="doplnForm.jobId" :options="jobOptionsFiltered"
+            label="Práce *" emit-value map-options outlined class="q-mb-md"
+            use-input hide-selected fill-input input-debounce="0"
+            @filter="filterJobs" @focus="filterJobs('', v => jobOptionsFiltered = jobOptions)"/>
 
-          <q-select v-model="doplnForm.placeId" :options="placeOptions"
-            label="Místo práce *" emit-value map-options outlined class="q-mb-md"/>
+          <q-select v-model="doplnForm.placeId" :options="placeOptionsFiltered"
+            label="Místo práce *" emit-value map-options outlined class="q-mb-md"
+            use-input hide-selected fill-input input-debounce="0"
+            @filter="filterPlaces" @focus="filterPlaces('', v => placeOptionsFiltered = placeOptions)"/>
 
           <q-input v-model="doplnForm.note" label="Poznámka *"
             outlined class="q-mb-md" type="textarea" rows="3"/>
