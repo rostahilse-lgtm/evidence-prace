@@ -60,22 +60,24 @@ window.app.component('admin-component', {
         return (a.name || '').localeCompare(b.name || '', 'cs');
       });
     },
-    // NOVÉ v2026-03-04e: zálohy seřazené od nejnovější, max 3 na pracovníka
-    recentAdvances() {
+    // NOVÉ v2026-03-04e: zálohy seskupené po pracovnících, max 3 zálohy na pracovníka
+    recentAdvancesByWorker() {
       const all = [...this.activeAdvances]
         .filter(a => a[5] !== 'oběd')
         .sort((a, b) => Number(b[1]) - Number(a[1]));
-      const perWorker = {};
-      const result = [];
+      const map = {};
       for (const adv of all) {
         const id = String(adv[0]);
-        if (!perWorker[id]) perWorker[id] = 0;
-        if (perWorker[id] < 3) {
-          result.push(adv);
-          perWorker[id]++;
+        const name = adv[2] || '?';
+        if (!map[id]) map[id] = { id, name, advances: [] };
+        if (map[id].advances.length < 3) {
+          map[id].advances.push(adv);
         }
       }
-      return result.sort((a, b) => Number(b[1]) - Number(a[1]));
+      // Seřadit pracovníky podle data nejnovější zálohy
+      return Object.values(map).sort((a, b) =>
+        Number(b.advances[0][1]) - Number(a.advances[0][1])
+      );
     },
     activeRecords() { return this.localRecords !== null ? this.localRecords : this.allRecords; },
     activeAdvances() { return this.localAdvances !== null ? this.localAdvances : this.allAdvances; },
@@ -459,17 +461,19 @@ window.app.component('admin-component', {
 
       <!-- ZÁLOHY -->
       <div v-if="adminTab==='zalohy'" class="q-pt-md">
-        <div class="text-caption text-grey-7 q-mb-md">Poslední zálohy (max 3 na pracovníka)</div>
-        <div v-if="recentAdvances.length === 0" class="text-center text-grey-7 q-mt-lg">Žádné zálohy</div>
-        <div v-for="(adv, idx) in recentAdvances" :key="idx" class="record-card" style="padding:8px 12px">
-          <div class="row items-center no-wrap">
-            <div class="col">
-              <div class="text-bold" style="font-size:0.9rem">{{ adv[2] }}</div>
-              <div class="text-caption text-grey-7">{{ adv[5] || 'záloha' }}</div>
-            </div>
-            <div class="text-right">
-              <div class="text-bold text-primary">{{ adv[4] }} Kč</div>
-              <div class="text-caption text-grey-7">{{ formatShortDateTime(adv[1]) }}</div>
+        <div v-if="recentAdvancesByWorker.length === 0" class="text-center text-grey-7 q-mt-lg">Žádné zálohy</div>
+        <div v-for="row in recentAdvancesByWorker" :key="row.id" class="row items-start no-wrap q-mb-xs" style="border-bottom:1px solid #f0f0f0; padding:6px 4px">
+          <!-- Jméno pracovníka -->
+          <div style="min-width:90px; max-width:90px; padding-top:2px">
+            <div class="text-bold" style="font-size:0.82rem; line-height:1.2">{{ row.name }}</div>
+          </div>
+          <!-- Zálohy vedle sebe -->
+          <div class="row col q-gutter-xs">
+            <div v-for="(adv, i) in row.advances" :key="i"
+              style="min-width:85px; background:#f5f5f5; border-radius:4px; padding:3px 6px">
+              <div class="text-bold text-primary" style="font-size:0.85rem">{{ adv[4] }} Kč</div>
+              <div class="text-caption text-grey-7" style="font-size:0.72rem">{{ formatShortDateTime(adv[1]) }}</div>
+              <div class="text-caption text-grey-8" style="font-size:0.72rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:80px">{{ adv[5] }}</div>
             </div>
           </div>
         </div>
