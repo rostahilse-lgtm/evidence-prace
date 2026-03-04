@@ -266,6 +266,26 @@ window.app.component('admin-component', {
       } catch (e) { this.toolsResult = { ok: false, msg: 'Chyba spojení' }; }
       this.toolsLoading = false;
     },
+
+    // ── NÁSTROJE ───────────────────────────────────────────
+    async opravSazbyHistorie() {
+      if (!confirm('Přepíše sazby (sloupec C) v záznamy_historie podle sazebníku. Pokračovat?')) return;
+      this.toolsLoading = true;
+      this.toolsResult = null;
+      try {
+        const res = await apiCall('opravsazbyhistorie', {});
+        if (res.code === '000') {
+          this.toolsResult = { ok: true, msg: res.data.message };
+          this.$emit('message', '✓ ' + res.data.message);
+        } else {
+          this.toolsResult = { ok: false, msg: res.error };
+          this.$emit('message', 'Chyba: ' + res.error);
+        }
+      } catch (e) {
+        this.toolsResult = { ok: false, msg: 'Chyba spojení' };
+      }
+      this.toolsLoading = false;
+    },
     
     formatTimeRange(fr, to) { return formatTimeRange(fr, to); }
   },
@@ -440,6 +460,32 @@ window.app.component('admin-component', {
             <q-btn color="deep-orange" icon="build" label="Opravit sazby v historii" :loading="toolsLoading" @click="opravSazbyHistorie"/>
             <div v-if="toolsResult" class="q-mt-md q-pa-sm" :style="toolsResult.ok ? 'background:#e8f5e9;border-radius:4px' : 'background:#ffebee;border-radius:4px'">
               <span :class="toolsResult.ok ? 'text-green-8' : 'text-red-8'">{{ toolsResult.ok ? '✓' : '✗' }} {{ toolsResult.msg }}</span>
+            </div>
+          </q-card-section>
+        </q-card>
+      </div>
+
+      <!-- NÁSTROJE -->
+      <div v-if="adminTab==='tools'" class="q-pt-md">
+        <q-card flat bordered class="q-mb-md">
+          <q-card-section>
+            <div class="text-subtitle1 text-bold q-mb-xs">🔧 Oprava sazeb v historii</div>
+            <div class="text-body2 text-grey-7 q-mb-md">
+              Projde všechny záznamy v listu <strong>záznamy_historie</strong> a přepíše sazbu (sloupec C)
+              podle sazebníku platného pro datum záznamu.<br/>
+              Použij pokud jsi zpětně změnil hodinovou sazbu pracovníka.
+            </div>
+            <q-btn
+              color="deep-orange"
+              icon="build"
+              label="Opravit sazby v historii"
+              :loading="toolsLoading"
+              @click="opravSazbyHistorie"
+            />
+            <div v-if="toolsResult" class="q-mt-md q-pa-sm" :style="toolsResult.ok ? 'background:#e8f5e9;border-radius:4px' : 'background:#ffebee;border-radius:4px'">
+              <span :class="toolsResult.ok ? 'text-green-8' : 'text-red-8'">
+                {{ toolsResult.ok ? '✓' : '✗' }} {{ toolsResult.msg }}
+              </span>
             </div>
           </q-card-section>
         </q-card>
