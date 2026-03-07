@@ -43,7 +43,10 @@ window.app.component('admin-component', {
       localAdvances: null,
       filterLoading: false,
       newLunch: { workerId: null, date: null, time: null },
-      newAdvance: { workerId: null, amount: null, reason: '', date: null }
+      newAdvance: { workerId: null, amount: null, reason: '', date: null },
+      // NOVÉ v2026-03-04e: obědy - filtr období
+      obedFrom: '',
+      obedTo: ''
     }
   },
   
@@ -78,6 +81,32 @@ window.app.component('admin-component', {
       return Object.values(map).sort((a, b) =>
         Number(b.advances[0][1]) - Number(a.advances[0][1])
       );
+    },
+    // NOVÉ v2026-03-04e: obědy za zvolené období seskupené po pracovnících
+    obedySummary() {
+      // Ceny jsou reálné z adv[4] — každý oběd má svou cenu uloženou při zadání
+      const from = this.obedFrom ? new Date(this.obedFrom).getTime() : 0;
+      const to = this.obedTo ? new Date(this.obedTo + 'T23:59:59').getTime() : Infinity;
+      const filtered = this.activeAdvances.filter(a => {
+        if (a[5] !== 'oběd') return false;
+        const ts = Number(a[1]);
+        return ts >= from && ts <= to;
+      });
+      // Seskupit po pracovnících — ukládat den + skutečnou cenu
+      const map = {};
+      let totalCena = 0;
+      for (const a of filtered) {
+        const id = String(a[0]);
+        if (!map[id]) map[id] = { name: a[2], entries: [], cena: 0 };
+        const d = new Date(Number(a[1]));
+        const dayStr = String(d.getDate()).padStart(2,'0') + '.' + String(d.getMonth()+1).padStart(2,'0') + '.';
+        const cena = parseFloat(a[4]) || 0;
+        map[id].entries.push({ day: dayStr, cena });
+        map[id].cena += cena;
+        totalCena += cena;
+      }
+      const rows = Object.values(map).sort((a, b) => a.name.localeCompare(b.name, 'cs'));
+      return { rows, totalObedy: filtered.length, totalCena: Math.round(totalCena) };
     },
     activeRecords() { return this.localRecords !== null ? this.localRecords : this.allRecords; },
     activeAdvances() { return this.localAdvances !== null ? this.localAdvances : this.allAdvances; },
@@ -318,6 +347,7 @@ window.app.component('admin-component', {
         <q-tab name="workers" label="Pracovníci"/>
         <q-tab name="day" label="Přehled dne"/>
         <q-tab name="zalohy" label="Zálohy"/>
+        <q-tab name="obedy" label="Obědy"/>
         <q-tab name="tools" label="Nástroje"/>
       </q-tabs>
 
@@ -468,18 +498,76 @@ window.app.component('admin-component', {
             <div class="text-bold" style="font-size:0.82rem; line-height:1.2">{{ row.name }}</div>
           </div>
           <!-- Zálohy vedle sebe -->
-          <div class="row col q-gutter-xs">
+          <div class="row col" style="gap:3px">
             <div v-for="(adv, i) in row.advances" :key="i"
-              style="min-width:85px; background:#f5f5f5; border-radius:4px; padding:3px 6px">
-              <div class="text-bold text-primary" style="font-size:0.85rem">{{ adv[4] }} Kč</div>
-              <div class="text-caption text-grey-7" style="font-size:0.72rem">{{ formatShortDateTime(adv[1]) }}</div>
-              <div class="text-caption text-grey-8" style="font-size:0.72rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:80px">{{ adv[5] }}</div>
+              style="flex:1; background:#f5f5f5; border-radius:3px; padding:2px 4px; min-width:0">
+              <div class="text-bold text-primary" style="font-size:0.78rem; line-height:1.3">{{ adv[4] }} Kč</div>
+              <div style="font-size:0.68rem; color:#888; line-height:1.2">{{ formatShortDateTime(adv[1]) }}</div>
+              <div style="font-size:0.68rem; color:#555; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ adv[5] }}</div>
             </div>
           </div>
         </div>
       </div>
 
-            <!-- NÁSTROJE -->
+      <!-- OBĚDY -->
+      <div v-if="adminTab==='obedy'" class="q-pt-md">
+        <!-- Výběr období -->
+        <div class="row q-gutter-sm q-mb-md items-end">
+          <div class="col">
+            <q-input v-model="obedFrom" type="date" label="Od" outlined dense/>
+          </div>
+          <div class="col">
+            <q-input v-model="obedTo" type="date" label="Do" outlined dense/>
+          </div>
+          <div>
+            <q-btn dense unelevated color="primary" label="Tento týden" size="sm"
+              @click="() => { const d=new Date(); const day=d.getDay()||7; const mon=new Date(d); mon.setDate(d.getDate()-day+1); const sun=new Date(mon); sun.setDate(mon.getDate()+6); obedFrom=mon.toISOString().slice(0,10); obedTo=sun.toISOString().slice(0,10); }"/>
+          </div>
+          <div>
+            <q-btn dense unelevated color="teal" label="Minulý týden" size="sm"
+              @click="() => { const d=new Date(); const day=d.getDay()||7; const mon=new Date(d); mon.setDate(d.getDate()-day-6); const sun=new Date(mon); sun.setDate(mon.getDate()+6); obedFrom=mon.toISOString().slice(0,10); obedTo=sun.toISOString().slice(0,10); }"/>
+          </div>
+        </div>
+
+        <div v-if="!obedFrom || !obedTo" class="text-center text-grey-7 q-mt-lg">Vyberte období</div>
+
+        <div v-if="obedFrom && obedTo">
+          <!-- Souhrn nahoře -->
+          <div class="row q-gutter-sm q-mb-md">
+            <q-card flat bordered class="col text-center">
+              <q-card-section class="q-pa-sm">
+                <div class="text-caption text-grey-7">Celkem obědů</div>
+                <div class="text-h5 text-primary">{{ obedySummary.totalObedy }}</div>
+              </q-card-section>
+            </q-card>
+            <q-card flat bordered class="col text-center">
+              <q-card-section class="q-pa-sm">
+                <div class="text-caption text-grey-7">Celkem cena</div>
+                <div class="text-h5 text-green">{{ obedySummary.totalCena }} Kč</div>
+              </q-card-section>
+            </q-card>
+          </div>
+
+          <div v-if="obedySummary.rows.length === 0" class="text-center text-grey-7">Žádné obědy v tomto období</div>
+
+          <!-- Tabulka po pracovnících -->
+          <div v-for="row in obedySummary.rows" :key="row.name"
+            class="row items-start no-wrap q-mb-xs" style="border-bottom:1px solid #f0f0f0; padding:5px 2px">
+            <div style="min-width:90px; max-width:90px; padding-top:2px">
+              <div class="text-bold" style="font-size:0.82rem">{{ row.name }}</div>
+              <div class="text-caption text-primary">{{ row.entries.length }}x = {{ Math.round(row.cena) }} Kč</div>
+            </div>
+            <div class="col" style="display:flex; flex-wrap:wrap; gap:3px">
+              <span v-for="(e, i) in row.entries" :key="i"
+                style="background:#e3f2fd; border-radius:3px; padding:1px 5px; font-size:0.72rem; color:#1565c0">
+                {{ e.day }} <span style="color:#388e3c; font-weight:600">{{ e.cena }} Kč</span>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+                  <!-- NÁSTROJE -->
       <div v-if="adminTab==='tools'" class="q-pt-md">
         <q-card flat bordered class="q-mb-md">
           <q-card-section>
