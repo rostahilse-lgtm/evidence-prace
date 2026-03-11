@@ -2,6 +2,9 @@
 // v2026-02-27 - přesun Admin mezi Přehledy a Nástroje, Nástroje obsahují Statistiky+Deník
 //             - přidána funkce přihlásit jako pracovník (impersonace) s tlačítkem Zpět
 //             - nic jsem nesmazal, pouze přidal nové funkce
+// v2026-03-10 - NOVÉ: canNotifObedy (worker[8]=Y z sloupce I v pracovníci)
+//             - NOVÉ: scheduleObedyCheck — timer v 18:00, zkontroluje objednávky, pošle notifikaci
+//             - nic jsem nesmazal
 
 window.app = Vue.createApp({
   data() {
@@ -64,32 +67,34 @@ window.app = Vue.createApp({
         active: worker[2] === 'Y',
         admin: worker[3] === 'Y',
         canStats: worker[3] === 'Y' || worker[6] === 'Y',
-        canDenik: worker[3] === 'Y' || worker[7] === 'Y'
+        canDenik: worker[3] === 'Y' || worker[7] === 'Y',
+        canNotifObedy: worker[3] === 'Y' || worker[8] === 'Y'
       };
       this.isLoggedIn = true;
       this.isAdmin = this.currentUser.admin;
       localStorage.setItem('workerId', this.currentUser.id);
+      localStorage.setItem('canNotifObedy', this.currentUser.canNotifObedy ? 'Y' : 'N');
       await this.loadUserData();
       if (this.isAdmin) await this.loadAdminData();
+      this.scheduleObedyCheck();
       this.showMessage('Přihlášen: ' + this.currentUser.name);
     },
 
     // IMPERSONACE - přihlásit jako pracovník
     async loginAs(worker) {
-      // Ulož skutečného admina
       this.realUser = this.currentUser;
       this.realIsAdmin = this.isAdmin;
       this.impersonating = true;
-      // Přihlas jako vybraný pracovník (bez uložení do localStorage)
       this.currentUser = {
         id: worker[0],
         name: worker[1],
         active: worker[2] === 'Y',
         admin: worker[3] === 'Y',
         canStats: worker[3] === 'Y' || worker[6] === 'Y',
-        canDenik: worker[3] === 'Y' || worker[7] === 'Y'
+        canDenik: worker[3] === 'Y' || worker[7] === 'Y',
+        canNotifObedy: worker[3] === 'Y' || worker[8] === 'Y'
       };
-      this.isAdmin = false; // impersonovaný není admin
+      this.isAdmin = false;
       await this.loadUserData();
       this.currentView = 'home';
       this.showMessage('Zobrazuji jako: ' + this.currentUser.name);
@@ -112,7 +117,6 @@ window.app = Vue.createApp({
       this.loading = true;
       const source = localStorage.getItem('dataSource') || 'new';
       this.dataSource = source;
-
       const [c, j, s, r, a, p] = await Promise.all([
         apiCall('get', { type: 'contracts' }),
         apiCall('get', { type: 'jobs' }),
@@ -152,6 +156,34 @@ window.app = Vue.createApp({
       if (this.isAdmin) await this.loadAdminData();
     },
 
+    // NOVÉ v2026-03-10: naplánovat kontrolu objednávek v 18:00
+    scheduleObedyCheck() {
+      if (localStorage.getItem('notifObedy') !== 'true') return;
+      if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+      const now = new Date();
+      const check = new Date();
+      check.setHours(18, 0, 0, 0);
+      if (now >= check) return; // už je po 18:00
+      const delay = check.getTime() - now.getTime();
+      setTimeout(async () => {
+        try {
+          const tomorrow = new Date();
+          tomorrow.setDate(tomorrow.getDate() + 1);
+          tomorrow.setHours(11, 0, 0, 0);
+          const res = await apiCall('getobjednavky', { datum: tomorrow.getTime() });
+          if (res.code === '000' && (!res.data || res.data.length === 0)) {
+            if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+              navigator.serviceWorker.controller.postMessage({
+                type: 'SHOW_NOTIF',
+                title: '🍽 Obědy nejsou objednány!',
+                body: 'Nezapomeňte objednat obědy na zítřek.'
+              });
+            }
+          }
+        } catch(e) { /* noop */ }
+      }, delay);
+    },
+
     logout() {
       this.isLoggedIn = false;
       this.currentUser = null;
@@ -181,7 +213,6 @@ window.app = Vue.createApp({
     <q-layout view="hHh lpR fFf">
       <q-header v-if="isLoggedIn" class="bg-primary text-white">
         <q-toolbar>
-          <!-- Zpět tlačítko při impersonaci -->
           <q-btn v-if="impersonating" flat dense icon="arrow_back" label="Zpět" @click="returnToAdmin" class="q-mr-sm"/>
           <q-toolbar-title>
             {{ currentUser.name }}
