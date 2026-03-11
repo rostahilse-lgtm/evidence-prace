@@ -1,6 +1,8 @@
 // Komponenta pro nastavení
 // v2026-02-27 - odstraněn toggle cloud režimu, cloud je vždy zapnutý
 // nic jsem nesmazal, pouze odstranil toggle a přidal automatické zapnutí
+// v2026-03-10 - NOVÉ: přepínač notifikací obědů v 18:00 (jen pokud canNotifObedy=Y)
+//             - nic jsem nesmazal
 
 window.app.component('settings-component', {
   emits: ['message', 'logout', 'reload'],
@@ -10,7 +12,10 @@ window.app.component('settings-component', {
       apiUrl: localStorage.getItem('apiUrl') || DEFAULT_API_URL,
       dataSource: localStorage.getItem('dataSource') || 'new',
       dateFrom: localStorage.getItem('dataDateFrom') || '',
-      dateTo: localStorage.getItem('dataDateTo') || ''
+      dateTo: localStorage.getItem('dataDateTo') || '',
+      notifObedy: localStorage.getItem('notifObedy') === 'true',
+      canNotifObedy: localStorage.getItem('canNotifObedy') === 'Y',
+      notifPermission: typeof Notification !== 'undefined' ? Notification.permission : 'denied'
     }
   },
   
@@ -47,6 +52,30 @@ window.app.component('settings-component', {
       localStorage.setItem('dataDateTo', this.dateTo || '');
       this.$emit('reload');
       this.$emit('message', '✓ Data se načítají...');
+    },
+
+    async toggleNotifObedy() {
+      if (this.notifObedy) {
+        // Zapnout — požádat o povolení
+        if (typeof Notification === 'undefined') {
+          this.$emit('message', 'Notifikace nejsou podporovány v tomto prohlížeči');
+          this.notifObedy = false;
+          return;
+        }
+        const perm = await Notification.requestPermission();
+        this.notifPermission = perm;
+        if (perm === 'granted') {
+          localStorage.setItem('notifObedy', 'true');
+          this.$emit('message', '✓ Notifikace povoleny — upozornění každý den v 18:00');
+        } else {
+          this.notifObedy = false;
+          localStorage.setItem('notifObedy', 'false');
+          this.$emit('message', 'Notifikace nebyly povoleny — povolte je v nastavení prohlížeče');
+        }
+      } else {
+        localStorage.setItem('notifObedy', 'false');
+        this.$emit('message', '✓ Notifikace vypnuty');
+      }
     },
     
     confirmLogout() {
@@ -118,6 +147,30 @@ window.app.component('settings-component', {
         </q-card-actions>
       </q-card>
 
+      <!-- NOTIFIKACE OBĚDŮ -->
+      <q-card v-if="canNotifObedy" class="q-mb-md">
+        <q-card-section>
+          <div class="text-h6">Notifikace obědů</div>
+          <div class="text-caption text-grey-7 q-mt-xs">
+            Upozornění v 18:00 pokud nejsou objednány obědy na zítřek
+          </div>
+        </q-card-section>
+        <q-card-section class="q-pt-none">
+          <q-toggle
+            v-model="notifObedy"
+            label="Upozornění na obědy v 18:00"
+            color="orange"
+            @update:model-value="toggleNotifObedy"
+          />
+          <div v-if="notifPermission === 'denied'" class="text-caption text-negative q-mt-xs">
+            ⚠ Notifikace jsou zakázány — povolte je v Nastavení telefonu → Aplikace → Chrome → Oznámení
+          </div>
+          <div v-if="notifPermission === 'granted' && notifObedy" class="text-caption text-positive q-mt-xs">
+            ✓ Notifikace jsou aktivní
+          </div>
+        </q-card-section>
+      </q-card>
+
       <!-- API URL -->
       <q-card class="q-mb-md">
         <q-card-section>
@@ -148,7 +201,7 @@ window.app.component('settings-component', {
           <div class="text-body2 q-mt-sm">
             Evidence práce 2026<br>
             Verze: 2.3<br>
-            <span class="text-grey-7">Aktualizováno: Únor 2026</span>
+            <span class="text-grey-7">Aktualizováno: Březen 2026</span>
           </div>
         </q-card-section>
       </q-card>
