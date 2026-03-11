@@ -1,4 +1,5 @@
-const CACHE_NAME = 'evidence-prace-v1';
+const CACHE_NAME = 'evidence-prace-v2';
+// v2026-03-10 - NOVÉ: handler pro SHOW_NOTIF zprávy z main.js (upozornění na obědy v 18:00)
 const urlsToCache = [
   '/',
   '/index.html',
@@ -41,33 +42,19 @@ self.addEventListener('fetch', event => {
   event.respondWith(
     caches.match(event.request)
       .then(response => {
-        // Cache hit - vrátit z cache
-        if (response) {
-          return response;
-        }
-        
-        // Není v cache - načíst ze sítě
+        if (response) return response;
         return fetch(event.request).then(response => {
-          // Nekešovat API requesty
-          if (event.request.url.includes('action=')) {
-            return response;
-          }
-          
-          // Uložit do cache pro příště
+          if (event.request.url.includes('action=')) return response;
           if (response && response.status === 200) {
             const responseToCache = response.clone();
             caches.open(CACHE_NAME).then(cache => {
               cache.put(event.request, responseToCache);
             });
           }
-          
           return response;
         });
       })
-      .catch(() => {
-        // Offline - vrátit základní stránku
-        return caches.match('/index.html');
-      })
+      .catch(() => caches.match('/index.html'))
   );
 });
 
@@ -86,4 +73,35 @@ self.addEventListener('activate', event => {
     })
   );
   self.clients.claim();
+});
+
+// NOVÉ v2026-03-10: Přijmout zprávu z aplikace a zobrazit notifikaci
+self.addEventListener('message', event => {
+  if (event.data && event.data.type === 'SHOW_NOTIF') {
+    const title = event.data.title || '🍽 Evidence práce';
+    const body  = event.data.body  || 'Zkontrolujte objednávky obědů.';
+    self.registration.showNotification(title, {
+      body,
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
+      tag: 'obed-notif',          // přepíše předchozí notifikaci stejného tagu
+      renotify: true,
+      vibrate: [200, 100, 200]
+    });
+  }
+});
+
+// Kliknutí na notifikaci — otevřít apku
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
+      for (const client of clientList) {
+        if (client.url.includes(self.location.origin) && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      if (clients.openWindow) return clients.openWindow('/');
+    })
+  );
 });
