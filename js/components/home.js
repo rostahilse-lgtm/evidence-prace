@@ -8,6 +8,11 @@
 //             - NOVÉ: při uložení doplnění se posílá opraveno:'Y' → v tabulce se zapíše 'opraveno' do sloupce P
 //             - nic jsem nesmazal, pouze opravil výběr času a přidal příznak opraveno
 // v2026-03-04c - NOVÉ: vyhledávání v selectech Zakázka, Práce, Místo práce — po zmáčknutí naskočí klávesnice
+// v2026-03-10 - OPRAVA záložka Objednat: cena ze sheetu (price1=jídla 1-3, price2=jídlo 4)
+//             - NOVÉ: zobrazení objednávek ostatních v záložce Objednat
+//             - nic jsem nesmazal
+// v2026-03-07b - NOVÉ: záložka Objednat — výběr jídla 1-4 na zítřek, uloží objednávku do Google Sheets
+//              - nic jsem nesmazal
 //              - nic jsem nesmazal, pouze přidal filter metody a use-input na selecty
 
 window.app.component('home-component', {
@@ -49,7 +54,18 @@ window.app.component('home-component', {
       // NOVÉ v2026-03-04c: filtrované seznamy pro vyhledávání v selectech
       contractOptionsFiltered: [],
       jobOptionsFiltered: [],
-      placeOptionsFiltered: []
+      placeOptionsFiltered: [],
+      // NOVÉ v2026-03-07b: objednávka oběda
+      objednavkaJidlo: null,      // 1-4
+      objednavkaSaving: false,
+      objednavkaUlozena: false,   // true pokud má dnes uloženou objednávku
+      objednavkaUlozenaJidlo: null,
+      // Ceny ze sheetu pro zítra
+      objednavkaPrices: null,     // { price1, price2 }
+      objednavkaPricesLoading: false,
+      // Seznam objednávek ostatních
+      objednavkyOstatnich: [],
+      objednavkyOstatniLoading: false
     }
   },
   
@@ -452,6 +468,76 @@ window.app.component('home-component', {
       this.cloudRowIndex = null;
     },
     
+    async loadObjednavkuPrices() {
+      // Načíst ceny ze sheetu pro zítřejší datum
+      this.objednavkaPricesLoading = true;
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(11, 0, 0, 0);
+      try {
+        const res = await apiCall('getlunchprice', { date: tomorrow.getTime() });
+        if (res.code === '000' && res.data && res.data.price1 != null) {
+          this.objednavkaPrices = res.data;
+        } else {
+          this.objednavkaPrices = null;
+        }
+      } catch(e) { this.objednavkaPrices = null; }
+      this.objednavkaPricesLoading = false;
+    },
+
+    async loadObjednavkyOstatnich() {
+      this.objednavkyOstatniLoading = true;
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(11, 0, 0, 0);
+      try {
+        const res = await apiCall('getobjednavky', { datum: tomorrow.getTime() });
+        if (res.code === '000') {
+          this.objednavkyOstatnich = (res.data || [])
+            .sort((a, b) => Number(a[4]) - Number(b[4]));
+        }
+      } catch(e) {}
+      this.objednavkyOstatniLoading = false;
+    },
+
+    async saveObjednavka() {
+      if (!this.objednavkaJidlo) {
+        this.$emit('message', 'Vyberte jídlo');
+        return;
+      }
+      this.objednavkaSaving = true;
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(11, 0, 0, 0);
+      // Cena ze sheetu — price2 pro jídlo 4, jinak price1
+      let cena = 0;
+      if (this.objednavkaPrices) {
+        cena = (this.objednavkaJidlo <= 3 || !this.objednavkaPrices.price2)
+          ? this.objednavkaPrices.price1
+          : this.objednavkaPrices.price2;
+      }
+      try {
+        const res = await apiCall('saveobjednavka', {
+          id_worker: this.currentUser.id,
+          name_worker: this.currentUser.name,
+          jidlo: this.objednavkaJidlo,
+          cena: cena,
+          datum: tomorrow.getTime()
+        });
+        if (res.code === '000') {
+          this.objednavkaUlozena = true;
+          this.objednavkaUlozenaJidlo = this.objednavkaJidlo;
+          await this.loadObjednavkyOstatnich();
+          this.$emit('message', '✓ Objednávka uložena — jídlo č. ' + this.objednavkaJidlo);
+        } else {
+          this.$emit('message', 'Chyba: ' + res.error);
+        }
+      } catch(e) {
+        this.$emit('message', 'Chyba při ukládání');
+      }
+      this.objednavkaSaving = false;
+    },
+
     async saveLunch() {
       if (!this.lunchPrice) {
         this.$emit('message', 'Vyberte cenu oběda');
@@ -515,6 +601,10 @@ window.app.component('home-component', {
       if (newDate) this.loadLunchPrices(newDate);
     },
     currentTab(val) {
+      if (val === 'objednat') {
+        this.loadObjednavkuPrices();
+        this.loadObjednavkyOstatnich();
+      }
       if (val === 'nedokoncene') this.loadNedokoncene();
     }
   },
@@ -536,6 +626,7 @@ window.app.component('home-component', {
         <q-tab name="lunch" label="Oběd"/>
         <q-tab name="advance" label="Záloha"/>
         <q-tab name="nedokoncene" label="Rozpracované"/>
+        <q-tab name="objednat" label="Objednat"/>
       </q-tabs>
       
       <!-- SMĚNA -->
@@ -674,6 +765,84 @@ window.app.component('home-component', {
           outlined class="q-mb-md" type="textarea" rows="2"/>
         <q-btn @click="saveAdvance" label="Uložit zálohu" color="primary"
           :loading="loading" class="full-width" size="lg"/>
+      </div>
+
+      <!-- OBJEDNAT OBĚD -->
+      <!-- OBJEDNAT OBĚD -->
+      <div v-if="currentTab==='objednat'" class="q-pt-md">
+        <div class="text-subtitle1 text-bold q-mb-xs">🍽 Objednávka oběda na zítřek</div>
+        <div class="text-caption text-grey-7 q-mb-md">
+          Jídla 1–3 = <strong>130 Kč</strong> &nbsp;|&nbsp; Jídlo 4 = <strong>145 Kč</strong>
+        </div>
+
+        <!-- Potvrzení uložené objednávky -->
+        <div v-if="objednavkaUlozena" class="q-mb-md q-pa-md text-center"
+          style="background:#e8f5e9; border-radius:8px; border:2px solid #4caf50">
+          <div class="text-h5 text-green-8">✓ Objednáno</div>
+          <div class="text-h6 text-green-7">Jídlo č. {{ objednavkaUlozenaJidlo }}</div>
+          <div class="text-caption text-grey-7 q-mt-xs">
+            {{ objednavkaUlozenaJidlo <= 3 ? '130 Kč' : '145 Kč' }}
+          </div>
+          <q-btn flat dense label="Změnit" size="sm" color="grey" class="q-mt-sm"
+            @click="objednavkaUlozena = false; objednavkaJidlo = objednavkaUlozenaJidlo"/>
+        </div>
+
+        <!-- Načítání cen -->
+        <div v-if="objednavkaPricesLoading" class="text-center q-pa-md text-grey-6">
+          <q-spinner size="2em" color="orange"/>
+        </div>
+        <div v-else-if="!objednavkaPrices && !objednavkaUlozena" class="q-mb-md q-pa-sm text-orange-8" style="background:#fff3e0;border-radius:4px">
+          ⚠ Pro zítřejší datum nebyla nalezena cena oběda
+        </div>
+
+        <!-- Výběr jídla -->
+        <div v-if="!objednavkaUlozena && objednavkaPrices">
+          <div class="row q-gutter-md q-mb-md">
+            <q-btn v-for="n in 4" :key="n"
+              :unelevated="objednavkaJidlo === n"
+              :outline="objednavkaJidlo !== n"
+              :color="n <= 3 ? 'orange' : 'deep-orange'"
+              class="col"
+              style="height:72px"
+              @click="objednavkaJidlo = n">
+              <div class="text-center">
+                <div style="font-size:1.6rem; font-weight:800; line-height:1">{{ n }}</div>
+                <div style="font-size:0.65rem; opacity:0.85">
+                  {{ n <= 3 || !objednavkaPrices.price2 ? objednavkaPrices.price1 : objednavkaPrices.price2 }} Kč
+                </div>
+              </div>
+            </q-btn>
+          </div>
+
+          <div v-if="objednavkaJidlo" class="q-mb-md q-pa-sm text-center"
+            style="background:#fff3e0; border-radius:4px">
+            <div class="text-subtitle1">Jídlo č. <strong>{{ objednavkaJidlo }}</strong>
+              — <strong>{{ objednavkaJidlo <= 3 || !objednavkaPrices.price2 ? objednavkaPrices.price1 : objednavkaPrices.price2 }} Kč</strong>
+            </div>
+          </div>
+
+          <q-btn @click="saveObjednavka" label="Potvrdit objednávku" color="orange"
+            :loading="objednavkaSaving" :disabled="!objednavkaJidlo"
+            class="full-width" size="lg" icon="check"/>
+        </div>
+
+        <!-- Objednávky ostatních -->
+        <div class="q-mt-md">
+          <div class="text-subtitle2 text-bold q-mb-xs">Objednávky na zítřek</div>
+          <div v-if="objednavkyOstatniLoading" class="text-center text-grey-6"><q-spinner size="1.2em"/></div>
+          <div v-else-if="objednavkyOstatnich.length === 0" class="text-caption text-grey-6">Zatím nikdo neobjednal</div>
+          <div v-else>
+            <div v-for="(r, i) in objednavkyOstatnich" :key="i"
+              class="row items-center no-wrap q-mb-xs"
+              style="border-bottom:1px solid #f5f5f5; padding:3px 0">
+              <q-badge :color="Number(r[4]) <= 3 ? 'orange' : 'deep-orange'"
+                style="font-size:0.8rem; min-width:22px; text-align:center">{{ r[4] }}</q-badge>
+              <span class="q-ml-sm" style="font-size:0.85rem">{{ r[1] }}</span>
+              <span class="col"/>
+              <span class="text-grey-6" style="font-size:0.78rem">{{ r[5] }} Kč</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- ROZPRACOVANÉ -->
