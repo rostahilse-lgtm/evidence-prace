@@ -3,6 +3,8 @@
 //             - přidána funkce přihlásit jako pracovník (impersonace) s tlačítkem Zpět
 //             - nic jsem nesmazal, pouze přidal nové funkce
 // v2026-03-10 - NOVÉ: canNotifObedy (worker[8]=Y z sloupce I v pracovníci)
+// v2026-03-11 - NOVÉ: Nástroje vidí všichni přihlášení, přidána záložka Rozpracované
+//             - nic jsem nesmazal
 //             - NOVÉ: scheduleObedyCheck — timer v 18:00, zkontroluje objednávky, pošle notifikaci
 //             - nic jsem nesmazal
 
@@ -32,7 +34,7 @@ window.app = Vue.createApp({
       realUser: null,
       realIsAdmin: false,
       // NÁSTROJE submenu
-      toolsView: 'stats'
+      toolsView: 'nedokoncene'
     }
   },
 
@@ -276,9 +278,19 @@ window.app = Vue.createApp({
           <!-- NÁSTROJE (Statistiky + Deník) -->
           <div v-if="isLoggedIn && currentView === 'tools' && !loading">
             <q-tabs v-model="toolsView" dense align="justify" class="text-primary q-mb-md">
+              <q-tab name="nedokoncene" icon="build" label="Rozpracované"/>
               <q-tab v-if="currentUser && currentUser.canStats" name="stats" icon="bar_chart" label="Statistiky"/>
               <q-tab v-if="currentUser && currentUser.canDenik" name="denik" icon="menu_book" label="Deník"/>
             </q-tabs>
+            <nedokoncene-component
+              v-if="toolsView === 'nedokoncene'"
+              :current-user="currentUser"
+              :contracts="contracts"
+              :jobs="jobs"
+              :places="places"
+              @message="showMessage"
+              @reload="reloadAll"
+            />
             <statistics-component
               v-if="toolsView === 'stats' && currentUser && currentUser.canStats"
               :all-records="statsRecords"
@@ -313,7 +325,7 @@ window.app = Vue.createApp({
           <q-tab name="home" icon="home" label="Domů" />
           <q-tab name="summary" icon="assessment" label="Přehledy" />
           <q-tab v-if="isAdmin" name="admin" icon="admin_panel_settings" label="Admin" />
-          <q-tab v-if="currentUser && (currentUser.canStats || currentUser.canDenik)" name="tools" icon="widgets" label="Nástroje" />
+          <q-tab v-if="currentUser" name="tools" icon="widgets" label="Nástroje" />
           <q-tab name="settings" icon="settings" label="Nastavení" />
         </q-tabs>
       </q-footer>
