@@ -2,6 +2,10 @@
 // v2026-03-01b - pro non-adminy zjednodušený souhrn (jen hodiny + výdělek, bez nákladů/záloh)
 //              - oprava exportu Win1250, hodiny s čárkou
 //              - zachovány všechny filtry + kalkulace zisku (jen pro admin)
+// v2026-03-04d - NOVÉ: vyhledávání v selectech Zakázky a Práce (use-input)
+//              - nic jsem nesmazal
+// v2026-03-13a - OPRAVA: inicializace contractOptionsFiltered atd. v data() a mounted()
+//              - nic jsem nesmazal
 
 window.app.component('statistics-component', {
   props: ['allRecords', 'contracts', 'jobs', 'places', 'allAdvances', 'isAdmin'],
@@ -23,6 +27,10 @@ window.app.component('statistics-component', {
       filteredRecords: [],
       customCharge: null,
       showResults: false,
+      contractOptionsFiltered: [],
+      jobOptionsFiltered: [],
+      placeOptionsFiltered: [],
+      workerOptionsFiltered: [],
       csLocale: {
         days: ['Neděle', 'Pondělí', 'Úterý', 'Středa', 'Čtvrtek', 'Pátek', 'Sobota'],
         daysShort: ['Ne', 'Po', 'Út', 'St', 'Čt', 'Pá', 'So'],
@@ -52,15 +60,12 @@ window.app.component('statistics-component', {
     uniqueWorkerCount() { return new Set(this.filteredRecords.map(r => r[1])).size; },
     totalKm() { return this.filteredRecords.reduce((s,r) => s+(parseFloat(r[12])||0), 0); },
 
-    // MZDOVÉ NÁKLADY (jen admin)
     totalCost() {
       return Math.round(this.filteredRecords.reduce((s,r) => s+(parseFloat(r[2])||0)*(parseFloat(r[7])||0), 0));
     },
-    // VÝDĚLEK PŘIHLÁŠENÉHO (pro non-admin = vlastní záznamy)
     totalEarnings() {
       return Math.round(this.filteredRecords.reduce((s,r) => s+(parseFloat(r[2])||0)*(parseFloat(r[7])||0), 0));
     },
-    // ZÁLOHY (jen admin, a jen v rozsahu filtru)
     totalPaid() {
       if (!this.allAdvances || !this.isAdmin) return 0;
       const workerIds = new Set(this.filteredRecords.map(r => String(r[1])));
@@ -117,6 +122,30 @@ window.app.component('statistics-component', {
   },
 
   methods: {
+    filterContracts(val, update) {
+      update(() => {
+        const needle = val.toLowerCase();
+        this.contractOptionsFiltered = val === '' ? this.contractOptions : this.contractOptions.filter(o => o.label.toLowerCase().includes(needle));
+      });
+    },
+    filterJobs(val, update) {
+      update(() => {
+        const needle = val.toLowerCase();
+        this.jobOptionsFiltered = val === '' ? this.jobOptions : this.jobOptions.filter(o => o.label.toLowerCase().includes(needle));
+      });
+    },
+    filterPlaces(val, update) {
+      update(() => {
+        const needle = val.toLowerCase();
+        this.placeOptionsFiltered = val === '' ? this.placeOptions : this.placeOptions.filter(o => o.label.toLowerCase().includes(needle));
+      });
+    },
+    filterWorkers(val, update) {
+      update(() => {
+        const needle = val.toLowerCase();
+        this.workerOptionsFiltered = val === '' ? this.workerOptions : this.workerOptions.filter(o => o.label.toLowerCase().includes(needle));
+      });
+    },
     fmtDate(ts) {
       const d=new Date(Number(ts)), pad=n=>String(n).padStart(2,'0');
       return `${pad(d.getDate())}. ${pad(d.getMonth()+1)}. ${d.getFullYear()}`;
@@ -210,7 +239,13 @@ window.app.component('statistics-component', {
     }
   },
 
-  async mounted() { await this.loadWorkers(); },
+  async mounted() {
+    await this.loadWorkers();
+    this.contractOptionsFiltered = this.contractOptions;
+    this.jobOptionsFiltered = this.jobOptions;
+    this.placeOptionsFiltered = this.placeOptions;
+    this.workerOptionsFiltered = this.workerOptions;
+  },
 
   template: `
     <div class="q-pa-md">
@@ -218,10 +253,14 @@ window.app.component('statistics-component', {
       <q-card class="q-mb-md">
         <q-card-section>
           <div class="text-subtitle2 q-mb-sm">Filtry</div>
-          <q-select v-model="filters.contracts" :options="contractOptions" label="Zakázky" emit-value map-options multiple outlined dense class="q-mb-sm"/>
-          <q-select v-model="filters.jobs" :options="jobOptions" label="Práce" emit-value map-options multiple outlined dense class="q-mb-sm"/>
-          <q-select v-model="filters.places" :options="placeOptions" label="Místa práce" emit-value map-options multiple outlined dense class="q-mb-sm"/>
-          <q-select v-if="isAdmin" v-model="filters.workers" :options="workerOptions" label="Pracovníci" emit-value map-options multiple outlined dense class="q-mb-sm"/>
+          <q-select v-model="filters.contracts" :options="contractOptionsFiltered" label="Zakázky" emit-value map-options multiple outlined dense class="q-mb-sm"
+            use-input input-debounce="0" @filter="filterContracts" @focus="filterContracts('', v => contractOptionsFiltered = contractOptions)"/>
+          <q-select v-model="filters.jobs" :options="jobOptionsFiltered" label="Práce" emit-value map-options multiple outlined dense class="q-mb-sm"
+            use-input input-debounce="0" @filter="filterJobs" @focus="filterJobs('', v => jobOptionsFiltered = jobOptions)"/>
+          <q-select v-model="filters.places" :options="placeOptionsFiltered" label="Místa práce" emit-value map-options multiple outlined dense class="q-mb-sm"
+            use-input input-debounce="0" @filter="filterPlaces" @focus="filterPlaces('', v => placeOptionsFiltered = placeOptions)"/>
+          <q-select v-if="isAdmin" v-model="filters.workers" :options="workerOptionsFiltered" label="Pracovníci" emit-value map-options multiple outlined dense class="q-mb-sm"
+            use-input input-debounce="0" @filter="filterWorkers" @focus="filterWorkers('', v => workerOptionsFiltered = workerOptions)"/>
           <div class="row q-gutter-sm q-mb-sm">
             <div class="col">
               <q-input v-model="filters.dateFrom" label="Datum od" outlined dense readonly>
@@ -253,9 +292,7 @@ window.app.component('statistics-component', {
           <q-tab name="records" :label="'Záznamy (' + filteredRecords.length + ')'"/>
         </q-tabs>
 
-        <!-- SOUHRN -->
         <div v-if="tab === 'summary'">
-          <!-- Řádek 1: hodiny + výdělek/náklady -->
           <div class="row q-gutter-sm q-mb-sm">
             <q-card class="col text-center" flat bordered>
               <q-card-section class="q-pa-sm">
@@ -271,7 +308,6 @@ window.app.component('statistics-component', {
             </q-card>
           </div>
 
-          <!-- Řádek 2: dny -->
           <div class="row q-gutter-sm q-mb-sm">
             <q-card class="col text-center" flat bordered>
               <q-card-section class="q-pa-sm">
@@ -299,7 +335,6 @@ window.app.component('statistics-component', {
             </q-card>
           </div>
 
-          <!-- Admin: zálohy + kalkulace zisku -->
           <div v-if="isAdmin">
             <div class="row q-gutter-sm q-mb-md">
               <q-card class="col text-center" flat bordered>
@@ -336,7 +371,6 @@ window.app.component('statistics-component', {
             </div>
           </div>
 
-          <!-- Podle zakázky -->
           <div class="text-subtitle2 q-mb-xs">Podle zakázky</div>
           <q-card flat bordered class="q-mb-md">
             <div v-for="item in byContract" :key="item.name" class="row items-center q-pa-xs q-px-sm" style="border-bottom:1px solid #f0f0f0">
@@ -346,7 +380,6 @@ window.app.component('statistics-component', {
             </div>
           </q-card>
 
-          <!-- Podle práce -->
           <div class="text-subtitle2 q-mb-xs">Podle druhu práce</div>
           <q-card flat bordered class="q-mb-md">
             <div v-for="item in byJob" :key="item.name" class="row items-center q-pa-xs q-px-sm" style="border-bottom:1px solid #f0f0f0">
@@ -358,7 +391,6 @@ window.app.component('statistics-component', {
           <q-btn label="Exportovat do Excel (CSV)" color="green" icon="download" @click="exportToExcel" class="full-width q-mb-md"/>
         </div>
 
-        <!-- ZÁZNAMY -->
         <div v-if="tab === 'records'">
           <q-btn label="Exportovat do Excel (CSV)" color="green" icon="download" @click="exportToExcel" class="full-width q-mb-md"/>
           <div v-if="!filteredRecords.length" class="text-center text-grey-7 q-mt-lg">Žádné záznamy nevyhovují filtrům</div>
