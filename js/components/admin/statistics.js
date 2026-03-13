@@ -1,8 +1,10 @@
 // statistics.js
 // v2026-03-04d - NOVÉ: vyhledávání v selectech Zakázky a Práce (use-input)
 //              - nic jsem nesmazal
+// v2026-03-13 - OPRAVA: inicializace contractOptionsFiltered, jobOptionsFiltered atd. v data()
+//             - OPRAVA: přidán prop isAdmin
 window.app.component('statistics-component', {
-  props: ['allRecords', 'contracts', 'jobs', 'places', 'allAdvances'],
+  props: ['allRecords', 'contracts', 'jobs', 'places', 'allAdvances', 'isAdmin'],
   emits: ['message'],
   
   data() {
@@ -19,7 +21,11 @@ window.app.component('statistics-component', {
       workers: [],
       filteredRecords: [],
       customCharge: null,
-      showResults: false
+      showResults: false,
+      contractOptionsFiltered: [],
+      jobOptionsFiltered: [],
+      placeOptionsFiltered: [],
+      workerOptionsFiltered: []
     }
   },
   
@@ -151,17 +157,18 @@ window.app.component('statistics-component', {
           : this.workerOptions.filter(o => o.label.toLowerCase().includes(needle));
       });
     },
+
     async loadWorkers() {
       const res = await apiCall('get', { type: 'workers' });
       if (res.code === '000' && res.data) {
         this.workers = res.data;
+        this.workerOptionsFiltered = this.workerOptions;
       }
     },
     
     applyFilters() {
       let filtered = [...this.allRecords];
       
-      // Filtr zakázek
       if (this.filters.contracts.length > 0) {
         const contractNames = this.filters.contracts
           .filter(id => id !== null)
@@ -176,7 +183,6 @@ window.app.component('statistics-component', {
         }
       }
       
-      // Filtr prací
       if (this.filters.jobs.length > 0) {
         const jobNames = this.filters.jobs
           .filter(id => id !== null)
@@ -191,7 +197,6 @@ window.app.component('statistics-component', {
         }
       }
       
-      // Filtr míst
       if (this.filters.places.length > 0) {
         const placeNames = this.filters.places
           .filter(id => id !== null)
@@ -206,7 +211,6 @@ window.app.component('statistics-component', {
         }
       }
       
-      // Filtr pracovníků
       if (this.filters.workers.length > 0) {
         const workerIds = this.filters.workers.filter(id => id !== null);
         if (workerIds.length > 0) {
@@ -214,21 +218,18 @@ window.app.component('statistics-component', {
         }
       }
       
-      // Filtr data OD
       if (this.filters.dateFrom) {
         const parts = this.filters.dateFrom.split('. ');
         const dateFrom = new Date(parts[2], parts[1] - 1, parts[0]);
         filtered = filtered.filter(r => new Date(r[4]) >= dateFrom);
       }
       
-      // Filtr data DO
       if (this.filters.dateTo) {
         const parts = this.filters.dateTo.split('. ');
         const dateTo = new Date(parts[2], parts[1] - 1, parts[0], 23, 59, 59);
         filtered = filtered.filter(r => new Date(r[4]) <= dateTo);
       }
       
-      // Filtr KM
       if (this.filters.withKm === true) {
         filtered = filtered.filter(r => (parseFloat(r[12]) || 0) > 0);
       } else if (this.filters.withKm === false) {
@@ -265,10 +266,7 @@ window.app.component('statistics-component', {
       
       this.filteredRecords.forEach(r => {
         const row = [
-          r[0],
-          r[6],
-          r[2],
-          r[3],
+          r[0], r[6], r[2], r[3],
           formatShortDateTime(r[4]),
           formatShortDateTime(r[5]),
           r[7].toFixed(2),
@@ -279,7 +277,6 @@ window.app.component('statistics-component', {
         csv += row.map(cell => `"${cell}"`).join(';') + '\n';
       });
       
-      // Přidat souhrn
       csv += '\n';
       csv += 'SOUHRN\n';
       csv += `Celkem hodin;${this.totalHours}\n`;
@@ -310,13 +307,16 @@ window.app.component('statistics-component', {
   
   async mounted() {
     await this.loadWorkers();
+    // Inicializovat filtered options při načtení
+    this.contractOptionsFiltered = this.contractOptions;
+    this.jobOptionsFiltered = this.jobOptions;
+    this.placeOptionsFiltered = this.placeOptions;
   },
   
   template: `
     <div class="q-pa-md">
       <div class="text-h6 q-mb-md">📊 Statistiky a filtry</div>
       
-      <!-- FILTRY -->
       <q-card class="q-mb-md">
         <q-card-section>
           <div class="text-subtitle2 q-mb-sm">Filtry</div>
@@ -347,13 +347,7 @@ window.app.component('statistics-component', {
           
           <div class="row q-gutter-sm q-mb-sm">
             <div class="col">
-              <q-input 
-                v-model="filters.dateFrom" 
-                label="Datum od" 
-                outlined 
-                dense 
-                readonly
-              >
+              <q-input v-model="filters.dateFrom" label="Datum od" outlined dense readonly>
                 <template v-slot:append>
                   <q-icon name="event" class="cursor-pointer">
                     <q-popup-proxy cover transition-show="scale" transition-hide="scale">
@@ -368,13 +362,7 @@ window.app.component('statistics-component', {
               </q-input>
             </div>
             <div class="col">
-              <q-input 
-                v-model="filters.dateTo" 
-                label="Datum do" 
-                outlined 
-                dense 
-                readonly
-              >
+              <q-input v-model="filters.dateTo" label="Datum do" outlined dense readonly>
                 <template v-slot:append>
                   <q-icon name="event" class="cursor-pointer">
                     <q-popup-proxy cover transition-show="scale" transition-hide="scale">
@@ -397,36 +385,16 @@ window.app.component('statistics-component', {
               { label: 'Pouze s cestami (km > 0)', value: true },
               { label: 'Pouze bez cest (km = 0)', value: false }
             ]" 
-            label="Kilometry" 
-            emit-value 
-            map-options 
-            outlined 
-            dense 
-            class="q-mb-sm"
-          />
+            label="Kilometry" emit-value map-options outlined dense class="q-mb-sm"/>
           
           <div class="row q-gutter-sm">
-            <q-btn 
-              label="Použít filtry" 
-              color="primary" 
-              icon="filter_list" 
-              @click="applyFilters" 
-              class="col"
-            />
-            <q-btn 
-              label="Zrušit" 
-              color="grey" 
-              outline 
-              @click="resetFilters" 
-              class="col"
-            />
+            <q-btn label="Použít filtry" color="primary" icon="filter_list" @click="applyFilters" class="col"/>
+            <q-btn label="Zrušit" color="grey" outline @click="resetFilters" class="col"/>
           </div>
         </q-card-section>
       </q-card>
       
-      <!-- VÝSLEDKY -->
       <div v-if="showResults">
-        <!-- STATISTIKY -->
         <q-card class="q-mb-md">
           <q-card-section>
             <div class="text-subtitle2 q-mb-md">Souhrnné statistiky</div>
@@ -465,21 +433,12 @@ window.app.component('statistics-component', {
             
             <div class="text-subtitle2 q-mb-sm">Kalkulace zisku</div>
             
-            <q-input 
-              v-model.number="customCharge" 
-              label="Má se účtovat (Kč)" 
-              type="number" 
-              outlined 
-              dense 
-              class="q-mb-sm"
-            />
+            <q-input v-model.number="customCharge" label="Má se účtovat (Kč)" type="number" outlined dense class="q-mb-sm"/>
             
             <div v-if="customCharge" class="row q-gutter-sm">
               <div class="col stat-card" :class="profit >= 0 ? 'bg-green-1' : 'bg-red-1'">
                 <div class="stat-label">Rozdíl (zisk)</div>
-                <div class="stat-value" :class="profit >= 0 ? 'text-green' : 'text-red'">
-                  {{ profit }} Kč
-                </div>
+                <div class="stat-value" :class="profit >= 0 ? 'text-green' : 'text-red'">{{ profit }} Kč</div>
               </div>
               <div class="col stat-card bg-grey-2">
                 <div class="stat-label">Marže</div>
@@ -489,19 +448,9 @@ window.app.component('statistics-component', {
           </q-card-section>
         </q-card>
         
-        <!-- TLAČÍTKO EXPORT -->
-        <q-btn 
-          label="Exportovat do Excel (CSV)" 
-          color="green" 
-          icon="download" 
-          @click="exportToExcel" 
-          class="full-width q-mb-md"
-        />
+        <q-btn label="Exportovat do Excel (CSV)" color="green" icon="download" @click="exportToExcel" class="full-width q-mb-md"/>
         
-        <!-- SEZNAM ZÁZNAMŮ -->
-        <div class="text-subtitle2 q-mb-sm">
-          Záznamy ({{ filteredRecords.length }})
-        </div>
+        <div class="text-subtitle2 q-mb-sm">Záznamy ({{ filteredRecords.length }})</div>
         
         <div v-if="filteredRecords.length === 0" class="text-center text-grey-7 q-mt-lg">
           Žádné záznamy nevyhovují filtrům
