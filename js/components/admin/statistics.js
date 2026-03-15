@@ -5,7 +5,7 @@
 // v2026-03-04d - NOVÉ: vyhledávání v selectech Zakázky a Práce (use-input)
 //              - nic jsem nesmazal
 // v2026-03-13a - OPRAVA: inicializace contractOptionsFiltered atd. v data() a mounted()
-//              - nic jsem nesmazal 
+//              - nic jsem nesmazal
 
 window.app.component('statistics-component', {
   props: ['allRecords', 'contracts', 'jobs', 'places', 'allAdvances', 'isAdmin'],
