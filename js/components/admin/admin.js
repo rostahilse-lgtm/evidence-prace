@@ -1,6 +1,7 @@
 // ADMIN.JS
-// v2026-03-26 - OPRAVA: saveEdit nyní volá updaterecord místo saverecord
-//             - přidán row_index z editingRecord.data[16]
+// v2026-03-26a - OPRAVA: loadDayRecords nyní volá getdayrecords přes API
+//              - díky tomu record[16] obsahuje správný row_index pro updaterecord
+//              - bez toho bylo row_index undefined → NaN → chyba
 
 window.app.component('admin-component', {
   props: ['allSummary', 'allRecords', 'allAdvances', 'contracts', 'jobs', 'places', 'loading'],
@@ -139,20 +140,21 @@ window.app.component('admin-component', {
       this.adminTab = 'workers';
     },
     
+    // OPRAVA v2026-03-26a: volá getdayrecords přes API aby record[16] obsahoval správný row_index
     async loadDayRecords() {
       if (!this.selectedDate) {
         this.selectedDate = this.getTodayDate();
       }
-      
-      const parts = this.selectedDate.split('. ');
-      const targetDate = new Date(parts[2], parts[1] - 1, parts[0]);
-      const nextDay = new Date(targetDate);
-      nextDay.setDate(nextDay.getDate() + 1);
-      
-      this.dayRecords = this.allRecords.filter(r => {
-        const recordDate = new Date(r[4]);
-        return recordDate >= targetDate && recordDate < nextDay;
-      });
+      try {
+        const res = await apiCall('getdayrecords', { date: this.selectedDate });
+        if (res.code === '000' && res.data) {
+          this.dayRecords = res.data;
+        } else {
+          this.dayRecords = [];
+        }
+      } catch (error) {
+        this.dayRecords = [];
+      }
     },
     
     setToday() {
@@ -239,10 +241,15 @@ window.app.component('admin-component', {
       this.advanceDialog = true;
     },
     
-    // OPRAVA v2026-03-26: volá updaterecord místo saverecord, přidán row_index
     async saveEdit() {
       if (!this.editForm.workerId || !this.editForm.contractId || !this.editForm.jobId || !this.editForm.placeId || !this.editForm.timeFrom || !this.editForm.timeTo) {
         this.$emit('message', 'Vyplňte všechna pole');
+        return;
+      }
+      
+      const rowIndex = this.editingRecord.data[16];
+      if (rowIndex === undefined || rowIndex === null || isNaN(rowIndex)) {
+        this.$emit('message', 'Chyba: chybí číslo řádku záznamu');
         return;
       }
       
@@ -251,7 +258,7 @@ window.app.component('admin-component', {
       
       try {
         const payload = {
-          row_index: this.editingRecord.data[16],
+          row_index: rowIndex,
           id_contract: this.editForm.contractId,
           id_worker: this.editForm.workerId,
           id_job: this.editForm.jobId,
