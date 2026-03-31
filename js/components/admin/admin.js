@@ -1,7 +1,6 @@
 // ADMIN.JS
-// v2026-03-26a - OPRAVA: loadDayRecords nyní volá getdayrecords přes API
-//              - díky tomu record[16] obsahuje správný row_index pro updaterecord
-//              - bez toho bylo row_index undefined → NaN → chyba
+// v2026-03-26b - OPRAVA: record[7].toFixed → (parseFloat(record[7])||0).toFixed(2)
+//              - bez toho padala prázdná obrazovka při "rozpracovaných" záznamech
 
 window.app.component('admin-component', {
   props: ['allSummary', 'allRecords', 'allAdvances', 'contracts', 'jobs', 'places', 'loading'],
@@ -140,7 +139,6 @@ window.app.component('admin-component', {
       this.adminTab = 'workers';
     },
     
-    // OPRAVA v2026-03-26a: volá getdayrecords přes API aby record[16] obsahoval správný row_index
     async loadDayRecords() {
       if (!this.selectedDate) {
         this.selectedDate = this.getTodayDate();
@@ -471,7 +469,7 @@ window.app.component('admin-component', {
                 <div class="text-caption text-grey-7">{{ record[3] }} • {{ record[14] || 'Nezadáno' }}</div>
               </div>
               <div class="text-right">
-                <div class="text-bold text-primary">{{ record[7].toFixed(2) }} hod</div>
+                <div class="text-bold text-primary">{{ (parseFloat(record[7])||0).toFixed(2) }} hod</div>
                 <div class="text-caption">{{ record[2] }} Kč/hod</div>
               </div>
             </div>
@@ -534,7 +532,7 @@ window.app.component('admin-component', {
               <div class="text-caption text-grey-7">{{ record[0] }} • {{ record[3] }}</div>
             </div>
             <div class="text-right">
-              <div class="text-bold text-primary">{{ record[7].toFixed(2) }} hod</div>
+              <div class="text-bold text-primary">{{ (parseFloat(record[7])||0).toFixed(2) }} hod</div>
             </div>
             <q-btn flat dense round icon="content_copy" size="sm" class="q-ml-xs" @click="openDuplicateDialog(record)">
               <q-tooltip>Duplikovat</q-tooltip>
