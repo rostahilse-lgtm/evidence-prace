@@ -1,6 +1,6 @@
 // ADMIN.JS
-// v2026-03-26b - OPRAVA: record[7].toFixed → (parseFloat(record[7])||0).toFixed(2)
-//              - bez toho padala prázdná obrazovka při "rozpracovaných" záznamech
+// v2026-03-26 - OPRAVA: saveEdit nyní volá updaterecord místo saverecord
+//             - přidán row_index z editingRecord.data[16]
 
 window.app.component('admin-component', {
   props: ['allSummary', 'allRecords', 'allAdvances', 'contracts', 'jobs', 'places', 'loading'],
@@ -143,16 +143,16 @@ window.app.component('admin-component', {
       if (!this.selectedDate) {
         this.selectedDate = this.getTodayDate();
       }
-      try {
-        const res = await apiCall('getdayrecords', { date: this.selectedDate });
-        if (res.code === '000' && res.data) {
-          this.dayRecords = res.data;
-        } else {
-          this.dayRecords = [];
-        }
-      } catch (error) {
-        this.dayRecords = [];
-      }
+      
+      const parts = this.selectedDate.split('. ');
+      const targetDate = new Date(parts[2], parts[1] - 1, parts[0]);
+      const nextDay = new Date(targetDate);
+      nextDay.setDate(nextDay.getDate() + 1);
+      
+      this.dayRecords = this.allRecords.filter(r => {
+        const recordDate = new Date(r[4]);
+        return recordDate >= targetDate && recordDate < nextDay;
+      });
     },
     
     setToday() {
@@ -239,15 +239,10 @@ window.app.component('admin-component', {
       this.advanceDialog = true;
     },
     
+    // OPRAVA v2026-03-26: volá updaterecord místo saverecord, přidán row_index
     async saveEdit() {
       if (!this.editForm.workerId || !this.editForm.contractId || !this.editForm.jobId || !this.editForm.placeId || !this.editForm.timeFrom || !this.editForm.timeTo) {
         this.$emit('message', 'Vyplňte všechna pole');
-        return;
-      }
-      
-      const rowIndex = this.editingRecord.data[16];
-      if (rowIndex === undefined || rowIndex === null || isNaN(rowIndex)) {
-        this.$emit('message', 'Chyba: chybí číslo řádku záznamu');
         return;
       }
       
@@ -256,7 +251,7 @@ window.app.component('admin-component', {
       
       try {
         const payload = {
-          row_index: rowIndex,
+          row_index: this.editingRecord.data[16],
           id_contract: this.editForm.contractId,
           id_worker: this.editForm.workerId,
           id_job: this.editForm.jobId,
@@ -469,7 +464,7 @@ window.app.component('admin-component', {
                 <div class="text-caption text-grey-7">{{ record[3] }} • {{ record[14] || 'Nezadáno' }}</div>
               </div>
               <div class="text-right">
-                <div class="text-bold text-primary">{{ (parseFloat(record[7])||0).toFixed(2) }} hod</div>
+                <div class="text-bold text-primary">{{ record[7].toFixed(2) }} hod</div>
                 <div class="text-caption">{{ record[2] }} Kč/hod</div>
               </div>
             </div>
@@ -532,7 +527,7 @@ window.app.component('admin-component', {
               <div class="text-caption text-grey-7">{{ record[0] }} • {{ record[3] }}</div>
             </div>
             <div class="text-right">
-              <div class="text-bold text-primary">{{ (parseFloat(record[7])||0).toFixed(2) }} hod</div>
+              <div class="text-bold text-primary">{{ record[7].toFixed(2) }} hod</div>
             </div>
             <q-btn flat dense round icon="content_copy" size="sm" class="q-ml-xs" @click="openDuplicateDialog(record)">
               <q-tooltip>Duplikovat</q-tooltip>
