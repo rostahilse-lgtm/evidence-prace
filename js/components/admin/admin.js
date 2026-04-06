@@ -4,9 +4,9 @@
 // v2026-02-27 - odstraněna záložka Statistiky (přesunuta do Nástroje v main)
 //             - seznam pracovníků: přidáno ID, zálohy, tlačítko přihlásit jako
 //             - nic jsem nesmazal, pouze přidal nové funkce
-// v2026-04-04 - OPRAVA: saveEdit nyní volá updaterecord místo saverecord
+// v2026-04-06 - OPRAVA: saveEdit volá updaterecord místo saverecord
 //             - přidán row_index z editingRecord.data[16]
-//             - díky tomu se opravený záznam přepíše na stejný řádek (ne na konec)
+//             - díky tomu se opravený záznam přepíše na stejném řádku (ne na konec)
 //             - do sloupce P se zapíše 'opraveno', do Q co bylo před změnou
 
 window.app.component('admin-component', {
@@ -231,8 +231,8 @@ window.app.component('admin-component', {
       this.advanceDialog = true;
     },
     
-    // OPRAVA v2026-04-04: volá updaterecord místo saverecord + přidán row_index
-    // → záznam se přepíše na stejném řádku, P=opraveno, Q=co bylo před změnou
+    // v2026-04-06: ZMĚNA - volá updaterecord místo saverecord + přidán row_index
+    // Záznam se přepíše na stejném řádku, do P = opraveno, do Q = co bylo před změnou
     async saveEdit() {
       if (!this.editForm.workerId || !this.editForm.contractId || !this.editForm.jobId || !this.editForm.placeId || !this.editForm.timeFrom || !this.editForm.timeTo) {
         this.$emit('message', 'Vyplňte všechna pole'); return;
