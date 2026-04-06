@@ -241,7 +241,7 @@ window.app.component('admin-component', {
       const timeTo = this.dateTimeToTimestamp(this.editForm.dateEdit, this.editForm.timeTo);
       try {
         const payload = {
-          row_index: this.editingRecord.data[16],
+          row_index: this.editingRecord.data[17],
           id_contract: this.editForm.contractId, id_worker: this.editForm.workerId,
           id_job: this.editForm.jobId, id_place: this.editForm.placeId,
           time_fr: timeFr, time_to: timeTo, note: this.editForm.note
