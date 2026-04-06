@@ -5,9 +5,13 @@
 //             - seznam pracovníků: přidáno ID, zálohy, tlačítko přihlásit jako
 //             - nic jsem nesmazal, pouze přidal nové funkce
 // v2026-04-06 - OPRAVA: saveEdit volá updaterecord místo saverecord
-//             - přidán row_index z editingRecord.data[16]
+//             - přidán row_index z editingRecord.data[17]
 //             - díky tomu se opravený záznam přepíše na stejném řádku (ne na konec)
 //             - do sloupce P se zapíše 'opraveno', do Q co bylo před změnou
+// v2026-04-06c - NOVÉ: dialog úpravy nyní zobrazuje a umožňuje editovat KM
+//              - vlevo původní KM celkem (readonly), vpravo km jednosměr + checkbox tam a zpět
+//              - OPRAVA: při uložení se KM vždy posílají (zachovají hodnotu pokud nezměněny)
+//              - OPRAVA: výběr času - po dokončení (HH:MM) se popup automaticky zavře
 
 window.app.component('admin-component', {
   props: ['allSummary', 'allRecords', 'allAdvances', 'contracts', 'jobs', 'places', 'loading'],
@@ -189,19 +193,24 @@ window.app.component('admin-component', {
         worker: record[6], contract: record[0], job: record[3],
         place: record[14] || 'Nezadáno', timeFrom: this.timestampToTime(record[4]),
         timeTo: this.timestampToTime(record[5]), date: this.timestampToDate(record[4]),
-        note: record[8] || '', km: record[12] || 0
+        note: record[8] || '',
+        km: record[12] || 0
       };
       const worker = this.workers.find(w => w[1] === record[6]);
       const contract = this.contracts.find(c => c[1] === record[0]);
       const job = this.jobs.find(j => j[1] === record[3]);
       const place = this.places ? this.places.find(p => p[1] === record[14]) : null;
+      // v2026-04-06c: načteme původní KM, kmRoundTrip odvozeno z poměru km_celkem / km_jednosmer
+      const kmJednosmer = parseFloat(record[11]) || 0;
+      const kmCelkem = parseFloat(record[12]) || 0;
       this.editForm = {
         workerId: worker ? worker[0] : null, contractId: contract ? contract[0] : null,
         jobId: job ? job[0] : null, placeId: place ? place[0] : null,
         dateEdit: this.timestampToDate(record[4]), timeFrom: this.timestampToTime(record[4]),
         timeTo: this.timestampToTime(record[5]), note: record[8] || '',
-        kmJednosmer: parseFloat(record[11]) || 0, kmManual: record[13] === 'Y',
-        kmRoundTrip: parseFloat(record[12]) === (parseFloat(record[11]) * 2)
+        kmJednosmer: kmJednosmer,
+        kmManual: true,
+        kmRoundTrip: kmJednosmer > 0 ? (kmCelkem === kmJednosmer * 2) : true
       };
       this.editDialog = true;
     },
@@ -231,8 +240,7 @@ window.app.component('admin-component', {
       this.advanceDialog = true;
     },
     
-    // v2026-04-06: ZMĚNA - volá updaterecord místo saverecord + přidán row_index
-    // Záznam se přepíše na stejném řádku, do P = opraveno, do Q = co bylo před změnou
+    // v2026-04-06c: KM se vždy posílají - hodnota z formuláře (zachovají se pokud nezměněny)
     async saveEdit() {
       if (!this.editForm.workerId || !this.editForm.contractId || !this.editForm.jobId || !this.editForm.placeId || !this.editForm.timeFrom || !this.editForm.timeTo) {
         this.$emit('message', 'Vyplňte všechna pole'); return;
@@ -240,14 +248,17 @@ window.app.component('admin-component', {
       const timeFr = this.dateTimeToTimestamp(this.editForm.dateEdit, this.editForm.timeFrom);
       const timeTo = this.dateTimeToTimestamp(this.editForm.dateEdit, this.editForm.timeTo);
       try {
+        const kmJednosmer = parseFloat(this.editForm.kmJednosmer) || 0;
+        const kmCelkem = this.editForm.kmRoundTrip ? kmJednosmer * 2 : kmJednosmer;
         const payload = {
           row_index: this.editingRecord.data[17],
           id_contract: this.editForm.contractId, id_worker: this.editForm.workerId,
           id_job: this.editForm.jobId, id_place: this.editForm.placeId,
-          time_fr: timeFr, time_to: timeTo, note: this.editForm.note
+          time_fr: timeFr, time_to: timeTo, note: this.editForm.note,
+          km_jednosmer: kmJednosmer,
+          km_celkem: kmCelkem,
+          km_rucne: kmJednosmer > 0 ? 'Y' : 'N'
         };
-        if (this.editForm.kmManual && this.editForm.kmJednosmer) { payload.km_jednosmer = this.editForm.kmJednosmer; payload.km_celkem = this.calculatedKmEdit; payload.km_rucne = 'Y'; }
-        else { payload.km_jednosmer = 0; payload.km_celkem = 0; payload.km_rucne = 'N'; }
         const res = await apiCall('updaterecord', payload);
         if (res.code === '000') { this.$emit('message', '✓ Záznam upraven'); this.editDialog = false; this.$emit('reload'); this.loadDayRecords(); }
         else this.$emit('message', 'Chyba: ' + res.error);
@@ -503,8 +514,10 @@ window.app.component('admin-component', {
       <q-dialog v-model="editDialog">
         <q-card style="width:95%; max-width:500px">
           <q-card-section><div class="text-h6">Upravit záznam</div></q-card-section>
-          <q-card-section class="q-pt-none" style="max-height:60vh; overflow-y:auto">
+          <q-card-section class="q-pt-none" style="max-height:65vh; overflow-y:auto">
             <div class="row q-col-gutter-sm">
+
+              <!-- LEVÝ SLOUPEC - původní hodnoty -->
               <div class="col-6">
                 <div class="text-caption text-grey-7 q-mb-xs">Původní:</div>
                 <q-input v-model="originalRecord.worker" label="Pracovník" dense readonly filled class="q-mb-xs"/>
@@ -514,8 +527,12 @@ window.app.component('admin-component', {
                 <q-input v-model="originalRecord.date" label="Datum" dense readonly filled class="q-mb-xs"/>
                 <q-input v-model="originalRecord.timeFrom" label="Od" dense readonly filled class="q-mb-xs"/>
                 <q-input v-model="originalRecord.timeTo" label="Do" dense readonly filled class="q-mb-xs"/>
-                <q-input v-model="originalRecord.note" label="Poznámka" dense readonly filled type="textarea" rows="2"/>
+                <q-input v-model="originalRecord.note" label="Poznámka" dense readonly filled type="textarea" rows="2" class="q-mb-xs"/>
+                <!-- v2026-04-06c: původní KM celkem -->
+                <q-input :model-value="String(originalRecord.km) + ' km'" label="Km celkem" dense readonly filled/>
               </div>
+
+              <!-- PRAVÝ SLOUPEC - nové hodnoty -->
               <div class="col-6">
                 <div class="text-caption text-grey-7 q-mb-xs">Nové:</div>
                 <q-select v-model="editForm.workerId" :options="workerOptions" label="Pracovník" emit-value map-options dense outlined class="q-mb-xs"/>
@@ -525,14 +542,42 @@ window.app.component('admin-component', {
                 <q-input v-model="editForm.dateEdit" label="Datum" dense outlined readonly class="q-mb-xs">
                   <template v-slot:append><q-icon name="event" class="cursor-pointer"><q-popup-proxy cover ref="editDateProxy"><q-date v-model="editForm.dateEdit" mask="DD. MM. YYYY" locale="cs" @update:model-value="$refs.editDateProxy.hide()"/></q-popup-proxy></q-icon></template>
                 </q-input>
+
+                <!-- v2026-04-06c: čas - popup se zavře po dokončení výběru (val.length===5 znamená HH:MM) -->
                 <q-input v-model="editForm.timeFrom" label="Od" dense outlined class="q-mb-xs">
-                  <template v-slot:append><q-icon name="schedule" class="cursor-pointer"><q-popup-proxy cover ref="editTimeFromProxy"><q-time v-model="editForm.timeFrom" mask="HH:mm" format24h @update:model-value="val => { if(val && val.length===5) $refs.editTimeFromProxy.hide() }"/></q-popup-proxy></q-icon></template>
+                  <template v-slot:append>
+                    <q-icon name="schedule" class="cursor-pointer">
+                      <q-popup-proxy cover ref="editTimeFromProxy">
+                        <q-time v-model="editForm.timeFrom" mask="HH:mm" format24h
+                          @update:model-value="val => { if (val && val.length === 5) $refs.editTimeFromProxy.hide(); }"
+                        />
+                      </q-popup-proxy>
+                    </q-icon>
+                  </template>
                 </q-input>
+
                 <q-input v-model="editForm.timeTo" label="Do" dense outlined class="q-mb-xs">
-                  <template v-slot:append><q-icon name="schedule" class="cursor-pointer"><q-popup-proxy cover ref="editTimeToProxy"><q-time v-model="editForm.timeTo" mask="HH:mm" format24h @update:model-value="val => { if(val && val.length===5) $refs.editTimeToProxy.hide() }"/></q-popup-proxy></q-icon></template>
+                  <template v-slot:append>
+                    <q-icon name="schedule" class="cursor-pointer">
+                      <q-popup-proxy cover ref="editTimeToProxy">
+                        <q-time v-model="editForm.timeTo" mask="HH:mm" format24h
+                          @update:model-value="val => { if (val && val.length === 5) $refs.editTimeToProxy.hide(); }"
+                        />
+                      </q-popup-proxy>
+                    </q-icon>
+                  </template>
                 </q-input>
-                <q-input v-model="editForm.note" label="Poznámka" dense outlined type="textarea" rows="2"/>
+
+                <q-input v-model="editForm.note" label="Poznámka" dense outlined type="textarea" rows="2" class="q-mb-xs"/>
+
+                <!-- v2026-04-06c: KM pole - vždy zobrazeno, předvyplněno původní hodnotou -->
+                <q-input v-model.number="editForm.kmJednosmer" label="Km jednosměr" type="number" dense outlined class="q-mb-xs"/>
+                <q-checkbox v-model="editForm.kmRoundTrip" label="Tam a zpět (×2)" dense class="q-mb-xs"/>
+                <div class="text-caption text-primary q-mb-xs">
+                  Celkem: {{ editForm.kmRoundTrip ? (editForm.kmJednosmer || 0) * 2 : (editForm.kmJednosmer || 0) }} km
+                </div>
               </div>
+
             </div>
           </q-card-section>
           <q-card-actions align="right">
