@@ -8,10 +8,15 @@
 //             - přidán row_index z editingRecord.data[17]
 //             - díky tomu se opravený záznam přepíše na stejném řádku (ne na konec)
 //             - do sloupce P se zapíše 'opraveno', do Q co bylo před změnou
-// v2026-04-06c - NOVÉ: dialog úpravy nyní zobrazuje a umožňuje editovat KM
+// v2026-04-06c - NOVÉ: dialog úpravy zobrazuje a umožňuje editovat KM
 //              - vlevo původní KM celkem (readonly), vpravo km jednosměr + checkbox tam a zpět
 //              - OPRAVA: při uložení se KM vždy posílají (zachovají hodnotu pokud nezměněny)
 //              - OPRAVA: výběr času - po dokončení (HH:MM) se popup automaticky zavře
+// v2026-04-09 - ROZCESTNÍK: saveEdit přidává source_sheet z editingRecord.data[18]
+//             - díky tomu updaterecord v kod.gs zapíše do správného listu
+//             - záznamy_historie → editace jde zpět do záznamy_historie
+//             - záznamy → editace jde do záznamy
+//             - nic jsem nesmazal
 
 window.app.component('admin-component', {
   props: ['allSummary', 'allRecords', 'allAdvances', 'contracts', 'jobs', 'places', 'loading'],
@@ -76,13 +81,9 @@ window.app.component('admin-component', {
         const id = String(adv[0]);
         const name = adv[2] || '?';
         if (!map[id]) map[id] = { id, name, advances: [] };
-        if (map[id].advances.length < 3) {
-          map[id].advances.push(adv);
-        }
+        if (map[id].advances.length < 3) map[id].advances.push(adv);
       }
-      return Object.values(map).sort((a, b) =>
-        Number(b.advances[0][1]) - Number(a.advances[0][1])
-      );
+      return Object.values(map).sort((a, b) => Number(b.advances[0][1]) - Number(a.advances[0][1]));
     },
     activeRecords() { return this.localRecords !== null ? this.localRecords : this.allRecords; },
     activeAdvances() { return this.localAdvances !== null ? this.localAdvances : this.allAdvances; },
@@ -194,13 +195,14 @@ window.app.component('admin-component', {
         place: record[14] || 'Nezadáno', timeFrom: this.timestampToTime(record[4]),
         timeTo: this.timestampToTime(record[5]), date: this.timestampToDate(record[4]),
         note: record[8] || '',
-        km: record[12] || 0
+        km: record[12] || 0,
+        // v2026-04-09: zobrazíme z kterého listu záznam pochází
+        sourceSheet: record[18] || 'záznamy'
       };
       const worker = this.workers.find(w => w[1] === record[6]);
       const contract = this.contracts.find(c => c[1] === record[0]);
       const job = this.jobs.find(j => j[1] === record[3]);
       const place = this.places ? this.places.find(p => p[1] === record[14]) : null;
-      // v2026-04-06c: načteme původní KM, kmRoundTrip odvozeno z poměru km_celkem / km_jednosmer
       const kmJednosmer = parseFloat(record[11]) || 0;
       const kmCelkem = parseFloat(record[12]) || 0;
       this.editForm = {
@@ -240,7 +242,8 @@ window.app.component('admin-component', {
       this.advanceDialog = true;
     },
     
-    // v2026-04-06c: KM se vždy posílají - hodnota z formuláře (zachovají se pokud nezměněny)
+    // v2026-04-09: ROZCESTNÍK - přidán source_sheet z record[18]
+    // kod.gs updateRecord zapíše do správného listu (záznamy nebo záznamy_historie)
     async saveEdit() {
       if (!this.editForm.workerId || !this.editForm.contractId || !this.editForm.jobId || !this.editForm.placeId || !this.editForm.timeFrom || !this.editForm.timeTo) {
         this.$emit('message', 'Vyplňte všechna pole'); return;
@@ -252,6 +255,7 @@ window.app.component('admin-component', {
         const kmCelkem = this.editForm.kmRoundTrip ? kmJednosmer * 2 : kmJednosmer;
         const payload = {
           row_index: this.editingRecord.data[17],
+          source_sheet: this.editingRecord.data[18] || 'záznamy',
           id_contract: this.editForm.contractId, id_worker: this.editForm.workerId,
           id_job: this.editForm.jobId, id_place: this.editForm.placeId,
           time_fr: timeFr, time_to: timeTo, note: this.editForm.note,
@@ -375,31 +379,17 @@ window.app.component('admin-component', {
       <!-- DETAIL PRACOVNÍKA -->
       <div v-if="adminTab==='detail'&&selectedWorkerData" class="q-pt-md">
         <q-btn flat icon="arrow_back" label="Zpět" @click="backToWorkers" class="q-mb-md"/>
-        
         <div class="summary-box">
           <div class="text-h6 q-mb-xs">{{ selectedWorkerData.info.name }}</div>
           <div class="text-caption text-grey-6 q-mb-md">ID: {{ selectedWorkerData.info.id }}</div>
-          <div class="summary-item">
-            <span class="summary-label">Vyděleno:</span>
-            <span class="summary-value">{{ selectedWorkerData.info.totalEarnings }} Kč</span>
-          </div>
-          <div class="summary-item">
-            <span class="summary-label">Zálohy:</span>
-            <span class="summary-value">{{ selectedWorkerData.info.totalPaid }} Kč</span>
-          </div>
-          <div class="summary-item">
-            <span class="summary-label">Zůstatek:</span>
-            <span :class="selectedWorkerData.info.balance>=0?'balance-positive':'balance-negative'">
-              {{ selectedWorkerData.info.balance }} Kč
-            </span>
-          </div>
+          <div class="summary-item"><span class="summary-label">Vyděleno:</span><span class="summary-value">{{ selectedWorkerData.info.totalEarnings }} Kč</span></div>
+          <div class="summary-item"><span class="summary-label">Zálohy:</span><span class="summary-value">{{ selectedWorkerData.info.totalPaid }} Kč</span></div>
+          <div class="summary-item"><span class="summary-label">Zůstatek:</span><span :class="selectedWorkerData.info.balance>=0?'balance-positive':'balance-negative'">{{ selectedWorkerData.info.balance }} Kč</span></div>
         </div>
-
         <q-tabs v-model="summaryTab" dense class="q-mt-md">
           <q-tab name="records" label="Záznamy"/>
           <q-tab name="advances" label="Zálohy"/>
         </q-tabs>
-
         <div v-if="summaryTab==='records'" class="q-mt-md">
           <div v-for="(record,idx) in selectedWorkerData.records" :key="idx" class="record-card">
             <div class="row items-center">
@@ -417,7 +407,6 @@ window.app.component('admin-component', {
             <div v-if="record[8]" class="note-display">💬 {{ record[8] }}</div>
           </div>
         </div>
-
         <div v-if="summaryTab==='advances'" class="q-mt-md">
           <div v-for="(advance,idx) in selectedWorkerData.advances" :key="idx" class="record-card">
             <div class="row items-center">
@@ -448,14 +437,10 @@ window.app.component('admin-component', {
           <q-btn color="primary" icon="restaurant" dense size="sm" @click="openLunchDialog"><q-tooltip>Oběd</q-tooltip></q-btn>
           <q-btn color="primary" icon="payment" dense size="sm" @click="openAdvanceDialog"><q-tooltip>Záloha</q-tooltip></q-btn>
         </div>
-
         <div v-if="dayRecords.length===0" class="text-center text-grey-7 q-mt-lg">Žádné záznamy pro {{ selectedDate }}</div>
-
         <div v-for="(record,idx) in dayRecords" :key="idx" class="record-card" style="padding:8px 12px">
           <div class="row items-center no-wrap" style="font-size:0.85rem">
-            <div style="min-width:80px" class="q-mr-xs">
-              <div class="text-bold" style="font-size:0.9rem">{{ record[6] }}</div>
-            </div>
+            <div style="min-width:80px" class="q-mr-xs"><div class="text-bold" style="font-size:0.9rem">{{ record[6] }}</div></div>
             <div style="min-width:55px" class="text-grey-8 q-mr-xs">{{ record[0] }}</div>
             <div style="min-width:55px" class="text-grey-7 q-mr-xs">{{ record[3] }}</div>
             <div style="min-width:65px" class="text-grey-7 q-mr-xs">{{ timestampToTime(record[4]) }}-{{ timestampToTime(record[5]) }}</div>
@@ -466,6 +451,8 @@ window.app.component('admin-component', {
             <div class="col text-caption text-grey-7">
               <span v-if="record[8]">💬 {{ record[8] }}</span>
               <span v-if="record[12] > 0" class="text-orange q-ml-xs">🚗 {{ record[12] }} km</span>
+              <!-- v2026-04-09: zobrazíme štítek pokud jde o historický záznam -->
+              <span v-if="record[18] && record[18] !== 'záznamy'" class="text-caption text-grey-5 q-ml-xs">[hist]</span>
             </div>
             <div class="row" style="gap:5px; padding-right:5px; flex-shrink:0">
               <q-btn flat dense round color="blue-7" icon="content_copy" size="sm" @click="openDuplicateDialog(record)"><q-tooltip>Kopírovat</q-tooltip></q-btn>
@@ -483,8 +470,7 @@ window.app.component('admin-component', {
             <div class="text-bold" style="font-size:0.82rem; line-height:1.2">{{ row.name }}</div>
           </div>
           <div class="row col q-gutter-xs">
-            <div v-for="(adv, i) in row.advances" :key="i"
-              style="min-width:85px; background:#f5f5f5; border-radius:4px; padding:3px 6px">
+            <div v-for="(adv, i) in row.advances" :key="i" style="min-width:85px; background:#f5f5f5; border-radius:4px; padding:3px 6px">
               <div class="text-bold text-primary" style="font-size:0.85rem">{{ adv[4] }} Kč</div>
               <div class="text-caption text-grey-7" style="font-size:0.72rem">{{ formatShortDateTime(adv[1]) }}</div>
               <div class="text-caption text-grey-8" style="font-size:0.72rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:80px">{{ adv[5] }}</div>
@@ -499,8 +485,7 @@ window.app.component('admin-component', {
           <q-card-section>
             <div class="text-subtitle1 text-bold q-mb-xs">🔧 Oprava sazeb v historii</div>
             <div class="text-body2 text-grey-7 q-mb-md">
-              Projde všechny záznamy v listu <strong>záznamy_historie</strong> a přepíše sazbu (sloupec C)
-              podle sazebníku platného pro datum záznamu.
+              Projde všechny záznamy v listu <strong>záznamy_historie</strong> a přepíše sazbu (sloupec C) podle sazebníku platného pro datum záznamu.
             </div>
             <q-btn color="deep-orange" icon="build" label="Opravit sazby v historii" :loading="toolsLoading" @click="opravSazbyHistorie"/>
             <div v-if="toolsResult" class="q-mt-md q-pa-sm" :style="toolsResult.ok ? 'background:#e8f5e9;border-radius:4px' : 'background:#ffebee;border-radius:4px'">
@@ -513,11 +498,14 @@ window.app.component('admin-component', {
       <!-- DIALOG - ÚPRAVA -->
       <q-dialog v-model="editDialog">
         <q-card style="width:95%; max-width:500px">
-          <q-card-section><div class="text-h6">Upravit záznam</div></q-card-section>
+          <q-card-section>
+            <div class="text-h6">Upravit záznam</div>
+            <!-- v2026-04-09: zobrazíme zdroj záznamu -->
+            <div v-if="originalRecord && originalRecord.sourceSheet === 'záznamy_historie'" class="text-caption text-orange-8">📁 Historický záznam — uloží se zpět do záznamy_historie</div>
+          </q-card-section>
           <q-card-section class="q-pt-none" style="max-height:65vh; overflow-y:auto">
             <div class="row q-col-gutter-sm">
-
-              <!-- LEVÝ SLOUPEC - původní hodnoty -->
+              <!-- LEVÝ SLOUPEC - původní -->
               <div class="col-6">
                 <div class="text-caption text-grey-7 q-mb-xs">Původní:</div>
                 <q-input v-model="originalRecord.worker" label="Pracovník" dense readonly filled class="q-mb-xs"/>
@@ -528,11 +516,9 @@ window.app.component('admin-component', {
                 <q-input v-model="originalRecord.timeFrom" label="Od" dense readonly filled class="q-mb-xs"/>
                 <q-input v-model="originalRecord.timeTo" label="Do" dense readonly filled class="q-mb-xs"/>
                 <q-input v-model="originalRecord.note" label="Poznámka" dense readonly filled type="textarea" rows="2" class="q-mb-xs"/>
-                <!-- v2026-04-06c: původní KM celkem -->
                 <q-input :model-value="String(originalRecord.km) + ' km'" label="Km celkem" dense readonly filled/>
               </div>
-
-              <!-- PRAVÝ SLOUPEC - nové hodnoty -->
+              <!-- PRAVÝ SLOUPEC - nové -->
               <div class="col-6">
                 <div class="text-caption text-grey-7 q-mb-xs">Nové:</div>
                 <q-select v-model="editForm.workerId" :options="workerOptions" label="Pracovník" emit-value map-options dense outlined class="q-mb-xs"/>
@@ -542,42 +528,31 @@ window.app.component('admin-component', {
                 <q-input v-model="editForm.dateEdit" label="Datum" dense outlined readonly class="q-mb-xs">
                   <template v-slot:append><q-icon name="event" class="cursor-pointer"><q-popup-proxy cover ref="editDateProxy"><q-date v-model="editForm.dateEdit" mask="DD. MM. YYYY" locale="cs" @update:model-value="$refs.editDateProxy.hide()"/></q-popup-proxy></q-icon></template>
                 </q-input>
-
-                <!-- v2026-04-06c: čas - popup se zavře po dokončení výběru (val.length===5 znamená HH:MM) -->
                 <q-input v-model="editForm.timeFrom" label="Od" dense outlined class="q-mb-xs">
                   <template v-slot:append>
                     <q-icon name="schedule" class="cursor-pointer">
                       <q-popup-proxy cover ref="editTimeFromProxy">
                         <q-time v-model="editForm.timeFrom" mask="HH:mm" format24h
-                          @update:model-value="val => { if (val && val.length === 5) $refs.editTimeFromProxy.hide(); }"
-                        />
+                          @update:model-value="val => { if (val && val.length === 5) $refs.editTimeFromProxy.hide(); }"/>
                       </q-popup-proxy>
                     </q-icon>
                   </template>
                 </q-input>
-
                 <q-input v-model="editForm.timeTo" label="Do" dense outlined class="q-mb-xs">
                   <template v-slot:append>
                     <q-icon name="schedule" class="cursor-pointer">
                       <q-popup-proxy cover ref="editTimeToProxy">
                         <q-time v-model="editForm.timeTo" mask="HH:mm" format24h
-                          @update:model-value="val => { if (val && val.length === 5) $refs.editTimeToProxy.hide(); }"
-                        />
+                          @update:model-value="val => { if (val && val.length === 5) $refs.editTimeToProxy.hide(); }"/>
                       </q-popup-proxy>
                     </q-icon>
                   </template>
                 </q-input>
-
                 <q-input v-model="editForm.note" label="Poznámka" dense outlined type="textarea" rows="2" class="q-mb-xs"/>
-
-                <!-- v2026-04-06c: KM pole - vždy zobrazeno, předvyplněno původní hodnotou -->
                 <q-input v-model.number="editForm.kmJednosmer" label="Km jednosměr" type="number" dense outlined class="q-mb-xs"/>
                 <q-checkbox v-model="editForm.kmRoundTrip" label="Tam a zpět (×2)" dense class="q-mb-xs"/>
-                <div class="text-caption text-primary q-mb-xs">
-                  Celkem: {{ editForm.kmRoundTrip ? (editForm.kmJednosmer || 0) * 2 : (editForm.kmJednosmer || 0) }} km
-                </div>
+                <div class="text-caption text-primary q-mb-xs">Celkem: {{ editForm.kmRoundTrip ? (editForm.kmJednosmer || 0) * 2 : (editForm.kmJednosmer || 0) }} km</div>
               </div>
-
             </div>
           </q-card-section>
           <q-card-actions align="right">
