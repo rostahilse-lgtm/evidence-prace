@@ -42,6 +42,8 @@ window.app.component('home-component', {
         amount: null,
         reason: ''
       },
+      // v2026-05-07b: blokace dvojitého kliknutí při ukládání zálohy
+      advanceSaving: false,
       contractKm: 0,
       kmManual: false,
       kmManualValue: null,
@@ -576,11 +578,14 @@ window.app.component('home-component', {
       }
     },
     
+    // v2026-05-07b: blokace dvojitého kliknutí + ošetření duplikátu (101)
     async saveAdvance() {
       if (!this.advanceForm.amount || !this.advanceForm.reason) {
         this.$emit('message', 'Vyplňte částku a důvod');
         return;
       }
+      if (this.advanceSaving) return; // blokace dvojkliku
+      this.advanceSaving = true;
       try {
         const res = await apiCall('saveadvance', {
           id_worker: this.currentUser.id,
@@ -594,12 +599,15 @@ window.app.component('home-component', {
           this.advanceForm.amount = null;
           this.advanceForm.reason = '';
           this.$emit('reload');
+        } else if (res.code === '101') {
+          this.$emit('message', '⚠️ Tato záloha již byla dnes uložena (duplikát)');
         } else {
           this.$emit('message', 'Chyba: ' + res.error);
         }
       } catch (error) {
         this.$emit('message', 'Chyba při ukládání zálohy');
       }
+      this.advanceSaving = false;
     }
   },
   
@@ -755,7 +763,7 @@ window.app.component('home-component', {
         <q-input v-model="advanceForm.reason" label="Důvod *"
           outlined class="q-mb-md" type="textarea" rows="2"/>
         <q-btn @click="saveAdvance" label="Uložit zálohu" color="primary"
-          :loading="loading" class="full-width" size="lg"/>
+          :loading="advanceSaving" class="full-width" size="lg"/>
       </div>
 
       <!-- OBJEDNAT OBĚD -->
