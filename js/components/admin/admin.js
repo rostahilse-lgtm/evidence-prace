@@ -62,16 +62,18 @@ window.app.component('admin-component', {
   
   computed: {
     activeSummary() { return this.localSummary !== null ? this.localSummary : this.allSummary; },
+    // NOVÉ v2026-03-04e: aktivní pracovníci první, neaktivní na konci
     sortedSummary() {
       const s = [...this.activeSummary];
       return s.sort((a, b) => {
-        const aActive = a.active !== false;
+        const aActive = a.active !== false; // pokud active není v datech, považuj za aktivní
         const bActive = b.active !== false;
         if (aActive && !bActive) return -1;
         if (!aActive && bActive) return 1;
         return (a.name || '').localeCompare(b.name || '', 'cs');
       });
     },
+    // NOVÉ v2026-03-04e: zálohy seskupené po pracovnících, max 3 zálohy na pracovníka
     recentAdvancesByWorker() {
       const all = [...this.activeAdvances]
         .filter(a => a[5] !== 'oběd')
@@ -81,9 +83,14 @@ window.app.component('admin-component', {
         const id = String(adv[0]);
         const name = adv[2] || '?';
         if (!map[id]) map[id] = { id, name, advances: [] };
-        if (map[id].advances.length < 3) map[id].advances.push(adv);
+        if (map[id].advances.length < 3) {
+          map[id].advances.push(adv);
+        }
       }
-      return Object.values(map).sort((a, b) => Number(b.advances[0][1]) - Number(a.advances[0][1]));
+      // Seřadit pracovníky podle data nejnovější zálohy
+      return Object.values(map).sort((a, b) =>
+        Number(b.advances[0][1]) - Number(a.advances[0][1])
+      );
     },
     activeRecords() { return this.localRecords !== null ? this.localRecords : this.allRecords; },
     activeAdvances() { return this.localAdvances !== null ? this.localAdvances : this.allAdvances; },
@@ -403,8 +410,8 @@ window.app.component('admin-component', {
               </div>
             </div>
             <div class="text-caption text-grey-7 q-mt-sm">{{ formatTimeRange(record[4], record[5]) }}</div>
-            <div v-if="record[12] > 0" class="text-caption text-orange q-mt-xs">🚗 {{ record[12] }} km</div>
-            <div v-if="record[8]" class="note-display">💬 {{ record[8] }}</div>
+            <div v-if="record[12] > 0" class="text-caption text-orange q-mt-xs">?? {{ record[12] }} km</div>
+            <div v-if="record[8]" class="note-display">?? {{ record[8] }}</div>
           </div>
         </div>
         <div v-if="summaryTab==='advances'" class="q-mt-md">
@@ -449,10 +456,8 @@ window.app.component('admin-component', {
           </div>
           <div class="row items-center q-mt-xs" style="min-height:28px">
             <div class="col text-caption text-grey-7">
-              <span v-if="record[8]">💬 {{ record[8] }}</span>
-              <span v-if="record[12] > 0" class="text-orange q-ml-xs">🚗 {{ record[12] }} km</span>
-              <!-- v2026-04-09: zobrazíme štítek pokud jde o historický záznam -->
-              <span v-if="record[18] && record[18] !== 'záznamy'" class="text-caption text-grey-5 q-ml-xs">[hist]</span>
+              <span v-if="record[8]">?? {{ record[8] }}</span>
+              <span v-if="record[12] > 0" class="text-orange q-ml-xs">?? {{ record[12] }} km</span>
             </div>
             <div class="row" style="gap:5px; padding-right:5px; flex-shrink:0">
               <q-btn flat dense round color="blue-7" icon="content_copy" size="sm" @click="openDuplicateDialog(record)"><q-tooltip>Kopírovat</q-tooltip></q-btn>
@@ -466,11 +471,14 @@ window.app.component('admin-component', {
       <div v-if="adminTab==='zalohy'" class="q-pt-md">
         <div v-if="recentAdvancesByWorker.length === 0" class="text-center text-grey-7 q-mt-lg">Žádné zálohy</div>
         <div v-for="row in recentAdvancesByWorker" :key="row.id" class="row items-start no-wrap q-mb-xs" style="border-bottom:1px solid #f0f0f0; padding:6px 4px">
+          <!-- Jméno pracovníka -->
           <div style="min-width:90px; max-width:90px; padding-top:2px">
             <div class="text-bold" style="font-size:0.82rem; line-height:1.2">{{ row.name }}</div>
           </div>
+          <!-- Zálohy vedle sebe -->
           <div class="row col q-gutter-xs">
-            <div v-for="(adv, i) in row.advances" :key="i" style="min-width:85px; background:#f5f5f5; border-radius:4px; padding:3px 6px">
+            <div v-for="(adv, i) in row.advances" :key="i"
+              style="min-width:85px; background:#f5f5f5; border-radius:4px; padding:3px 6px">
               <div class="text-bold text-primary" style="font-size:0.85rem">{{ adv[4] }} Kč</div>
               <div class="text-caption text-grey-7" style="font-size:0.72rem">{{ formatShortDateTime(adv[1]) }}</div>
               <div class="text-caption text-grey-8" style="font-size:0.72rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:80px">{{ adv[5] }}</div>
@@ -479,13 +487,14 @@ window.app.component('admin-component', {
         </div>
       </div>
 
-      <!-- NÁSTROJE -->
+            <!-- NÁSTROJE -->
       <div v-if="adminTab==='tools'" class="q-pt-md">
         <q-card flat bordered class="q-mb-md">
           <q-card-section>
-            <div class="text-subtitle1 text-bold q-mb-xs">🔧 Oprava sazeb v historii</div>
+            <div class="text-subtitle1 text-bold q-mb-xs">?? Oprava sazeb v historii</div>
             <div class="text-body2 text-grey-7 q-mb-md">
-              Projde všechny záznamy v listu <strong>záznamy_historie</strong> a přepíše sazbu (sloupec C) podle sazebníku platného pro datum záznamu.
+              Projde všechny záznamy v listu <strong>záznamy_historie</strong> a přepíše sazbu (sloupec C)
+              podle sazebníku platného pro datum záznamu.
             </div>
             <q-btn color="deep-orange" icon="build" label="Opravit sazby v historii" :loading="toolsLoading" @click="opravSazbyHistorie"/>
             <div v-if="toolsResult" class="q-mt-md q-pa-sm" :style="toolsResult.ok ? 'background:#e8f5e9;border-radius:4px' : 'background:#ffebee;border-radius:4px'">

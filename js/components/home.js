@@ -8,20 +8,7 @@
 //             - NOVÉ: při uložení doplnění se posílá opraveno:'Y' → v tabulce se zapíše 'opraveno' do sloupce P
 //             - nic jsem nesmazal, pouze opravil výběr času a přidal příznak opraveno
 // v2026-03-04c - NOVÉ: vyhledávání v selectech Zakázka, Práce, Místo práce — po zmáčknutí naskočí klávesnice
-// v2026-03-10 - OPRAVA záložka Objednat: cena ze sheetu (price1=jídla 1-3, price2=jídlo 4)
-//             - NOVÉ: zobrazení objednávek ostatních v záložce Objednat
-//             - nic jsem nesmazal
-// v2026-03-11 - PŘESUN: záložka Rozpracované přesunuta do Nástrojů v main.js
-//             - NOVÉ: nedokoncene-component jako samostatná komponenta
-//             - nic jsem nesmazal
-// v2026-03-07b - NOVÉ: záložka Objednat — výběr jídla 1-4 na zítřek, uloží objednávku do Google Sheets
-//              - nic jsem nesmazal
-// v2026-05-07 - OPRAVA: saveShift při chybě nesmaže stav
-//             - duplikát (101) → zobrazí chybu s návodem, stav zůstane
-//             - jiná chyba / výjimka → zobrazí chybu, stav zůstane
-//             - NOVÉ: emit 'clear-shift' přidán do emits
-//             - clearShiftState je veřejná metoda (volá ji main.js při clear-shift eventu)
-//             - nic jsem nesmazal
+//              - nic jsem nesmazal, pouze přidal filter metody a use-input na selecty
 
 window.app.component('home-component', {
   props: ['currentUser', 'isAdmin', 'contracts', 'jobs', 'places', 'loading'],
@@ -64,18 +51,7 @@ window.app.component('home-component', {
       // NOVÉ v2026-03-04c: filtrované seznamy pro vyhledávání v selectech
       contractOptionsFiltered: [],
       jobOptionsFiltered: [],
-      placeOptionsFiltered: [],
-      // NOVÉ v2026-03-07b: objednávka oběda
-      objednavkaJidlo: null,
-      objednavkaSaving: false,
-      objednavkaUlozena: false,
-      objednavkaUlozenaJidlo: null,
-      // Ceny ze sheetu pro zítra
-      objednavkaPrices: null,
-      objednavkaPricesLoading: false,
-      // Seznam objednávek ostatních
-      objednavkyOstatnich: [],
-      objednavkyOstatniLoading: false
+      placeOptionsFiltered: []
     }
   },
   
@@ -837,28 +813,20 @@ window.app.component('home-component', {
   `
 });
 
-// ── NEDOKONCENE-COMPONENT ─────────────────────────────────────────────────────
-window.app.component('nedokoncene-component', {
-  props: ['currentUser', 'contracts', 'jobs', 'places'],
-  emits: ['message', 'reload'],
+          <q-select v-model="doplnForm.contractId" :options="contractOptionsFiltered"
+            label="Zakázka *" emit-value map-options outlined class="q-mb-md"
+            use-input hide-selected fill-input input-debounce="0"
+            @filter="filterContracts" @focus="filterContracts('', v => contractOptionsFiltered = contractOptions)"/>
 
-  data() {
-    return {
-      nedokoncene: [],
-      nedokonceneLoading: false,
-      doplnForm: null,
-      doplnSaving: false,
-      contractOptionsFiltered: [],
-      jobOptionsFiltered: [],
-      placeOptionsFiltered: []
-    }
-  },
+          <q-select v-model="doplnForm.jobId" :options="jobOptionsFiltered"
+            label="Práce *" emit-value map-options outlined class="q-mb-md"
+            use-input hide-selected fill-input input-debounce="0"
+            @filter="filterJobs" @focus="filterJobs('', v => jobOptionsFiltered = jobOptions)"/>
 
-  computed: {
-    contractOptions() { return this.contracts.map(c => ({ label: c[0] + ' - ' + c[1], value: c[0] })); },
-    jobOptions()      { return this.jobs.map(j => ({ label: j[1], value: j[0] })); },
-    placeOptions()    { return this.places ? this.places.map(p => ({ label: p[1], value: p[0] })) : []; }
-  },
+          <q-select v-model="doplnForm.placeId" :options="placeOptionsFiltered"
+            label="Místo práce *" emit-value map-options outlined class="q-mb-md"
+            use-input hide-selected fill-input input-debounce="0"
+            @filter="filterPlaces" @focus="filterPlaces('', v => placeOptionsFiltered = placeOptions)"/>
 
   methods: {
     async loadNedokoncene() {
