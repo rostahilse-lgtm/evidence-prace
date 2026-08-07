@@ -2,6 +2,15 @@
 // v2026-02-27 - přesun Admin mezi Přehledy a Nástroje, Nástroje obsahují Statistiky+Deník
 //             - přidána funkce přihlásit jako pracovník (impersonace) s tlačítkem Zpět
 //             - nic jsem nesmazal, pouze přidal nové funkce
+// v2026-03-10 - NOVÉ: canNotifObedy (worker[8]=Y z sloupce I v pracovníci)
+// v2026-03-11 - NOVÉ: Nástroje vidí všichni přihlášení, přidána záložka Rozpracované
+//             - nic jsem nesmazal
+//             - NOVÉ: scheduleObedyCheck — timer v 18:00, zkontroluje objednávky, pošle notifikaci
+//             - nic jsem nesmazal
+// v2026-05-07 - NOVÉ: handleClearShift — propojení settings → home přes clear-shift event
+//             - přidán ref="homeComponent" na home-component
+//             - přidán @clear-shift na home-component a settings-component
+//             - nic jsem nesmazal
 
 window.app = Vue.createApp({
   data() {
@@ -29,7 +38,7 @@ window.app = Vue.createApp({
       realUser: null,
       realIsAdmin: false,
       // NÁSTROJE submenu
-      toolsView: 'stats'
+      toolsView: 'nedokoncene'
     }
   },
 
@@ -64,32 +73,34 @@ window.app = Vue.createApp({
         active: worker[2] === 'Y',
         admin: worker[3] === 'Y',
         canStats: worker[3] === 'Y' || worker[6] === 'Y',
-        canDenik: worker[3] === 'Y' || worker[7] === 'Y'
+        canDenik: worker[3] === 'Y' || worker[7] === 'Y',
+        canNotifObedy: worker[3] === 'Y' || worker[8] === 'Y'
       };
       this.isLoggedIn = true;
       this.isAdmin = this.currentUser.admin;
       localStorage.setItem('workerId', this.currentUser.id);
+      localStorage.setItem('canNotifObedy', this.currentUser.canNotifObedy ? 'Y' : 'N');
       await this.loadUserData();
       if (this.isAdmin) await this.loadAdminData();
+      this.scheduleObedyCheck();
       this.showMessage('Přihlášen: ' + this.currentUser.name);
     },
 
     // IMPERSONACE - přihlásit jako pracovník
     async loginAs(worker) {
-      // Ulož skutečného admina
       this.realUser = this.currentUser;
       this.realIsAdmin = this.isAdmin;
       this.impersonating = true;
-      // Přihlas jako vybraný pracovník (bez uložení do localStorage)
       this.currentUser = {
         id: worker[0],
         name: worker[1],
         active: worker[2] === 'Y',
         admin: worker[3] === 'Y',
         canStats: worker[3] === 'Y' || worker[6] === 'Y',
-        canDenik: worker[3] === 'Y' || worker[7] === 'Y'
+        canDenik: worker[3] === 'Y' || worker[7] === 'Y',
+        canNotifObedy: worker[3] === 'Y' || worker[8] === 'Y'
       };
-      this.isAdmin = false; // impersonovaný není admin
+      this.isAdmin = false;
       await this.loadUserData();
       this.currentView = 'home';
       this.showMessage('Zobrazuji jako: ' + this.currentUser.name);
@@ -112,7 +123,6 @@ window.app = Vue.createApp({
       this.loading = true;
       const source = localStorage.getItem('dataSource') || 'new';
       this.dataSource = source;
-
       const [c, j, s, r, a, p] = await Promise.all([
         apiCall('get', { type: 'contracts' }),
         apiCall('get', { type: 'jobs' }),
@@ -152,6 +162,43 @@ window.app = Vue.createApp({
       if (this.isAdmin) await this.loadAdminData();
     },
 
+    // NOVÉ v2026-03-10: naplánovat kontrolu objednávek v 18:00
+    scheduleObedyCheck() {
+      if (localStorage.getItem('notifObedy') !== 'true') return;
+      if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+      const now = new Date();
+      const check = new Date();
+      check.setHours(18, 0, 0, 0);
+      if (now >= check) return;
+      const delay = check.getTime() - now.getTime();
+      setTimeout(async () => {
+        try {
+          const tomorrow = new Date();
+          tomorrow.setDate(tomorrow.getDate() + 1);
+          tomorrow.setHours(11, 0, 0, 0);
+          const res = await apiCall('getobjednavky', { datum: tomorrow.getTime() });
+          if (res.code === '000' && (!res.data || res.data.length === 0)) {
+            if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+              navigator.serviceWorker.controller.postMessage({
+                type: 'SHOW_NOTIF',
+                title: '🍽 Obědy nejsou objednány!',
+                body: 'Nezapomeňte objednat obědy na zítřek.'
+              });
+            }
+          }
+        } catch(e) { /* noop */ }
+      }, delay);
+    },
+
+    // v2026-05-07: clear-shift handler
+    // settings emituje clear-shift → zavoláme clearShiftState na home komponentě
+    handleClearShift() {
+      const homeRef = this.$refs.homeComponent;
+      if (homeRef && homeRef.clearShiftState) {
+        homeRef.clearShiftState();
+      }
+    },
+
     logout() {
       this.isLoggedIn = false;
       this.currentUser = null;
@@ -181,7 +228,6 @@ window.app = Vue.createApp({
     <q-layout view="hHh lpR fFf">
       <q-header v-if="isLoggedIn" class="bg-primary text-white">
         <q-toolbar>
-          <!-- Zpět tlačítko při impersonaci -->
           <q-btn v-if="impersonating" flat dense icon="arrow_back" label="Zpět" @click="returnToAdmin" class="q-mr-sm"/>
           <q-toolbar-title>
             {{ currentUser.name }}
@@ -205,8 +251,9 @@ window.app = Vue.createApp({
             @message="showMessage"
           />
 
-          <!-- DOMŮ -->
+          <!-- DOMŮ - v2026-05-07: přidán ref a @clear-shift -->
           <home-component
+            ref="homeComponent"
             v-if="isLoggedIn && currentView === 'home' && !loading"
             :current-user="currentUser"
             :is-admin="isAdmin"
@@ -216,6 +263,7 @@ window.app = Vue.createApp({
             :loading="loading"
             @message="showMessage"
             @reload="reloadAll"
+            @clear-shift="handleClearShift"
           />
 
           <!-- PŘEHLEDY -->
@@ -242,12 +290,22 @@ window.app = Vue.createApp({
             @login-as="loginAs"
           />
 
-          <!-- NÁSTROJE (Statistiky + Deník) -->
+          <!-- NÁSTROJE -->
           <div v-if="isLoggedIn && currentView === 'tools' && !loading">
             <q-tabs v-model="toolsView" dense align="justify" class="text-primary q-mb-md">
+              <q-tab name="nedokoncene" icon="build" label="Rozpracované"/>
               <q-tab v-if="currentUser && currentUser.canStats" name="stats" icon="bar_chart" label="Statistiky"/>
               <q-tab v-if="currentUser && currentUser.canDenik" name="denik" icon="menu_book" label="Deník"/>
             </q-tabs>
+            <nedokoncene-component
+              v-if="toolsView === 'nedokoncene'"
+              :current-user="currentUser"
+              :contracts="contracts"
+              :jobs="jobs"
+              :places="places"
+              @message="showMessage"
+              @reload="reloadAll"
+            />
             <statistics-component
               v-if="toolsView === 'stats' && currentUser && currentUser.canStats"
               :all-records="statsRecords"
@@ -267,12 +325,13 @@ window.app = Vue.createApp({
             />
           </div>
 
-          <!-- NASTAVENÍ -->
+          <!-- NASTAVENÍ - v2026-05-07: přidán @clear-shift -->
           <settings-component
             v-if="isLoggedIn && currentView === 'settings' && !loading"
             @message="showMessage"
             @logout="logout"
             @reload="reloadAll"
+            @clear-shift="handleClearShift"
           />
         </q-page>
       </q-page-container>
@@ -282,7 +341,7 @@ window.app = Vue.createApp({
           <q-tab name="home" icon="home" label="Domů" />
           <q-tab name="summary" icon="assessment" label="Přehledy" />
           <q-tab v-if="isAdmin" name="admin" icon="admin_panel_settings" label="Admin" />
-          <q-tab v-if="currentUser && (currentUser.canStats || currentUser.canDenik)" name="tools" icon="widgets" label="Nástroje" />
+          <q-tab v-if="currentUser" name="tools" icon="widgets" label="Nástroje" />
           <q-tab name="settings" icon="settings" label="Nastavení" />
         </q-tabs>
       </q-footer>
