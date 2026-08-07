@@ -9,9 +9,6 @@
 //             - nic jsem nesmazal, pouze opravil výběr času a přidal příznak opraveno
 // v2026-03-04c - NOVÉ: vyhledávání v selectech Zakázka, Práce, Místo práce — po zmáčknutí naskočí klávesnice
 //              - nic jsem nesmazal, pouze přidal filter metody a use-input na selecty
-// v2026-03-05 - OPRAVA MERGE: odstraněn osiřelý duplicitní kód za koncem komponenty
-//             (zbytky nedokoncene-component vložené mimo objekt po merge z dev větve,
-//             způsobovaly syntax error a shodily celou stránku Domů)
 
 window.app.component('home-component', {
   props: ['currentUser', 'isAdmin', 'contracts', 'jobs', 'places', 'loading'],
@@ -812,6 +809,171 @@ window.app.component('home-component', {
         </div>
       </div>
 
+    </div>
+  `
+});
+
+          <q-select v-model="doplnForm.contractId" :options="contractOptionsFiltered"
+            label="Zakázka *" emit-value map-options outlined class="q-mb-md"
+            use-input hide-selected fill-input input-debounce="0"
+            @filter="filterContracts" @focus="filterContracts('', v => contractOptionsFiltered = contractOptions)"/>
+
+          <q-select v-model="doplnForm.jobId" :options="jobOptionsFiltered"
+            label="Práce *" emit-value map-options outlined class="q-mb-md"
+            use-input hide-selected fill-input input-debounce="0"
+            @filter="filterJobs" @focus="filterJobs('', v => jobOptionsFiltered = jobOptions)"/>
+
+          <q-select v-model="doplnForm.placeId" :options="placeOptionsFiltered"
+            label="Místo práce *" emit-value map-options outlined class="q-mb-md"
+            use-input hide-selected fill-input input-debounce="0"
+            @filter="filterPlaces" @focus="filterPlaces('', v => placeOptionsFiltered = placeOptions)"/>
+
+  methods: {
+    async loadNedokoncene() {
+      this.nedokonceneLoading = true;
+      try {
+        const res = await apiCall('getrecords', { id_worker: this.currentUser.id, source: 'new' });
+        if (res.code === '000' && res.data) {
+          this.nedokoncene = res.data.filter(r => String(r[15] || '').trim() === 'rozpracováno');
+        }
+      } catch(e) {}
+      this.nedokonceneLoading = false;
+    },
+
+    zacitDoplnovat(r) {
+      this.doplnForm = {
+        rowIndex: r[16], timeStart: Number(r[4]),
+        timeEnd: null, timeEndStr: '',
+        contractId: null, jobId: null, placeId: null, note: ''
+      };
+    },
+
+    zrusitDoplneni() { this.doplnForm = null; },
+
+    async ulozitDoplneni() {
+      if (!this.doplnForm.contractId || !this.doplnForm.jobId || !this.doplnForm.placeId) {
+        this.$emit('message', 'Vyplňte zakázku, práci a místo práce'); return;
+      }
+      if (!this.doplnForm.note || !this.doplnForm.note.trim()) {
+        this.$emit('message', 'Poznámka je povinná'); return;
+      }
+      if (!this.doplnForm.timeEnd) {
+        this.$emit('message', 'Zadejte čas odchodu'); return;
+      }
+      this.doplnSaving = true;
+      try {
+        const res = await apiCall('completerecord', {
+          row_index: this.doplnForm.rowIndex,
+          id_contract: this.doplnForm.contractId,
+          id_worker: this.currentUser.id,
+          id_job: this.doplnForm.jobId,
+          id_place: this.doplnForm.placeId,
+          time_fr: this.doplnForm.timeStart,
+          time_to: this.doplnForm.timeEnd,
+          note: this.doplnForm.note,
+          opraveno: 'Y'
+        });
+        if (res.code === '000') {
+          this.$emit('message', '✓ Záznam doplněn a uložen');
+          this.doplnForm = null;
+          await this.loadNedokoncene();
+          this.$emit('reload');
+        } else {
+          this.$emit('message', 'Chyba: ' + (res.error || ''));
+        }
+      } catch(e) { this.$emit('message', 'Chyba při ukládání'); }
+      this.doplnSaving = false;
+    },
+
+    filterContracts(val, update) {
+      update(() => {
+        const n = val.toLowerCase();
+        this.contractOptionsFiltered = val === '' ? this.contractOptions
+          : this.contractOptions.filter(o => o.label.toLowerCase().includes(n));
+      });
+    },
+    filterJobs(val, update) {
+      update(() => {
+        const n = val.toLowerCase();
+        this.jobOptionsFiltered = val === '' ? this.jobOptions
+          : this.jobOptions.filter(o => o.label.toLowerCase().includes(n));
+      });
+    },
+    filterPlaces(val, update) {
+      update(() => {
+        const n = val.toLowerCase();
+        this.placeOptionsFiltered = val === '' ? this.placeOptions
+          : this.placeOptions.filter(o => o.label.toLowerCase().includes(n));
+      });
+    }
+  },
+
+  mounted() { this.loadNedokoncene(); },
+
+  template: `
+    <div class="q-pt-sm">
+      <div class="q-mb-sm q-pa-xs text-caption text-orange-8" style="background:#fff3e0;border-radius:4px">
+        ⚠ Záznamy kde chybí zakázka, práce nebo odchod. Doplňte je kdykoli.
+      </div>
+      <div v-if="nedokonceneLoading" class="text-center q-pa-md"><q-spinner color="orange" size="2em"/></div>
+      <div v-else-if="nedokoncene.length === 0" class="text-center text-grey-7 q-mt-lg">✓ Žádné rozpracované záznamy</div>
+      <div v-else-if="!doplnForm">
+        <div v-for="(r, idx) in nedokoncene" :key="idx" class="record-card q-mb-sm">
+          <div class="row items-center">
+            <div class="col">
+              <div class="text-bold text-orange-8">Příchod: {{ new Date(Number(r[4])).toLocaleString("cs-CZ", {day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}) }}</div>
+              <div class="text-caption text-grey-7">{{ r[0] || "Zakázka nevyplněna" }} • {{ r[3] || "Práce nevyplněna" }}</div>
+            </div>
+            <q-btn color="orange" icon="edit" label="Doplnit" size="sm" unelevated @click="zacitDoplnovat(r)"/>
+          </div>
+        </div>
+      </div>
+      <div v-else>
+        <div class="q-mb-md q-pa-sm text-center" style="background:#fff3e0;border-radius:4px">
+          <div class="text-bold text-orange-8">Příchod: {{ new Date(doplnForm.timeStart).toLocaleString("cs-CZ", {day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}) }}</div>
+          <div class="text-caption text-grey-6">Čas příchodu nelze měnit</div>
+        </div>
+        <div class="q-mb-md">
+          <q-input v-model="doplnForm.timeEndStr" label="Čas odchodu *" outlined dense readonly
+            hint="Datum příchodu se použije automaticky">
+            <template v-slot:prepend><q-icon name="logout" color="orange"/></template>
+            <template v-slot:append>
+              <q-icon name="schedule" class="cursor-pointer" color="primary">
+                <q-popup-proxy cover ref="doplnTimeProxy">
+                  <q-time v-model="doplnForm.timeEndStr" mask="HH:mm" format24h
+                    @update:model-value="val => {
+                      if (val && val.length === 5) {
+                        $refs.doplnTimeProxy.hide();
+                        const d = new Date(doplnForm.timeStart);
+                        const [h, m] = val.split(':');
+                        d.setHours(parseInt(h), parseInt(m), 0);
+                        doplnForm.timeEnd = d.getTime();
+                      }
+                    }"
+                  />
+                </q-popup-proxy>
+              </q-icon>
+            </template>
+          </q-input>
+        </div>
+        <q-select v-model="doplnForm.contractId" :options="contractOptionsFiltered"
+          label="Zakázka *" emit-value map-options outlined class="q-mb-md"
+          use-input hide-selected fill-input input-debounce="0"
+          @filter="filterContracts" @focus="filterContracts('', v => contractOptionsFiltered = contractOptions)"/>
+        <q-select v-model="doplnForm.jobId" :options="jobOptionsFiltered"
+          label="Práce *" emit-value map-options outlined class="q-mb-md"
+          use-input hide-selected fill-input input-debounce="0"
+          @filter="filterJobs" @focus="filterJobs('', v => jobOptionsFiltered = jobOptions)"/>
+        <q-select v-model="doplnForm.placeId" :options="placeOptionsFiltered"
+          label="Místo práce *" emit-value map-options outlined class="q-mb-md"
+          use-input hide-selected fill-input input-debounce="0"
+          @filter="filterPlaces" @focus="filterPlaces('', v => placeOptionsFiltered = placeOptions)"/>
+        <q-input v-model="doplnForm.note" label="Poznámka *" outlined class="q-mb-md" type="textarea" rows="3"/>
+        <div class="row q-gutter-sm">
+          <q-btn @click="ulozitDoplneni" label="Uložit záznam" color="primary" :loading="doplnSaving" class="col" size="lg" unelevated/>
+          <q-btn @click="zrusitDoplneni" label="Zpět" color="grey" outline size="lg"/>
+        </div>
+      </div>
     </div>
   `
 });
