@@ -17,6 +17,12 @@
 //             - záznamy_historie → editace jde zpět do záznamy_historie
 //             - záznamy → editace jde do záznamy
 //             - nic jsem nesmazal
+// v2026-08-08 - OPRAVA: saveDuplicate (tlačítko "Kopírovat" v Přehledu dne) přidává
+//             insert_after_date do payloadu → backend (addRecord v kod.gs) tak vloží
+//             nový řádek chronologicky za poslední záznam daného dne, místo appendRow
+//             na konec listu. Bez tohoto parametru se duplikát řadil na konec tabulky
+//             a rozbíjel chronologické pořadí záznamů.
+//             - změněn POUZE payload v saveDuplicate(), nic jiného nedotčeno
 
 window.app.component('admin-component', {
   props: ['allSummary', 'allRecords', 'allAdvances', 'contracts', 'jobs', 'places', 'loading'],
@@ -276,6 +282,9 @@ window.app.component('admin-component', {
       } catch (error) { this.$emit('message', 'Chyba při úpravě'); }
     },
     
+    // v2026-08-08 OPRAVA: přidán insert_after_date do payloadu, aby se duplikát
+    // vložil chronologicky za poslední záznam daného dne (viz addRecord v kod.gs),
+    // místo aby se appendoval na konec celé tabulky.
     async saveDuplicate() {
       if (!this.editForm.workerId || !this.editForm.contractId || !this.editForm.jobId || !this.editForm.placeId || !this.editForm.timeFrom || !this.editForm.timeTo) {
         this.$emit('message', 'Vyplňte všechna pole'); return;
@@ -283,7 +292,17 @@ window.app.component('admin-component', {
       const timeFr = this.dateTimeToTimestamp(this.editForm.dateEdit, this.editForm.timeFrom);
       const timeTo = this.dateTimeToTimestamp(this.editForm.dateEdit, this.editForm.timeTo);
       try {
-        const payload = { id_contract: this.editForm.contractId, id_worker: this.editForm.workerId, id_job: this.editForm.jobId, id_place: this.editForm.placeId, time_fr: timeFr, time_to: timeTo, note: this.editForm.note };
+        const payload = {
+          id_contract: this.editForm.contractId,
+          id_worker: this.editForm.workerId,
+          id_job: this.editForm.jobId,
+          id_place: this.editForm.placeId,
+          time_fr: timeFr,
+          time_to: timeTo,
+          note: this.editForm.note,
+          // v2026-08-08: zajistí chronologické zařazení duplikátu do dne
+          insert_after_date: this.editForm.dateEdit
+        };
         if (this.editForm.kmManual && this.editForm.kmJednosmer) { payload.km_jednosmer = this.editForm.kmJednosmer; payload.km_celkem = this.calculatedKmEdit; payload.km_rucne = 'Y'; }
         const res = await apiCall('saverecord', payload);
         if (res.code === '000') { this.$emit('message', '✓ Kopie uložena'); this.duplicateDialog = false; this.$emit('reload'); this.loadDayRecords(); }
