@@ -324,6 +324,10 @@ window.app = Vue.createApp({
               :contracts="contracts"
               @message="showMessage"
             />
+            <kontrola-component
+              v-if="toolsView === 'kontrola' && isAdmin"
+              @message="showMessage"
+            />
           </div>
 
           <!-- NASTAVENÍ - v2026-05-07: přidán @clear-shift -->
