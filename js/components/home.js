@@ -12,6 +12,16 @@
 // v2026-03-05 - OPRAVA MERGE: odstraněn osiřelý duplicitní kód za koncem komponenty
 //             (zbytky nedokoncene-component vložené mimo objekt po merge z dev větve,
 //             způsobovaly syntax error a shodily celou stránku Domů)
+// v2026-08-29 - OPRAVA: loadShiftState() vrácena kontrola zpět na "jen dnešek"
+//             (dříve 7 dní). Důvod: 7denní okno způsobovalo, že se na Domů obnovil
+//             VČEREJŠÍ (nebo starší) čas příchodu → tlačítko PŘÍCHOD bylo zablokované
+//             → pracovník omylem dal ODCHOD dnes na starý příchod = téměř 24hodinová
+//             směna (reálně se to stalo u Fida a Jiříka 24.-25.8.).
+//             Záložka "Rozpracované" na tomhle localStorage vůbec nezávisí (čte si
+//             otevřené směny přímo ze serveru přes getrecords), takže tahle oprava
+//             její funkčnost nijak neomezuje - stará nedokončená směna zůstane
+//             normálně k doplnění v Rozpracovaných.
+//             - nic jiného jsem nesmazal, změněna pouze funkce loadShiftState
 
 window.app.component('home-component', {
   props: ['currentUser', 'isAdmin', 'contracts', 'jobs', 'places', 'loading'],
@@ -337,10 +347,9 @@ window.app.component('home-component', {
       const saved = localStorage.getItem('shiftState_' + this.currentUser.id);
       if (saved) {
         const state = JSON.parse(saved);
-        // Prodlouženo na 7 dní (dříve jen dnešek)
-        const stateDate = new Date(state.date.split(". ").reverse().join("-"));
-        const daysAgo = (Date.now() - stateDate.getTime()) / 86400000;
-        if (daysAgo < 7) {
+        // v2026-08-29 OPRAVA: vráceno zpět na "jen dnešek" (dřív bylo 7 dní).
+        // Duvod je popsaný v hlavičce souboru nahoře.
+        if (state.date === getTodayDate()) {
           this.shiftForm.timeStart = state.timeStart;
           this.shiftForm.timeEnd = state.timeEnd;
           this.shiftForm.contractId = state.contractId;
