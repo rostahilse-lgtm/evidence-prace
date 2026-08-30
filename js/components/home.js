@@ -4,15 +4,11 @@
 // v2026-03-01 - přidána záložka Rozpracované: kluci mohou kdykoli doplnit nedokončený záznam
 //             - prodlouženo uchování lokálního stavu ze 1 dne na 7 dní
 //             - NIC JSEM NESMAZAL, pouze přidal nové funkce
-// v2026-03-04 - OPRAVA: výběr času odchodu v Rozpracovaných nahrazen Quasar time pickerem (místo textového pole)
+// v2026-03-04 - OPRAVA: výběr času odchodu v Rozpracovaných nahrazen Quasar time pickerem
 //             - NOVÉ: při uložení doplnění se posílá opraveno:'Y' → v tabulce se zapíše 'opraveno' do sloupce P
-//             - nic jsem nesmazal, pouze opravil výběr času a přidal příznak opraveno
-// v2026-03-04c - NOVÉ: vyhledávání v selectech Zakázka, Práce, Místo práce — po zmáčknutí naskočí klávesnice
-//              - nic jsem nesmazal, pouze přidal filter metody a use-input na selecty
-// v2026-03-05 - OPRAVA MERGE: odstraněn osiřelý duplicitní kód za koncem komponenty
-//             (zbytky nedokoncene-component vložené mimo objekt po merge z dev větve,
-//             způsobovaly syntax error a shodily celou stránku Domů)
-// v2026-08-29 - OPRAVA: loadShiftState() vrácena kontrola zpět na "jen dnešek"
+// v2026-03-04c - NOVÉ: vyhledávání v selectech Zakázka, Práce, Místo práce
+// v2026-08-07 - OPRAVA: odstraněny zbytky kódu po merge konfliktu (způsobovaly prázdnou stránku)
+// v2026-08-30 - OPRAVA: loadShiftState() vrácena kontrola zpět na "jen dnešek"
 //             (dříve 7 dní). Důvod: 7denní okno způsobovalo, že se na Domů obnovil
 //             VČEREJŠÍ (nebo starší) čas příchodu → tlačítko PŘÍCHOD bylo zablokované
 //             → pracovník omylem dal ODCHOD dnes na starý příchod = téměř 24hodinová
@@ -22,6 +18,9 @@
 //             její funkčnost nijak neomezuje - stará nedokončená směna zůstane
 //             normálně k doplnění v Rozpracovaných.
 //             - nic jiného jsem nesmazal, změněna pouze funkce loadShiftState
+//             (POZN.: tento soubor vychází z main větve, kde Rozpracované funguje
+//             správně od 2026-08-07 - dev větev tuto opravu nikdy nedostala,
+//             proto tam Rozpracované chybělo)
 
 window.app.component('home-component', {
   props: ['currentUser', 'isAdmin', 'contracts', 'jobs', 'places', 'loading'],
@@ -42,7 +41,6 @@ window.app.component('home-component', {
         amount: null,
         reason: ''
       },
-      // v2026-05-07b: blokace dvojitého kliknutí při ukládání zálohy
       advanceSaving: false,
       contractKm: 0,
       kmManual: false,
@@ -56,15 +54,21 @@ window.app.component('home-component', {
       lunchPrice: null,
       lunchPrices: null,
       lunchPricesLoading: false,
-      // ROZPRACOVANÉ
       nedokoncene: [],
       nedokonceneLoading: false,
-      doplnForm: null,  // { rowIndex, timeStart, timeEnd, timeEndStr, contractId, jobId, placeId, note }
+      doplnForm: null,
       doplnSaving: false,
-      // NOVÉ v2026-03-04c: filtrované seznamy pro vyhledávání v selectech
       contractOptionsFiltered: [],
       jobOptionsFiltered: [],
-      placeOptionsFiltered: []
+      placeOptionsFiltered: [],
+      objednavkaJidlo: null,
+      objednavkaPrices: null,
+      objednavkaPricesLoading: false,
+      objednavkaSaving: false,
+      objednavkaUlozena: false,
+      objednavkaUlozenaJidlo: null,
+      objednavkyOstatnich: [],
+      objednavkyOstatniLoading: false
     }
   },
   
@@ -231,10 +235,6 @@ window.app.component('home-component', {
       }
     },
     
-    // v2026-05-07: OPRAVA error handling
-    // - úspěch (000) → smaže stav, OK
-    // - duplikát (101) → zobrazí chybu s návodem, NESMAŽE stav
-    // - jiná chyba / výjimka → zobrazí chybu, NESMAŽE stav
     async saveShift() {
       if (!this.shiftForm.contractId || !this.shiftForm.jobId || !this.shiftForm.timeStart || !this.shiftForm.timeEnd) {
         this.$emit('message', 'Vyplňte všechna pole');
@@ -276,29 +276,23 @@ window.app.component('home-component', {
           this.clearShiftState();
           this.$emit('reload');
         } else if (res.code === '101') {
-          // Duplikát - stav se NESMAŽE, uživatel vidí chybu s návodem
           this.$emit('message', '⚠️ Tato směna je již uložena. Pokud je problém, jděte do Nastavení → Smazat směnu.');
         } else {
-          // Jiná chyba - stav se NESMAŽE
           this.$emit('message', '❌ Chyba při ukládání: ' + (res.error || 'Neznámá chyba'));
         }
       } catch (error) {
-        // Výjimka (offline, timeout) - stav se NESMAŽE
         console.error('Save shift error:', error);
         this.$emit('message', '❌ Chyba připojení. Zkuste znovu nebo jděte do Nastavení → Smazat směnu.');
       }
     },
     
-    // NOVÉ v2026-03-04c: filter metody pro vyhledávání v selectech
     filterContracts(val, update) {
       update(() => {
         if (val === '') {
           this.contractOptionsFiltered = this.contractOptions;
         } else {
           const needle = val.toLowerCase();
-          this.contractOptionsFiltered = this.contractOptions.filter(
-            o => o.label.toLowerCase().includes(needle)
-          );
+          this.contractOptionsFiltered = this.contractOptions.filter(o => o.label.toLowerCase().includes(needle));
         }
       });
     },
@@ -309,9 +303,7 @@ window.app.component('home-component', {
           this.jobOptionsFiltered = this.jobOptions;
         } else {
           const needle = val.toLowerCase();
-          this.jobOptionsFiltered = this.jobOptions.filter(
-            o => o.label.toLowerCase().includes(needle)
-          );
+          this.jobOptionsFiltered = this.jobOptions.filter(o => o.label.toLowerCase().includes(needle));
         }
       });
     },
@@ -322,9 +314,7 @@ window.app.component('home-component', {
           this.placeOptionsFiltered = this.placeOptions;
         } else {
           const needle = val.toLowerCase();
-          this.placeOptionsFiltered = this.placeOptions.filter(
-            o => o.label.toLowerCase().includes(needle)
-          );
+          this.placeOptionsFiltered = this.placeOptions.filter(o => o.label.toLowerCase().includes(needle));
         }
       });
     },
@@ -347,7 +337,7 @@ window.app.component('home-component', {
       const saved = localStorage.getItem('shiftState_' + this.currentUser.id);
       if (saved) {
         const state = JSON.parse(saved);
-        // v2026-08-29 OPRAVA: vráceno zpět na "jen dnešek" (dřív bylo 7 dní).
+        // v2026-08-30 OPRAVA: vráceno zpět na "jen dnešek" (dřív bylo 7 dní).
         // Duvod je popsaný v hlavičce souboru nahoře.
         if (state.date === getTodayDate()) {
           this.shiftForm.timeStart = state.timeStart;
@@ -365,7 +355,6 @@ window.app.component('home-component', {
       return false;
     },
 
-    // NOVÁ FUNKCE v2026-02-27: načte rozpracovanou šichtu z tabulky na novém zařízení
     async checkCloudShift() {
       try {
         const res = await apiCall('getdayrecords', { date: getTodayDate() });
@@ -379,12 +368,9 @@ window.app.component('home-component', {
           this.saveShiftState();
           this.$emit('message', '☁ Načtena rozpracovaná šichta: ' + formatTime(this.shiftForm.timeStart));
         }
-      } catch (e) {
-        // tiše selže - nevadí
-      }
+      } catch (e) {}
     },
     
-    // ── ROZPRACOVANÉ ──────────────────────────────────────────
     async loadNedokoncene() {
       this.nedokonceneLoading = true;
       try {
@@ -392,7 +378,7 @@ window.app.component('home-component', {
         if (res.code === '000' && res.data) {
           this.nedokoncene = res.data.filter(r => String(r[15] || '').trim() === 'rozpracováno');
         }
-      } catch(e) { /* tiše */ }
+      } catch(e) {}
       this.nedokonceneLoading = false;
     },
 
@@ -454,8 +440,6 @@ window.app.component('home-component', {
       this.doplnSaving = false;
     },
 
-    // v2026-05-07: clearShiftState je veřejná metoda
-    // volá se při úspěšném uložení i z main.js přes clear-shift event ze settings
     clearShiftState() {
       localStorage.removeItem('shiftState_' + this.currentUser.id);
       this.shiftForm = {
@@ -566,13 +550,12 @@ window.app.component('home-component', {
       }
     },
     
-    // v2026-05-07b: blokace dvojitého kliknutí + ošetření duplikátu (101)
     async saveAdvance() {
       if (!this.advanceForm.amount || !this.advanceForm.reason) {
         this.$emit('message', 'Vyplňte částku a důvod');
         return;
       }
-      if (this.advanceSaving) return; // blokace dvojkliku
+      if (this.advanceSaving) return;
       this.advanceSaving = true;
       try {
         const res = await apiCall('saveadvance', {
@@ -625,6 +608,7 @@ window.app.component('home-component', {
     }
     this.lunchDate = this.getTodayFormatted();
     this.loadLunchPrices(this.lunchDate);
+    this.loadNedokoncene();
   },
   
   template: `
@@ -634,6 +618,7 @@ window.app.component('home-component', {
         <q-tab name="lunch" label="Oběd"/>
         <q-tab name="advance" label="Záloha"/>
         <q-tab name="objednat" label="Objednat"/>
+        <q-tab name="nedokoncene" label="Rozpracované"/>
       </q-tabs>
       
       <!-- SMĚNA -->
@@ -757,17 +742,11 @@ window.app.component('home-component', {
       <!-- OBJEDNAT OBĚD -->
       <div v-if="currentTab==='objednat'" class="q-pt-md">
         <div class="text-subtitle1 text-bold q-mb-xs">🍽 Objednávka oběda na zítřek</div>
-        <div class="text-caption text-grey-7 q-mb-md">
-          Jídla 1–3 = <strong>130 Kč</strong> &nbsp;|&nbsp; Jídlo 4 = <strong>145 Kč</strong>
-        </div>
 
         <div v-if="objednavkaUlozena" class="q-mb-md q-pa-md text-center"
           style="background:#e8f5e9; border-radius:8px; border:2px solid #4caf50">
           <div class="text-h5 text-green-8">✓ Objednáno</div>
           <div class="text-h6 text-green-7">Jídlo č. {{ objednavkaUlozenaJidlo }}</div>
-          <div class="text-caption text-grey-7 q-mt-xs">
-            {{ objednavkaUlozenaJidlo <= 3 ? '130 Kč' : '145 Kč' }}
-          </div>
           <q-btn flat dense label="Změnit" size="sm" color="grey" class="q-mt-sm"
             @click="objednavkaUlozena = false; objednavkaJidlo = objednavkaUlozenaJidlo"/>
         </div>
@@ -817,6 +796,72 @@ window.app.component('home-component', {
               <span class="col"/>
               <span class="text-grey-6" style="font-size:0.78rem">{{ r[5] }} Kč</span>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ROZPRACOVANÉ -->
+      <div v-if="currentTab==='nedokoncene'" class="q-pt-sm">
+        <div class="q-mb-sm q-pa-xs text-caption text-orange-8" style="background:#fff3e0;border-radius:4px">
+          ⚠ Záznamy kde chybí zakázka, práce nebo odchod. Doplňte je kdykoli.
+        </div>
+        <div v-if="nedokonceneLoading" class="text-center q-pa-md"><q-spinner color="orange" size="2em"/></div>
+        <div v-else-if="nedokoncene.length === 0" class="text-center text-grey-7 q-mt-lg">✓ Žádné rozpracované záznamy</div>
+        <div v-else-if="!doplnForm">
+          <div v-for="(r, idx) in nedokoncene" :key="idx" class="record-card q-mb-sm">
+            <div class="row items-center">
+              <div class="col">
+                <div class="text-bold text-orange-8">Příchod: {{ new Date(Number(r[4])).toLocaleString("cs-CZ", {day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}) }}</div>
+                <div class="text-caption text-grey-7">{{ r[0] || "Zakázka nevyplněna" }} • {{ r[3] || "Práce nevyplněna" }}</div>
+              </div>
+              <q-btn color="orange" icon="edit" label="Doplnit" size="sm" unelevated @click="zacitDoplnovat(r)"/>
+            </div>
+          </div>
+        </div>
+        <div v-else>
+          <div class="q-mb-md q-pa-sm text-center" style="background:#fff3e0;border-radius:4px">
+            <div class="text-bold text-orange-8">Příchod: {{ new Date(doplnForm.timeStart).toLocaleString("cs-CZ", {day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}) }}</div>
+            <div class="text-caption text-grey-6">Čas příchodu nelze měnit</div>
+          </div>
+          <div class="q-mb-md">
+            <q-input v-model="doplnForm.timeEndStr" label="Čas odchodu *" outlined dense readonly
+              hint="Datum příchodu se použije automaticky">
+              <template v-slot:prepend><q-icon name="logout" color="orange"/></template>
+              <template v-slot:append>
+                <q-icon name="schedule" class="cursor-pointer" color="primary">
+                  <q-popup-proxy cover ref="doplnTimeProxy">
+                    <q-time v-model="doplnForm.timeEndStr" mask="HH:mm" format24h
+                      @update:model-value="val => {
+                        if (val && val.length === 5) {
+                          $refs.doplnTimeProxy.hide();
+                          const d = new Date(doplnForm.timeStart);
+                          const [h, m] = val.split(':');
+                          d.setHours(parseInt(h), parseInt(m), 0);
+                          doplnForm.timeEnd = d.getTime();
+                        }
+                      }"
+                    />
+                  </q-popup-proxy>
+                </q-icon>
+              </template>
+            </q-input>
+          </div>
+          <q-select v-model="doplnForm.contractId" :options="contractOptionsFiltered"
+            label="Zakázka *" emit-value map-options outlined class="q-mb-md"
+            use-input hide-selected fill-input input-debounce="0"
+            @filter="filterContracts" @focus="filterContracts('', v => contractOptionsFiltered = contractOptions)"/>
+          <q-select v-model="doplnForm.jobId" :options="jobOptionsFiltered"
+            label="Práce *" emit-value map-options outlined class="q-mb-md"
+            use-input hide-selected fill-input input-debounce="0"
+            @filter="filterJobs" @focus="filterJobs('', v => jobOptionsFiltered = jobOptions)"/>
+          <q-select v-model="doplnForm.placeId" :options="placeOptionsFiltered"
+            label="Místo práce *" emit-value map-options outlined class="q-mb-md"
+            use-input hide-selected fill-input input-debounce="0"
+            @filter="filterPlaces" @focus="filterPlaces('', v => placeOptionsFiltered = placeOptions)"/>
+          <q-input v-model="doplnForm.note" label="Poznámka *" outlined class="q-mb-md" type="textarea" rows="3"/>
+          <div class="row q-gutter-sm">
+            <q-btn @click="ulozitDoplneni" label="Uložit záznam" color="primary" :loading="doplnSaving" class="col" size="lg" unelevated/>
+            <q-btn @click="zrusitDoplneni" label="Zpět" color="grey" outline size="lg"/>
           </div>
         </div>
       </div>
