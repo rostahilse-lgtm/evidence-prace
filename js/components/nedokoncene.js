@@ -1,9 +1,10 @@
 // nedokoncene.js
-// v2026-08-30 - NOVÝ SOUBOR
-// Logika "Rozpracované" vyňatá z home.js do samostatné komponenty, aby mohla
-// být zobrazena v Nástrojích (vedle Statistiky, Deník, Kontrola dat) místo
-// přímo v Domů. Kód je 1:1 zkopírovaný z fungující verze v home.js (main větev)
-// - nic v logice/chování se neměnilo, jen se přesunul do vlastního souboru.
+// v2026-08-30 - NOVÝ SOUBOR: Rozpracované vyňato z home.js do samostatné komponenty
+// v2026-08-31 - OPRAVA: rowIndex byl na špatném indexu (r[16] = sloupec stav/log,
+//             ne číslo řádku). getWorkerRecords v kod.gs dělá slice(0,17) [indexy 0-16]
+//             a teprve POTOM r.push(i) přidá skutečné číslo řádku jako index 17.
+//             Proto se posílal NaN na server -> "Počáteční řádek rozsahu je příliš malý"
+//             OPRAVENO: rowIndex: r[16] -> rowIndex: r[17]
 
 window.app.component('nedokoncene-component', {
   props: ['currentUser', 'contracts', 'jobs', 'places'],
@@ -13,7 +14,7 @@ window.app.component('nedokoncene-component', {
     return {
       nedokoncene: [],
       nedokonceneLoading: false,
-      doplnForm: null,  // { rowIndex, timeStart, timeEnd, timeEndStr, contractId, jobId, placeId, note }
+      doplnForm: null,
       doplnSaving: false,
       contractOptionsFiltered: [],
       jobOptionsFiltered: [],
@@ -47,7 +48,7 @@ window.app.component('nedokoncene-component', {
 
     zacitDoplnovat(r) {
       this.doplnForm = {
-        rowIndex: r[16],
+        rowIndex: r[17],
         timeStart: Number(r[4]),
         timeEnd: null,
         timeEndStr: '',
