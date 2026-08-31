@@ -296,7 +296,7 @@ window.app = Vue.createApp({
               <q-tab name="nedokoncene" icon="build" label="Rozpracované"/>
               <q-tab v-if="currentUser && currentUser.canStats" name="stats" icon="bar_chart" label="Statistiky"/>
               <q-tab v-if="currentUser && currentUser.canDenik" name="denik" icon="menu_book" label="Deník"/>
-              <q-tab v-if="isAdmin" name="kontrola" icon="compare_arrows" label="Kontrola dat"/>   ← PŘIDAT              
+              <q-tab v-if="isAdmin" name="kontrola" icon="compare_arrows" label="Kontrola dat"/>             
             </q-tabs>
             <nedokoncene-component
               v-if="toolsView === 'nedokoncene'"
