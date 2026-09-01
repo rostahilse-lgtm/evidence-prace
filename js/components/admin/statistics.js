@@ -34,7 +34,13 @@ window.app.component('statistics-component', {
       // v2026-09-01: vlastní data, vždy source:'all'
       ownRecords: [],
       ownAdvances: [],
-      dataLoading: false
+      dataLoading: false,
+      // v2026-09-01b OPRAVA: byly nedefinované, selecty proto byly prázdné
+      // dokud na ně uživatel neklikl (spoléhalo se jen na @focus)
+      contractOptionsFiltered: [],
+      jobOptionsFiltered: [],
+      placeOptionsFiltered: [],
+      workerOptionsFiltered: []
     }
   },
   
@@ -344,6 +350,11 @@ window.app.component('statistics-component', {
   async mounted() {
     await this.loadWorkers();
     await this.loadAllData();
+    // v2026-09-01b OPRAVA: naplnit selecty rovnou, ne až po @focus
+    this.contractOptionsFiltered = this.contractOptions;
+    this.jobOptionsFiltered = this.jobOptions;
+    this.placeOptionsFiltered = this.placeOptions;
+    this.workerOptionsFiltered = this.workerOptions;
   },
   
   template: `
