@@ -1,8 +1,19 @@
 // statistics.js
 // v2026-03-04d - NOVÉ: vyhledávání v selectech Zakázky a Práce (use-input)
 //              - nic jsem nesmazal
+// v2026-09-01 - OPRAVA: 'isAdmin' chybělo v props, proto se filtry "Místa práce"
+//             a "Pracovníci" nikdy nezobrazily (ani adminovi) - v-if="isAdmin"
+//             vždy vyhodnotil undefined. Doplněno do props.
+//             NOVÉ: Statistiky si teď načítají vlastní data se source:'all'
+//             (nová appka + historie dohromady), nezávisle na globálním přepínači
+//             Nastavení → nová/historie/vše. Díky tomu admin při kontrole vidí
+//             vždy kompletní čísla. Props allRecords/allAdvances se už nepoužívají
+//             pro výpočty (nahrazeno vlastním načtením ownRecords/ownAdvances),
+//             ale ponechány v props kvůli zpětné kompatibilitě s main.js.
+//             - nic jiného se neměnilo
+
 window.app.component('statistics-component', {
-  props: ['allRecords', 'contracts', 'jobs', 'places', 'allAdvances'],
+  props: ['allRecords', 'contracts', 'jobs', 'places', 'allAdvances', 'isAdmin'],
   emits: ['message'],
   
   data() {
@@ -19,7 +30,11 @@ window.app.component('statistics-component', {
       workers: [],
       filteredRecords: [],
       customCharge: null,
-      showResults: false
+      showResults: false,
+      // v2026-09-01: vlastní data, vždy source:'all'
+      ownRecords: [],
+      ownAdvances: [],
+      dataLoading: false
     }
   },
   
@@ -78,7 +93,8 @@ window.app.component('statistics-component', {
     },
     
     totalPaid() {
-      if (!this.allAdvances) return 0;
+      // v2026-09-01: čte z ownAdvances (vždy 'all'), ne z allAdvances prop
+      if (!this.ownAdvances) return 0;
       
       const workerIds = new Set(this.filteredRecords.map(r => String(r[1])));
       
@@ -94,7 +110,7 @@ window.app.component('statistics-component', {
         dateTo = new Date(parts[2], parts[1] - 1, parts[0], 23, 59, 59);
       }
       
-      return Math.round(this.allAdvances.reduce((sum, adv) => {
+      return Math.round(this.ownAdvances.reduce((sum, adv) => {
         if (!workerIds.has(String(adv[0]))) return sum;
         
         if (dateFrom || dateTo) {
@@ -119,6 +135,22 @@ window.app.component('statistics-component', {
   },
   
   methods: {
+    // v2026-09-01 NOVÉ: vlastní načtení dat, vždy source:'all'
+    async loadAllData() {
+      this.dataLoading = true;
+      try {
+        const [r, a] = await Promise.all([
+          apiCall('getallrecords', { source: 'all' }),
+          apiCall('getalladvances', { source: 'all' })
+        ]);
+        if (r.code === '000' && r.data) this.ownRecords = r.data;
+        if (a.code === '000' && a.data) this.ownAdvances = a.data;
+      } catch (e) {
+        this.$emit('message', 'Chyba při načítání dat pro statistiky');
+      }
+      this.dataLoading = false;
+    },
+
     filterContracts(val, update) {
       update(() => {
         const needle = val.toLowerCase();
@@ -159,7 +191,8 @@ window.app.component('statistics-component', {
     },
     
     applyFilters() {
-      let filtered = [...this.allRecords];
+      // v2026-09-01: filtruje z ownRecords (vždy 'all'), ne z allRecords prop
+      let filtered = [...this.ownRecords];
       
       // Filtr zakázek
       if (this.filters.contracts.length > 0) {
@@ -310,14 +343,23 @@ window.app.component('statistics-component', {
   
   async mounted() {
     await this.loadWorkers();
+    await this.loadAllData();
   },
   
   template: `
     <div class="q-pa-md">
       <div class="text-h6 q-mb-md">📊 Statistiky a filtry</div>
+      <div class="q-mb-md q-pa-xs text-caption text-blue-8" style="background:#e3f2fd;border-radius:4px">
+        ℹ Statistiky vždy počítají ze všech dat (nová appka + historie), bez ohledu na nastavení zdroje dat v Nastavení.
+      </div>
+      
+      <div v-if="dataLoading" class="text-center q-pa-md">
+        <q-spinner color="primary" size="2em"/>
+        <div class="q-mt-sm text-grey-7">Načítám data...</div>
+      </div>
       
       <!-- FILTRY -->
-      <q-card class="q-mb-md">
+      <q-card v-if="!dataLoading" class="q-mb-md">
         <q-card-section>
           <div class="text-subtitle2 q-mb-sm">Filtry</div>
           
