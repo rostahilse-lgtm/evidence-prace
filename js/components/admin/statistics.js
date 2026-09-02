@@ -195,6 +195,20 @@ window.app.component('statistics-component', {
         this.workers = res.data;
       }
     },
+
+    // v2026-09-02 NOVÉ: vlastní formatTimeRange přímo v komponentě, nezávisle
+    // na globální funkci z utils.js (ta buď neexistuje pod tímhle jménem, nebo
+    // se jmenuje jinak - způsobovalo to "formatTimeMessage is not a function"
+    // a shodilo celou sekci výsledků)
+    formatTimeRange(fr, to) {
+      const fmt = (ts) => {
+        const d = new Date(Number(ts));
+        return String(d.getDate()).padStart(2, '0') + '. ' + String(d.getMonth() + 1).padStart(2, '0') + '. ' +
+          String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+      };
+      if (!fr) return '';
+      return to ? (fmt(fr) + ' - ' + fmt(to)) : fmt(fr);
+    },
     
     applyFilters() {
       // v2026-09-01: filtruje z ownRecords (vždy 'all'), ne z allRecords prop
