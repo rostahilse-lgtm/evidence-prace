@@ -569,8 +569,8 @@ window.app.component('statistics-component', {
               </div>
             </div>
             <div class="text-right">
-              <div class="text-bold text-primary">{{ record[7].toFixed(2) }} hod</div>
-              <div class="text-caption">{{ record[2] }} Kč/hod = {{ Math.round(record[2] * record[7]) }} Kč</div>
+              <div class="text-bold text-primary">{{ (parseFloat(record[7]) || 0).toFixed(2) }} hod</div>
+              <div class="text-caption">{{ record[2] }} Kč/hod = {{ Math.round((parseFloat(record[2]) || 0) * (parseFloat(record[7]) || 0)) }} Kč</div>
             </div>
           </div>
           <div class="text-caption text-grey-7 q-mt-sm">
