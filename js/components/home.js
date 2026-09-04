@@ -1,727 +1,836 @@
-// ADMIN.JS
-// v2026-02-24 - Oprava: loadDayRecords vrácen na lokální filtrování z allRecords
-// v2026-02-25b - přidána záložka Nástroje s opravou sazeb v historii
-// v2026-02-27 - odstraněna záložka Statistiky (přesunuta do Nástroje v main)
-//             - seznam pracovníků: přidáno ID, zálohy, tlačítko přihlásit jako
-//             - nic jsem nesmazal, pouze přidal nové funkce
-// v2026-04-06 - OPRAVA: saveEdit volá updaterecord místo saverecord
-//             - přidán row_index z editingRecord.data[17]
-//             - díky tomu se opravený záznam přepíše na stejném řádku (ne na konec)
-//             - do sloupce P se zapíše 'opraveno', do Q co bylo před změnou
-// v2026-04-06c - NOVÉ: dialog úpravy zobrazuje a umožňuje editovat KM
-//              - vlevo původní KM celkem (readonly), vpravo km jednosměr + checkbox tam a zpět
-//              - OPRAVA: při uložení se KM vždy posílají (zachovají hodnotu pokud nezměněny)
-//              - OPRAVA: výběr času - po dokončení (HH:MM) se popup automaticky zavře
-// v2026-04-09 - ROZCESTNÍK: saveEdit přidává source_sheet z editingRecord.data[18]
-//             - díky tomu updaterecord v kod.gs zapíše do správného listu
-//             - záznamy_historie → editace jde zpět do záznamy_historie
-//             - záznamy → editace jde do záznamy
-//             - nic jsem nesmazal
-// v2026-08-08 - OPRAVA: saveDuplicate (tlačítko "Kopírovat" v Přehledu dne) přidává
-//             insert_after_date do payloadu → backend (addRecord v kod.gs) tak vloží
-//             nový řádek chronologicky za poslední záznam daného dne, místo appendRow
-//             na konec listu. Bez tohoto parametru se duplikát řadil na konec tabulky
-//             a rozbíjel chronologické pořadí záznamů.
-//             - změněn POUZE payload v saveDuplicate(), nic jiného nedotčeno
+// home.js
+// v2026-02-25b - Oprava: česká lokalizace datumů (csLocale objekt), oprava UNDEFINED ceny oběda
+// v2026-02-27 - přidána funkce checkCloudShift
+// v2026-03-04 - OPRAVA: výběr času odchodu v Rozpracovaných nahrazen Quasar time pickerem
+// v2026-03-04c - NOVÉ: vyhledávání v selectech Zakázka, Práce, Místo práce
+// v2026-08-07 - OPRAVA: odstraněny zbytky kódu po merge konfliktu (způsobovaly prázdnou stránku)
+// v2026-08-30 - OPRAVA: loadShiftState() vrácena kontrola zpět na "jen dnešek" (dřív 7 dní)
+// v2026-08-30b - PŘESUN: záložka "Rozpracované" přesunuta do nedokoncene.js
+// v2026-08-31 - NOVÉ: automatický retry při výpadku připojení pro PŘÍCHOD, ODCHOD
+//             a Uložit směnu.
+//             - Fáze 1: rychlé opakování po 3s, 8s, 15s (odchytí krátký výpadek)
+//             - Fáze 2: pokud furt nejde, appka počká na signál prohlížeče
+//               "window online" (telefon zase má internet) a zkusí to hned znovu,
+//               opakovaně dokud se neuloží
+//             - NOVÉ: trvalá chybová hláška PŘÍMO V KARTĚ (arrivalError,
+//               departureError, shiftSaveError) - nezmizí sama, zůstane viditelná
+//               dokud se neuloží, aby uživatel věděl že má problém a může
+//               zkontrolovat/zapnout internet
+//             - Duplicitě nehrozí: kontrola v saveArrival (kod.gs) už brání
+//               vzniku dvou řádků při opakovaných pokusech ve stejný den
+//             - nic jiného se neměnilo
 
-window.app.component('admin-component', {
-  props: ['allSummary', 'allRecords', 'allAdvances', 'contracts', 'jobs', 'places', 'loading'],
-  emits: ['message', 'reload', 'login-as'],
+window.app.component('home-component', {
+  props: ['currentUser', 'isAdmin', 'contracts', 'jobs', 'places', 'loading'],
+  emits: ['message', 'reload', 'clear-shift'],
   
   data() {
     return {
-      adminTab: 'workers',
-      toolsLoading: false,
-      toolsResult: null,
-      selectedWorkerData: null,
-      summaryTab: 'records',
-      dayRecords: [],
-      workers: [],
-      selectedDate: null,
-      editDialog: false,
-      duplicateDialog: false,
-      lunchDialog: false,
-      advanceDialog: false,
-      editingRecord: null,
-      editForm: { 
-        workerId: null,
-        contractId: null, 
+      currentTab: 'shift',
+      shiftForm: {
+        contractId: null,
         jobId: null,
         placeId: null,
-        dateEdit: null,
-        timeFrom: null,
-        timeTo: null,
-        note: '',
-        kmJednosmer: 0,
-        kmManual: false,
-        kmRoundTrip: true
+        timeStart: null,
+        timeEnd: null,
+        note: ''
       },
-      originalRecord: null,
-      localSummary: null,
-      localRecords: null,
-      localAdvances: null,
-      filterLoading: false,
-      newLunch: { workerId: null, date: null, time: null },
-      newAdvance: { workerId: null, amount: null, reason: '', date: null }
+      advanceForm: {
+        amount: null,
+        reason: ''
+      },
+      advanceSaving: false,
+      contractKm: 0,
+      kmManual: false,
+      kmManualValue: null,
+      kmRoundTrip: true,
+      todayTripExists: false,
+      todayTripInfo: null,
+      cloudRowIndex: null,
+      cloudSaving: false,
+      lunchDate: '',
+      lunchPrice: null,
+      lunchPrices: null,
+      lunchPricesLoading: false,
+      contractOptionsFiltered: [],
+      jobOptionsFiltered: [],
+      placeOptionsFiltered: [],
+      objednavkaJidlo: null,
+      objednavkaPrices: null,
+      objednavkaPricesLoading: false,
+      objednavkaSaving: false,
+      objednavkaUlozena: false,
+      objednavkaUlozenaJidlo: null,
+      objednavkyOstatnich: [],
+      objednavkyOstatniLoading: false,
+      // v2026-08-31: trvalé chybové stavy zobrazené přímo v kartě
+      arrivalError: null,
+      departureError: null,
+      shiftSaveError: null,
+      // v2026-08-31: interní - aby šlo při úspěchu zrušit čekající "online" listener
+      _arrivalOnlineHandler: null,
+      _departureOnlineHandler: null,
+      _shiftSaveOnlineHandler: null
     }
   },
   
   computed: {
-    activeSummary() { return this.localSummary !== null ? this.localSummary : this.allSummary; },
-    // NOVÉ v2026-03-04e: aktivní pracovníci první, neaktivní na konci
-    sortedSummary() {
-      const s = [...this.activeSummary];
-      return s.sort((a, b) => {
-        const aActive = a.active !== false; // pokud active není v datech, považuj za aktivní
-        const bActive = b.active !== false;
-        if (aActive && !bActive) return -1;
-        if (!aActive && bActive) return 1;
-        return (a.name || '').localeCompare(b.name || '', 'cs');
-      });
+    cloudShiftEnabled() {
+      const saved = localStorage.getItem('cloudShift');
+      if (saved !== null) return saved === 'true';
+      return typeof DEFAULT_CLOUD_SHIFT !== 'undefined' ? DEFAULT_CLOUD_SHIFT : false;
     },
-    // NOVÉ v2026-03-04e: zálohy seskupené po pracovnících, max 3 zálohy na pracovníka
-    recentAdvancesByWorker() {
-      const all = [...this.activeAdvances]
-        .filter(a => a[5] !== 'oběd')
-        .sort((a, b) => Number(b[1]) - Number(a[1]));
-      const map = {};
-      for (const adv of all) {
-        const id = String(adv[0]);
-        const name = adv[2] || '?';
-        if (!map[id]) map[id] = { id, name, advances: [] };
-        if (map[id].advances.length < 3) {
-          map[id].advances.push(adv);
-        }
+    contractOptions() {
+      return this.contracts.map(c => ({ label: c[0] + ' - ' + c[1], value: c[0] }));
+    },
+    jobOptions() {
+      return this.jobs.map(j => ({ label: j[1], value: j[0] }));
+    },
+    placeOptions() {
+      return this.places ? this.places.map(p => ({ label: p[1], value: p[0] })) : [];
+    },
+    formattedStartTime() {
+      return this.shiftForm.timeStart ? formatShortDateTime(this.shiftForm.timeStart) : '';
+    },
+    formattedEndTime() {
+      return this.shiftForm.timeEnd ? formatShortDateTime(this.shiftForm.timeEnd) : '';
+    },
+    workedHours() {
+      if (this.shiftForm.timeStart && this.shiftForm.timeEnd) {
+        return ((this.shiftForm.timeEnd - this.shiftForm.timeStart) / 3600000).toFixed(2);
       }
-      // Seřadit pracovníky podle data nejnovější zálohy
-      return Object.values(map).sort((a, b) =>
-        Number(b.advances[0][1]) - Number(a.advances[0][1])
-      );
+      return '0.00';
     },
-    activeRecords() { return this.localRecords !== null ? this.localRecords : this.allRecords; },
-    activeAdvances() { return this.localAdvances !== null ? this.localAdvances : this.allAdvances; },
-    // v2026-09-02 NOVÉ: nedokončené směny napříč VŠEMI pracovníky (ne jen dnešek)
-    allNedokoncene() {
-      return this.activeRecords
-        .filter(r => String(r[15] || '').trim() === 'rozpracováno')
-        .sort((a, b) => Number(b[4]) - Number(a[4]));
+    todayDate() {
+      return getTodayDate();
     },
-    contractOptions() { return this.contracts.map(c => ({ label: c[0] + ' - ' + c[1], value: c[0] })); },
-    jobOptions() { return this.jobs.map(j => ({ label: j[1], value: j[0] })); },
-    placeOptions() { return this.places ? this.places.map(p => ({ label: p[1], value: p[0] })) : []; },
-    workerOptions() { return this.workers.map(w => ({ label: w[1], value: w[0] })); },
-    todayShifts() {
-      const today = new Date(); today.setHours(0,0,0,0);
-      const todayTs = today.getTime(); const tomorrowTs = todayTs + 86400000;
-      const map = {};
-      this.allRecords.forEach(r => {
-        const ts = Number(r[4]);
-        if (ts >= todayTs && ts < tomorrowTs) {
-          const id = String(r[1]); const status = String(r[15] || "").trim();
-          if (!map[id] || status === "rozpracováno") {
-            map[id] = { timeFrom: ts, timeTo: r[5] ? Number(r[5]) : null, status: status };
-          }
-        }
-      });
-      return map;
+    csLocale() {
+      return {
+        days: ['Neděle', 'Pondělí', 'Úterý', 'Středa', 'Čtvrtek', 'Pátek', 'Sobota'],
+        daysShort: ['Ne', 'Po', 'Út', 'St', 'Čt', 'Pá', 'So'],
+        months: ['Leden', 'Únor', 'Březen', 'Duben', 'Květen', 'Červen', 'Červenec', 'Srpen', 'Září', 'Říjen', 'Listopad', 'Prosinec'],
+        monthsShort: ['Led', 'Úno', 'Bře', 'Dub', 'Kvě', 'Čvn', 'Čvc', 'Srp', 'Září', 'Říj', 'Lis', 'Pro'],
+        firstDayOfWeek: 1
+      };
     },
-    selectedContractKm() {
-      if (!this.editForm.contractId) return 0;
-      const contract = this.contracts.find(c => c[0] === this.editForm.contractId);
-      return contract ? (contract[3] || 0) : 0;
-    },
-    calculatedKmEdit() {
-      if (this.editForm.kmManual) return this.editForm.kmRoundTrip ? this.editForm.kmJednosmer * 2 : this.editForm.kmJednosmer;
-      if (this.selectedContractKm > 0) return this.editForm.kmRoundTrip ? this.selectedContractKm * 2 : this.selectedContractKm;
+    calculatedKm() {
+      if (!this.isAdmin) return 0;
+      if (this.kmManual && this.kmManualValue) {
+        return this.kmRoundTrip ? this.kmManualValue * 2 : this.kmManualValue;
+      }
+      if (this.contractKm > 0) {
+        return this.kmRoundTrip ? this.contractKm * 2 : this.contractKm;
+      }
       return 0;
     }
   },
   
   methods: {
-    getTodayDate() {
+    getTodayFormatted() {
       const d = new Date();
-      return `${String(d.getDate()).padStart(2, '0')}. ${String(d.getMonth() + 1).padStart(2, '0')}. ${d.getFullYear()}`;
-    },
-    getCurrentTime() {
-      const now = new Date();
-      return String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
-    },
-    formatShortDateTime(ts) {
-      const d = new Date(Number(ts));
-      return `${String(d.getDate()).padStart(2, '0')}. ${String(d.getMonth() + 1).padStart(2, '0')}. ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-    },
-    timestampToDate(ts) {
-      const d = new Date(Number(ts));
-      return `${String(d.getDate()).padStart(2, '0')}. ${String(d.getMonth() + 1).padStart(2, '0')}. ${d.getFullYear()}`;
-    },
-    timestampToTime(ts) {
-      const d = new Date(Number(ts));
-      return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
-    },
-    dateTimeToTimestamp(dateStr, timeStr) {
-      const dateParts = dateStr.split('. ');
-      const timeParts = timeStr.split(':');
-      return new Date(dateParts[2], dateParts[1] - 1, dateParts[0], timeParts[0], timeParts[1]).getTime();
-    },
-    
-    async loadWorkers() {
-      const res = await apiCall('get', { type: 'workers' });
-      if (res.code === '000' && res.data) this.workers = res.data;
+      const dd = String(d.getDate()).padStart(2, '0');
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      return `${dd}. ${mm}. ${d.getFullYear()}`;
     },
 
-    loginAs(worker) {
-      const fullWorker = this.workers.find(w => String(w[0]) === String(worker.id));
-      if (fullWorker) {
-        this.$emit('login-as', fullWorker);
+    lunchDateToTimestamp(dateStr) {
+      const parts = dateStr.split('. ');
+      return new Date(parts[2], parts[1] - 1, parts[0], 12, 0).getTime();
+    },
+
+    async loadLunchPrices(dateStr) {
+      this.lunchPricesLoading = true;
+      this.lunchPrice = null;
+      try {
+        const ts = this.lunchDateToTimestamp(dateStr);
+        const res = await apiCall('getlunchprice', { date: ts });
+        if (res.code === '000' && res.data && res.data.price1 != null && res.data.price1 !== '') {
+          this.lunchPrices = res.data;
+          this.lunchPrice = res.data.price1;
+        } else {
+          this.lunchPrices = null;
+        }
+      } catch (e) {
+        this.lunchPrices = null;
+      }
+      this.lunchPricesLoading = false;
+    },
+
+    // v2026-08-31 NOVÉ: obecná retry logika
+    // Fáze 1: zkusí fn() znovu po 3s, 8s, 15s
+    // Fáze 2: pokud furt nejde, počká na window 'online' událost a zkouší dokola,
+    // dokud fn() nevrátí true (úspěch)
+    scheduleRetry(fn, onlineHandlerKey) {
+      const delays = [3000, 8000, 15000];
+      let attempt = 0;
+
+      const tryNext = () => {
+        if (attempt < delays.length) {
+          setTimeout(async () => {
+            const ok = await fn();
+            if (!ok) {
+              attempt++;
+              tryNext();
+            }
+          }, delays[attempt]);
+        } else {
+          // Fáze 2: čekání na návrat internetu
+          const handler = async () => {
+            const ok = await fn();
+            if (ok) {
+              window.removeEventListener('online', handler);
+              this[onlineHandlerKey] = null;
+            }
+          };
+          // pokud už na tohle čeká starší handler, nejdřív ho odstranit
+          if (this[onlineHandlerKey]) {
+            window.removeEventListener('online', this[onlineHandlerKey]);
+          }
+          this[onlineHandlerKey] = handler;
+          window.addEventListener('online', handler);
+        }
+      };
+      tryNext();
+    },
+
+    // v2026-08-31: samotný pokus o uložení příchodu, vrací true/false
+    async trySaveArrival() {
+      try {
+        const res = await apiCall('savearrival', {
+          id_worker: this.currentUser.id,
+          time_fr: this.shiftForm.timeStart
+        });
+        if (res.code === '000' && res.data && res.data.rowIndex !== undefined) {
+          this.cloudRowIndex = res.data.rowIndex;
+          this.saveShiftState();
+          this.arrivalError = null;
+          this.$emit('message', '✓ Příchod uložen do tabulky: ' + formatTime(this.shiftForm.timeStart));
+          return true;
+        }
+        return false;
+      } catch (e) {
+        return false;
+      }
+    },
+
+    async setArrival() {
+      this.shiftForm.timeStart = Date.now();
+      this.saveShiftState();
+      this.arrivalError = null;
+      if (this.cloudShiftEnabled) {
+        this.cloudSaving = true;
+        const success = await this.trySaveArrival();
+        this.cloudSaving = false;
+        if (!success) {
+          this.arrivalError = 'Nepodařilo se uložit do tabulky. Zkontrolujte připojení - appka to zkouší na pozadí znovu.';
+          this.$emit('message', '⚠️ Příchod se nepodařilo uložit, zkouším znovu na pozadí');
+          this.scheduleRetry(() => this.trySaveArrival(), '_arrivalOnlineHandler');
+        }
       } else {
-        this.$emit('message', 'Pracovník nenalezen');
+        this.$emit('message', 'Příchod: ' + formatTime(this.shiftForm.timeStart));
       }
     },
-    
-    selectWorker(worker) {
-      this.selectedWorkerData = {
-        info: worker,
-        records: this.activeRecords.filter(r => String(r[1]) === String(worker.id)),
-        advances: this.activeAdvances.filter(a => String(a[0]) === String(worker.id))
-      };
-      this.adminTab = 'detail';
-    },
-    
-    backToWorkers() {
-      this.selectedWorkerData = null;
-      this.adminTab = 'workers';
-    },
-    
-    loadDayRecords() {
-      if (!this.selectedDate) this.selectedDate = this.getTodayDate();
-      const cleaned = this.selectedDate.trim().replace(/\s+/g, ' ');
-      const parts = cleaned.split('.').map(p => parseInt(p.trim(), 10));
-      if (parts.length !== 3 || isNaN(parts[0]) || isNaN(parts[1]) || isNaN(parts[2])) { this.dayRecords = []; return; }
-      const [dd, mm, yyyy] = parts;
-      const startOfDay = new Date(yyyy, mm - 1, dd, 0, 0, 0, 0).getTime();
-      const endOfDay = new Date(yyyy, mm - 1, dd, 23, 59, 59, 999).getTime();
-      this.dayRecords = this.allRecords
-        .filter(r => { const ts = Number(r[4]); return !isNaN(ts) && ts >= startOfDay && ts <= endOfDay; })
-        .sort((a, b) => Number(a[4]) - Number(b[4]));
-    },
-    
-    setToday() { this.selectedDate = this.getTodayDate(); this.loadDayRecords(); },
-    
-    openEditDialog(record, index) {
-      this.editingRecord = { data: record, index: index };
-      this.originalRecord = {
-        worker: record[6], contract: record[0], job: record[3],
-        place: record[14] || 'Nezadáno', timeFrom: this.timestampToTime(record[4]),
-        timeTo: this.timestampToTime(record[5]), date: this.timestampToDate(record[4]),
-        note: record[8] || '',
-        km: record[12] || 0,
-        // v2026-04-09: zobrazíme z kterého listu záznam pochází
-        sourceSheet: record[18] || 'záznamy'
-      };
-      const worker = this.workers.find(w => w[1] === record[6]);
-      const contract = this.contracts.find(c => c[1] === record[0]);
-      const job = this.jobs.find(j => j[1] === record[3]);
-      const place = this.places ? this.places.find(p => p[1] === record[14]) : null;
-      const kmJednosmer = parseFloat(record[11]) || 0;
-      const kmCelkem = parseFloat(record[12]) || 0;
-      this.editForm = {
-        workerId: worker ? worker[0] : null, contractId: contract ? contract[0] : null,
-        jobId: job ? job[0] : null, placeId: place ? place[0] : null,
-        dateEdit: this.timestampToDate(record[4]), timeFrom: this.timestampToTime(record[4]),
-        timeTo: this.timestampToTime(record[5]), note: record[8] || '',
-        kmJednosmer: kmJednosmer,
-        kmManual: true,
-        kmRoundTrip: kmJednosmer > 0 ? (kmCelkem === kmJednosmer * 2) : true
-      };
-      this.editDialog = true;
-    },
-    
-    openDuplicateDialog(record) {
-      const worker = this.workers.find(w => w[1] === record[6]);
-      const contract = this.contracts.find(c => c[1] === record[0]);
-      const job = this.jobs.find(j => j[1] === record[3]);
-      const place = this.places ? this.places.find(p => p[1] === record[14]) : null;
-      this.editForm = {
-        workerId: worker ? worker[0] : null, contractId: contract ? contract[0] : null,
-        jobId: job ? job[0] : null, placeId: place ? place[0] : null,
-        dateEdit: this.selectedDate || this.getTodayDate(), timeFrom: this.timestampToTime(record[4]),
-        timeTo: this.timestampToTime(record[5]), note: record[8] || '',
-        kmJednosmer: parseFloat(record[11]) || 0, kmManual: record[13] === 'Y', kmRoundTrip: true
-      };
-      this.duplicateDialog = true;
-    },
-    
-    // v2026-09-02 NOVÉ: doplnění nedokončené směny (admin, napříč všemi pracovníky)
-    // Používá stejný dialog jako Upravit/Duplikovat - jen bezpečně ošetřuje
-    // chybějící čas odchodu (record[5] je u rozpracováno prázdné).
-    openNedokonceneEditDialog(record, index) {
-      this.editingRecord = { data: record, index: index };
-      const worker = this.workers.find(w => w[1] === record[6]);
-      const contract = this.contracts.find(c => c[1] === record[0]);
-      const job = this.jobs.find(j => j[1] === record[3]);
-      const place = this.places ? this.places.find(p => p[1] === record[14]) : null;
-      const timeFrom = this.timestampToTime(record[4]);
-      const dateEdit = this.timestampToDate(record[4]);
-      const hasTimeTo = record[5] !== undefined && record[5] !== null && record[5] !== '';
-      const timeTo = hasTimeTo ? this.timestampToTime(record[5]) : this.getCurrentTime();
 
-      this.originalRecord = {
-        worker: record[6] || 'Nezadáno',
-        contract: record[0] || 'Nezadáno',
-        job: record[3] || 'Nezadáno',
-        place: record[14] || 'Nezadáno',
-        timeFrom: timeFrom,
-        timeTo: hasTimeTo ? timeTo : 'Nezadáno (chybí odchod)',
-        date: dateEdit,
-        note: record[8] || '',
-        km: record[12] || 0,
-        sourceSheet: record[18] || 'záznamy'
-      };
-
-      this.editForm = {
-        workerId: worker ? worker[0] : null,
-        contractId: contract ? contract[0] : null,
-        jobId: job ? job[0] : null,
-        placeId: place ? place[0] : null,
-        dateEdit: dateEdit,
-        timeFrom: timeFrom,
-        timeTo: timeTo,
-        note: record[8] || '',
-        kmJednosmer: parseFloat(record[11]) || 0,
-        kmManual: true,
-        kmRoundTrip: (parseFloat(record[11]) || 0) > 0 ? (parseFloat(record[12]) === parseFloat(record[11]) * 2) : true
-      };
-      this.editDialog = true;
-    },
-
-    openLunchDialog() {
-      this.newLunch = { workerId: null, date: this.selectedDate || this.getTodayDate(), time: this.getCurrentTime() };
-      this.lunchDialog = true;
-    },
-    
-    openAdvanceDialog() {
-      this.newAdvance = { workerId: null, amount: null, reason: '', date: this.selectedDate || this.getTodayDate() };
-      this.advanceDialog = true;
-    },
-    
-    // v2026-04-09: ROZCESTNÍK - přidán source_sheet z record[18]
-    // kod.gs updateRecord zapíše do správného listu (záznamy nebo záznamy_historie)
-    async saveEdit() {
-      if (!this.editForm.workerId || !this.editForm.contractId || !this.editForm.jobId || !this.editForm.placeId || !this.editForm.timeFrom || !this.editForm.timeTo) {
-        this.$emit('message', 'Vyplňte všechna pole'); return;
-      }
-      const timeFr = this.dateTimeToTimestamp(this.editForm.dateEdit, this.editForm.timeFrom);
-      const timeTo = this.dateTimeToTimestamp(this.editForm.dateEdit, this.editForm.timeTo);
+    // v2026-08-31: samotný pokus o uložení odchodu, vrací true/false
+    async tryDeparture() {
+      if (this.cloudRowIndex === null) return false;
       try {
-        const kmJednosmer = parseFloat(this.editForm.kmJednosmer) || 0;
-        const kmCelkem = this.editForm.kmRoundTrip ? kmJednosmer * 2 : kmJednosmer;
-        const payload = {
-          row_index: this.editingRecord.data[17],
-          source_sheet: this.editingRecord.data[18] || 'záznamy',
-          id_contract: this.editForm.contractId, id_worker: this.editForm.workerId,
-          id_job: this.editForm.jobId, id_place: this.editForm.placeId,
-          time_fr: timeFr, time_to: timeTo, note: this.editForm.note,
-          km_jednosmer: kmJednosmer,
-          km_celkem: kmCelkem,
-          km_rucne: kmJednosmer > 0 ? 'Y' : 'N'
-        };
-        const res = await apiCall('updaterecord', payload);
-        if (res.code === '000') { this.$emit('message', '✓ Záznam upraven'); this.editDialog = false; this.$emit('reload'); this.loadDayRecords(); }
-        else this.$emit('message', 'Chyba: ' + res.error);
-      } catch (error) { this.$emit('message', 'Chyba při úpravě'); }
-    },
-    
-    // v2026-08-08 OPRAVA: přidán insert_after_date do payloadu, aby se duplikát
-    // vložil chronologicky za poslední záznam daného dne (viz addRecord v kod.gs),
-    // místo aby se appendoval na konec celé tabulky.
-    async saveDuplicate() {
-      if (!this.editForm.workerId || !this.editForm.contractId || !this.editForm.jobId || !this.editForm.placeId || !this.editForm.timeFrom || !this.editForm.timeTo) {
-        this.$emit('message', 'Vyplňte všechna pole'); return;
+        const res = await apiCall('updatedeparture', {
+          row_index: this.cloudRowIndex,
+          time_to: this.shiftForm.timeEnd
+        });
+        if (res.code === '000') {
+          this.departureError = null;
+          this.$emit('message', '✓ Odchod uložen do tabulky: ' + formatTime(this.shiftForm.timeEnd));
+          return true;
+        }
+        return false;
+      } catch (e) {
+        return false;
       }
-      const timeFr = this.dateTimeToTimestamp(this.editForm.dateEdit, this.editForm.timeFrom);
-      const timeTo = this.dateTimeToTimestamp(this.editForm.dateEdit, this.editForm.timeTo);
-      try {
-        const payload = {
-          id_contract: this.editForm.contractId,
-          id_worker: this.editForm.workerId,
-          id_job: this.editForm.jobId,
-          id_place: this.editForm.placeId,
-          time_fr: timeFr,
-          time_to: timeTo,
-          note: this.editForm.note,
-          // v2026-08-08: zajistí chronologické zařazení duplikátu do dne
-          insert_after_date: this.editForm.dateEdit
-        };
-        if (this.editForm.kmManual && this.editForm.kmJednosmer) { payload.km_jednosmer = this.editForm.kmJednosmer; payload.km_celkem = this.calculatedKmEdit; payload.km_rucne = 'Y'; }
-        const res = await apiCall('saverecord', payload);
-        if (res.code === '000') { this.$emit('message', '✓ Kopie uložena'); this.duplicateDialog = false; this.$emit('reload'); this.loadDayRecords(); }
-        else this.$emit('message', 'Chyba: ' + res.error);
-      } catch (error) { this.$emit('message', 'Chyba při ukládání'); }
     },
     
+    async setDeparture() {
+      if (!this.shiftForm.timeStart) {
+        this.$emit('message', 'Nejdříve zaznamenejte příchod');
+        return;
+      }
+      this.shiftForm.timeEnd = Date.now();
+      this.saveShiftState();
+      this.departureError = null;
+      if (this.cloudShiftEnabled) {
+        this.cloudSaving = true;
+        const success = await this.tryDeparture();
+        this.cloudSaving = false;
+        if (!success) {
+          this.departureError = 'Nepodařilo se uložit do tabulky. Zkontrolujte připojení - appka to zkouší na pozadí znovu.';
+          this.$emit('message', '⚠️ Odchod se nepodařilo uložit, zkouším znovu na pozadí');
+          this.scheduleRetry(() => this.tryDeparture(), '_departureOnlineHandler');
+        }
+      } else {
+        this.$emit('message', 'Odchod: ' + formatTime(this.shiftForm.timeEnd));
+      }
+    },
+    
+    async loadContractKm() {
+      if (!this.isAdmin || !this.shiftForm.contractId) {
+        this.contractKm = 0;
+        return;
+      }
+      try {
+        const res = await apiCall('getcontractkm', { id_contract: this.shiftForm.contractId });
+        if (res.code === '000' && res.data) {
+          this.contractKm = res.data.km || 0;
+          const tripCheck = await apiCall('checktodaytrip', { id_contract: this.shiftForm.contractId });
+          if (tripCheck.code === '000' && tripCheck.data && tripCheck.data.exists) {
+            this.todayTripExists = true;
+            this.todayTripInfo = tripCheck.data;
+          } else {
+            this.todayTripExists = false;
+            this.todayTripInfo = null;
+          }
+        }
+      } catch (error) {
+        console.error('Chyba načítání km:', error);
+      }
+    },
+    
+    // v2026-08-31: rozděleno na sestavení payloadu + samotný pokus (kvůli retry)
+    buildShiftPayload() {
+      const payload = {
+        id_contract: this.shiftForm.contractId,
+        id_worker: this.currentUser.id,
+        id_job: this.shiftForm.jobId,
+        id_place: this.shiftForm.placeId,
+        time_fr: this.shiftForm.timeStart,
+        time_to: this.shiftForm.timeEnd,
+        note: this.shiftForm.note
+      };
+      if (this.isAdmin && this.calculatedKm > 0) {
+        payload.km_jednosmer = this.kmManual ? (this.kmManualValue || 0) : this.contractKm;
+        payload.km_celkem = this.calculatedKm;
+        payload.km_rucne = this.kmManual ? 'Y' : 'N';
+      }
+      if (this.cloudShiftEnabled && this.cloudRowIndex !== null) {
+        payload.row_index = this.cloudRowIndex;
+      }
+      return payload;
+    },
+
+    // v2026-08-31: samotný pokus o uložení směny, vrací true/false.
+    // Duplikát (101) se počítá jako "úspěch" - stav se má vyčistit, ne opakovat.
+    async trySaveShift() {
+      try {
+        const payload = this.buildShiftPayload();
+        let res;
+        if (this.cloudShiftEnabled && this.cloudRowIndex !== null) {
+          res = await apiCall('completerecord', payload);
+        } else {
+          res = await apiCall('saverecord', payload);
+        }
+        if (res.code === '000') {
+          const kmText = this.calculatedKm > 0 ? ` (${this.calculatedKm} km)` : '';
+          this.$emit('message', `✓ Směna uložena${kmText}`);
+          this.shiftSaveError = null;
+          this.clearShiftState();
+          this.$emit('reload');
+          return true;
+        } else if (res.code === '101') {
+          this.$emit('message', '⚠️ Tato směna je již uložena. Pokud je problém, jděte do Nastavení → Smazat směnu.');
+          this.shiftSaveError = null;
+          return true; // netřeba opakovat, směna už existuje
+        } else {
+          this.shiftSaveError = 'Chyba při ukládání: ' + (res.error || 'Neznámá chyba');
+          return false;
+        }
+      } catch (error) {
+        console.error('Save shift error:', error);
+        return false;
+      }
+    },
+
+    async saveShift() {
+      if (!this.shiftForm.contractId || !this.shiftForm.jobId || !this.shiftForm.timeStart || !this.shiftForm.timeEnd) {
+        this.$emit('message', 'Vyplňte všechna pole');
+        return;
+      }
+      if (!this.shiftForm.note || this.shiftForm.note.trim() === '') {
+        this.$emit('message', 'Poznámka je povinná');
+        return;
+      }
+      if (!this.shiftForm.placeId) {
+        this.$emit('message', 'Vyberte místo práce');
+        return;
+      }
+      this.shiftSaveError = null;
+      const success = await this.trySaveShift();
+      if (!success) {
+        this.shiftSaveError = 'Nepodařilo se uložit směnu. Zkontrolujte připojení - appka to zkouší na pozadí znovu.';
+        this.$emit('message', '❌ Chyba připojení, zkouším znovu na pozadí');
+        this.scheduleRetry(() => this.trySaveShift(), '_shiftSaveOnlineHandler');
+      }
+    },
+    
+    filterContracts(val, update) {
+      update(() => {
+        if (val === '') {
+          this.contractOptionsFiltered = this.contractOptions;
+        } else {
+          const needle = val.toLowerCase();
+          this.contractOptionsFiltered = this.contractOptions.filter(o => o.label.toLowerCase().includes(needle));
+        }
+      });
+    },
+
+    filterJobs(val, update) {
+      update(() => {
+        if (val === '') {
+          this.jobOptionsFiltered = this.jobOptions;
+        } else {
+          const needle = val.toLowerCase();
+          this.jobOptionsFiltered = this.jobOptions.filter(o => o.label.toLowerCase().includes(needle));
+        }
+      });
+    },
+
+    filterPlaces(val, update) {
+      update(() => {
+        if (val === '') {
+          this.placeOptionsFiltered = this.placeOptions;
+        } else {
+          const needle = val.toLowerCase();
+          this.placeOptionsFiltered = this.placeOptions.filter(o => o.label.toLowerCase().includes(needle));
+        }
+      });
+    },
+
+    saveShiftState() {
+      const state = {
+        timeStart: this.shiftForm.timeStart,
+        timeEnd: this.shiftForm.timeEnd,
+        contractId: this.shiftForm.contractId,
+        jobId: this.shiftForm.jobId,
+        placeId: this.shiftForm.placeId,
+        note: this.shiftForm.note,
+        cloudRowIndex: this.cloudRowIndex,
+        date: getTodayDate()
+      };
+      localStorage.setItem('shiftState_' + this.currentUser.id, JSON.stringify(state));
+    },
+    
+    loadShiftState() {
+      const saved = localStorage.getItem('shiftState_' + this.currentUser.id);
+      if (saved) {
+        const state = JSON.parse(saved);
+        if (state.date === getTodayDate()) {
+          this.shiftForm.timeStart = state.timeStart;
+          this.shiftForm.timeEnd = state.timeEnd;
+          this.shiftForm.contractId = state.contractId;
+          this.shiftForm.jobId = state.jobId;
+          this.shiftForm.placeId = state.placeId;
+          this.shiftForm.note = state.note;
+          this.cloudRowIndex = state.cloudRowIndex || null;
+          return true;
+        } else {
+          this.clearShiftState();
+        }
+      }
+      return false;
+    },
+
+    async checkCloudShift() {
+      try {
+        const res = await apiCall('getdayrecords', { date: getTodayDate() });
+        if (res.code !== '000' || !res.data) return;
+        const rozpracovany = res.data.find(r =>
+          String(r[1]) === String(this.currentUser.id) && r[15] === 'rozpracováno'
+        );
+        if (rozpracovany) {
+          this.shiftForm.timeStart = Number(rozpracovany[4]);
+          this.cloudRowIndex = rozpracovany[16];
+          this.saveShiftState();
+          this.$emit('message', '☁ Načtena rozpracovaná šichta: ' + formatTime(this.shiftForm.timeStart));
+        }
+      } catch (e) {}
+    },
+    
+    clearShiftState() {
+      localStorage.removeItem('shiftState_' + this.currentUser.id);
+      this.shiftForm = {
+        contractId: null,
+        jobId: null,
+        placeId: null,
+        timeStart: null,
+        timeEnd: null,
+        note: ''
+      };
+      this.contractKm = 0;
+      this.kmManual = false;
+      this.kmManualValue = null;
+      this.kmRoundTrip = true;
+      this.todayTripExists = false;
+      this.todayTripInfo = null;
+      this.cloudRowIndex = null;
+      // v2026-08-31: vyčistit i chybové stavy a případné čekající "online" listenery
+      this.arrivalError = null;
+      this.departureError = null;
+      this.shiftSaveError = null;
+      if (this._arrivalOnlineHandler) { window.removeEventListener('online', this._arrivalOnlineHandler); this._arrivalOnlineHandler = null; }
+      if (this._departureOnlineHandler) { window.removeEventListener('online', this._departureOnlineHandler); this._departureOnlineHandler = null; }
+      if (this._shiftSaveOnlineHandler) { window.removeEventListener('online', this._shiftSaveOnlineHandler); this._shiftSaveOnlineHandler = null; }
+    },
+    
+    async loadObjednavkuPrices() {
+      this.objednavkaPricesLoading = true;
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(11, 0, 0, 0);
+      try {
+        const res = await apiCall('getlunchprice', { date: tomorrow.getTime() });
+        if (res.code === '000' && res.data && res.data.price1 != null) {
+          this.objednavkaPrices = res.data;
+        } else {
+          this.objednavkaPrices = null;
+        }
+      } catch(e) { this.objednavkaPrices = null; }
+      this.objednavkaPricesLoading = false;
+    },
+
+    async loadObjednavkyOstatnich() {
+      this.objednavkyOstatniLoading = true;
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(11, 0, 0, 0);
+      try {
+        const res = await apiCall('getobjednavky', { datum: tomorrow.getTime() });
+        if (res.code === '000') {
+          this.objednavkyOstatnich = (res.data || []).sort((a, b) => Number(a[4]) - Number(b[4]));
+        }
+      } catch(e) {}
+      this.objednavkyOstatniLoading = false;
+    },
+
+    async saveObjednavka() {
+      if (!this.objednavkaJidlo) {
+        this.$emit('message', 'Vyberte jídlo');
+        return;
+      }
+      this.objednavkaSaving = true;
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(11, 0, 0, 0);
+      let cena = 0;
+      if (this.objednavkaPrices) {
+        cena = (this.objednavkaJidlo <= 3 || !this.objednavkaPrices.price2)
+          ? this.objednavkaPrices.price1
+          : this.objednavkaPrices.price2;
+      }
+      try {
+        const res = await apiCall('saveobjednavka', {
+          id_worker: this.currentUser.id,
+          name_worker: this.currentUser.name,
+          jidlo: this.objednavkaJidlo,
+          cena: cena,
+          datum: tomorrow.getTime()
+        });
+        if (res.code === '000') {
+          this.objednavkaUlozena = true;
+          this.objednavkaUlozenaJidlo = this.objednavkaJidlo;
+          await this.loadObjednavkyOstatnich();
+          this.$emit('message', '✓ Objednávka uložena — jídlo č. ' + this.objednavkaJidlo);
+        } else {
+          this.$emit('message', 'Chyba: ' + res.error);
+        }
+      } catch(e) {
+        this.$emit('message', 'Chyba při ukládání');
+      }
+      this.objednavkaSaving = false;
+    },
+
     async saveLunch() {
-      if (!this.newLunch.workerId) { this.$emit('message', 'Vyberte pracovníka'); return; }
-      const timestamp = this.dateTimeToTimestamp(this.newLunch.date, this.newLunch.time);
+      if (!this.lunchPrice) {
+        this.$emit('message', 'Vyberte cenu oběda');
+        return;
+      }
       try {
-        const worker = this.workers.find(w => w[0] === this.newLunch.workerId);
-        const res = await apiCall('savelunch', { id_worker: this.newLunch.workerId, name_worker: worker[1], time: timestamp });
-        if (res.code === '000') { this.$emit('message', '✓ Oběd uložen'); this.lunchDialog = false; this.$emit('reload'); }
-        else this.$emit('message', 'Chyba: ' + res.error);
-      } catch (error) { this.$emit('message', 'Chyba při ukládání oběda'); }
+        const timestamp = this.lunchDateToTimestamp(this.lunchDate);
+        const res = await apiCall('savelunch', {
+          id_worker: this.currentUser.id,
+          name_worker: this.currentUser.name,
+          time: timestamp,
+          payment: this.lunchPrice
+        });
+        if (res.code === '000') {
+          this.$emit('message', `✓ Oběd uložen (${this.lunchPrice} Kč)`);
+          this.$emit('reload');
+        } else {
+          this.$emit('message', 'Chyba: ' + res.error);
+        }
+      } catch (error) {
+        this.$emit('message', 'Chyba při ukládání oběda');
+      }
     },
     
     async saveAdvance() {
-      if (!this.newAdvance.workerId || !this.newAdvance.amount || !this.newAdvance.reason) { this.$emit('message', 'Vyplňte všechna pole'); return; }
-      const dateParts = this.newAdvance.date.split('. ');
-      const timestamp = new Date(dateParts[2], dateParts[1] - 1, dateParts[0], 12, 0).getTime();
+      if (!this.advanceForm.amount || !this.advanceForm.reason) {
+        this.$emit('message', 'Vyplňte částku a důvod');
+        return;
+      }
+      if (this.advanceSaving) return;
+      this.advanceSaving = true;
       try {
-        const worker = this.workers.find(w => w[0] === this.newAdvance.workerId);
-        const res = await apiCall('saveadvance', { id_worker: this.newAdvance.workerId, name_worker: worker[1], time: timestamp, payment: this.newAdvance.amount, payment_reason: this.newAdvance.reason });
-        if (res.code === '000') { this.$emit('message', '✓ Záloha uložena'); this.advanceDialog = false; this.$emit('reload'); }
-        else this.$emit('message', 'Chyba: ' + res.error);
-      } catch (error) { this.$emit('message', 'Chyba při ukládání zálohy'); }
-    },
-
-    async opravSazbyHistorie() {
-      if (!confirm('Přepíše sazby (sloupec C) v záznamy_historie podle sazebníku. Pokračovat?')) return;
-      this.toolsLoading = true;
-      this.toolsResult = null;
-      try {
-        const res = await apiCall('opravsazbyhistorie', {});
-        if (res.code === '000') { this.toolsResult = { ok: true, msg: res.data.message }; this.$emit('message', '✓ ' + res.data.message); }
-        else { this.toolsResult = { ok: false, msg: res.error }; this.$emit('message', 'Chyba: ' + res.error); }
-      } catch (e) { this.toolsResult = { ok: false, msg: 'Chyba spojení' }; }
-      this.toolsLoading = false;
-    },
-    
-    formatTimeRange(fr, to) { return formatTimeRange(fr, to); }
+        const res = await apiCall('saveadvance', {
+          id_worker: this.currentUser.id,
+          name_worker: this.currentUser.name,
+          time: Date.now(),
+          payment: this.advanceForm.amount,
+          payment_reason: this.advanceForm.reason
+        });
+        if (res.code === '000') {
+          this.$emit('message', '✓ Záloha uložena');
+          this.advanceForm.amount = null;
+          this.advanceForm.reason = '';
+          this.$emit('reload');
+        } else if (res.code === '101') {
+          this.$emit('message', '⚠️ Tato záloha již byla dnes uložena (duplikát)');
+        } else {
+          this.$emit('message', 'Chyba: ' + res.error);
+        }
+      } catch (error) {
+        this.$emit('message', 'Chyba při ukládání zálohy');
+      }
+      this.advanceSaving = false;
+    }
   },
   
   watch: {
-    selectedDate() { if (this.adminTab === 'day') this.loadDayRecords(); },
-    allRecords() { if (this.adminTab === 'day') this.loadDayRecords(); },
-    'editForm.contractId'() { if (!this.editForm.kmManual) this.editForm.kmJednosmer = this.selectedContractKm; }
+    'shiftForm.contractId': function() {
+      this.saveShiftState();
+      if (this.isAdmin) this.loadContractKm();
+    },
+    'shiftForm.jobId': function() { this.saveShiftState(); },
+    'shiftForm.placeId': function() { this.saveShiftState(); },
+    'shiftForm.note': function() { this.saveShiftState(); },
+    lunchDate(newDate) {
+      if (newDate) this.loadLunchPrices(newDate);
+    },
+    currentTab(val) {
+      if (val === 'objednat') {
+        this.loadObjednavkuPrices();
+        this.loadObjednavkyOstatnich();
+      }
+    }
   },
   
   async mounted() {
-    this.selectedDate = this.getTodayDate();
-    await this.loadWorkers();
-    if (this.adminTab === 'day') this.loadDayRecords();
+    const nactenoZLocalStorage = this.loadShiftState();
+    if (!nactenoZLocalStorage || !this.shiftForm.timeStart) {
+      await this.checkCloudShift();
+    }
+    this.lunchDate = this.getTodayFormatted();
+    this.loadLunchPrices(this.lunchDate);
+  },
+
+  // v2026-08-31: úklid "online" listenerů při opuštění stránky, ať se nehromadí
+  beforeUnmount() {
+    if (this._arrivalOnlineHandler) window.removeEventListener('online', this._arrivalOnlineHandler);
+    if (this._departureOnlineHandler) window.removeEventListener('online', this._departureOnlineHandler);
+    if (this._shiftSaveOnlineHandler) window.removeEventListener('online', this._shiftSaveOnlineHandler);
   },
   
   template: `
     <div>
-      <q-tabs v-model="adminTab" dense align="justify" class="text-primary">
-        <q-tab name="workers" label="Pracovníci"/>
-        <q-tab name="day" label="Přehled dne"/>
-        <q-tab name="nedokoncene" label="Nedokončené"/>
-        <q-tab name="zalohy" label="Zálohy"/>
-        <q-tab name="tools" label="Nástroje"/>
+      <q-tabs v-model="currentTab" dense align="justify" class="text-primary">
+        <q-tab name="shift" label="Směna"/>
+        <q-tab name="lunch" label="Oběd"/>
+        <q-tab name="advance" label="Záloha"/>
+        <q-tab name="objednat" label="Objednat"/>
       </q-tabs>
+      
+      <!-- SMĚNA -->
+      <div v-if="currentTab==='shift'" class="q-pt-md">
+        <div v-if="cloudShiftEnabled" class="q-mb-sm q-pa-xs text-caption text-blue-7" style="background:#e3f2fd;border-radius:4px">
+          ☁ Cloud režim – příchod/odchod se ukládá přímo do tabulky
+        </div>
 
-      <!-- PRACOVNÍCI -->
-      <div v-if="adminTab==='workers'" class="q-pt-md">
-        <div v-for="worker in sortedSummary" :key="worker.id" class="worker-card">
-          <div class="row items-center no-wrap">
-            <div class="col" @click="selectWorker(worker)" style="cursor:pointer">
-              <div class="text-bold text-caption" :class="worker.active === false ? 'text-grey-5' : ''">{{ worker.name }}<span v-if="worker.active === false" class="text-caption text-grey-5 q-ml-xs">(neaktivní)</span></div>
-              <div class="text-caption text-grey-5" style="font-size:0.7rem">ID: {{ worker.id }}</div>
-              <div v-if="todayShifts[String(worker.id)]" class="q-mt-xs">
-                <span v-if="todayShifts[String(worker.id)].status === 'rozpracováno'" class="text-caption text-green-7">
-                  ▶ {{ new Date(todayShifts[String(worker.id)].timeFrom).toLocaleTimeString('cs-CZ', {hour:'2-digit',minute:'2-digit'}) }} – pracuje
-                </span>
-                <span v-else class="text-caption text-grey-6">
-                  {{ new Date(todayShifts[String(worker.id)].timeFrom).toLocaleTimeString('cs-CZ', {hour:'2-digit',minute:'2-digit'}) }}
-                  – {{ todayShifts[String(worker.id)].timeTo ? new Date(todayShifts[String(worker.id)].timeTo).toLocaleTimeString('cs-CZ', {hour:'2-digit',minute:'2-digit'}) : '?' }}
-                </span>
+        <q-btn @click="setArrival" color="green" icon="login" label="PŘÍCHOD"
+          class="full-width q-mb-md" :disabled="!!shiftForm.timeStart || cloudSaving" :loading="cloudSaving && !shiftForm.timeStart"/>
+        
+        <div v-if="shiftForm.timeStart" class="q-mb-md q-pa-sm" style="background:#e8f5e9;border-radius:4px">
+          <div class="text-bold text-green-8">✓ Příchod zaznamenán</div>
+          <div>{{formattedStartTime}}</div>
+          <div v-if="cloudShiftEnabled && cloudRowIndex !== null" class="text-caption text-blue-7">☁ Uloženo v tabulce (řádek {{cloudRowIndex}})</div>
+          <div v-if="cloudShiftEnabled && cloudRowIndex === null && !arrivalError" class="text-caption text-orange-7">⚠ Uloženo jen lokálně</div>
+          <div v-if="arrivalError" class="text-caption text-red-8 q-mt-xs">❌ {{ arrivalError }}</div>
+        </div>
+        
+        <q-btn @click="setDeparture" color="orange" icon="logout" label="ODCHOD"
+          class="full-width q-mb-md" :disabled="!shiftForm.timeStart || !!shiftForm.timeEnd || cloudSaving" :loading="cloudSaving && !!shiftForm.timeStart && !shiftForm.timeEnd"/>
+        
+        <div v-if="shiftForm.timeEnd" class="q-mb-md q-pa-sm" style="background:#fff3e0;border-radius:4px">
+          <div class="text-bold text-orange-8">✓ Odchod zaznamenán</div>
+          <div>{{formattedEndTime}}</div>
+          <div class="text-primary text-bold q-mt-sm">Odpracováno: {{workedHours}} hod</div>
+          <div v-if="departureError" class="text-caption text-red-8 q-mt-xs">❌ {{ departureError }}</div>
+        </div>
+        
+        <q-select v-model="shiftForm.contractId" :options="contractOptionsFiltered"
+          label="Zakázka *" emit-value map-options outlined class="q-mb-md"
+          use-input hide-selected fill-input input-debounce="0"
+          @filter="filterContracts" @focus="filterContracts('', v => contractOptionsFiltered = contractOptions)"/>
+        
+        <q-select v-model="shiftForm.jobId" :options="jobOptionsFiltered"
+          label="Práce *" emit-value map-options outlined class="q-mb-md"
+          use-input hide-selected fill-input input-debounce="0"
+          @filter="filterJobs" @focus="filterJobs('', v => jobOptionsFiltered = jobOptions)"/>
+        
+        <q-select v-model="shiftForm.placeId" :options="placeOptionsFiltered"
+          label="Místo práce *" emit-value map-options outlined class="q-mb-md"
+          use-input hide-selected fill-input input-debounce="0"
+          @filter="filterPlaces" @focus="filterPlaces('', v => placeOptionsFiltered = placeOptions)"/>
+        
+        <q-input v-model="shiftForm.note" label="Poznámka *"
+          outlined class="q-mb-md" type="textarea" rows="3"/>
+        
+        <div v-if="isAdmin && contractKm > 0" class="q-mb-md">
+          <q-card flat bordered>
+            <q-card-section>
+              <div class="text-subtitle2">🚗 Kilometry</div>
+              <q-banner v-if="todayTripExists" class="bg-orange-2 q-mt-sm" dense rounded>
+                ⚠️ Dnes už tam jel: {{ todayTripInfo.worker }} ({{ todayTripInfo.km }} km)
+              </q-banner>
+              <div class="q-mt-sm">
+                <div class="text-caption text-grey-7">Zakázka má: {{ contractKm }} km jedna cesta</div>
+                <q-checkbox v-model="kmRoundTrip" label="Tam a zpět (×2)" class="q-mt-sm"/>
+                <div class="text-bold text-primary q-mt-xs">Celkem: {{ calculatedKm }} km</div>
+                <q-checkbox v-model="kmManual" label="Zadat km ručně" class="q-mt-sm"/>
+                <q-input v-if="kmManual" v-model.number="kmManualValue"
+                  label="Počet km" type="number" outlined dense class="q-mt-sm"/>
               </div>
-            </div>
-            <div class="text-caption text-grey-7 q-mr-xs" style="min-width:60px;text-align:right">
-              <div>{{ worker.totalEarnings }} Kč</div>
-              <div class="text-grey-5">{{ worker.totalPaid }} Kč</div>
-            </div>
-            <div style="min-width:60px;text-align:right" class="q-mr-xs" @click="selectWorker(worker)" style="cursor:pointer">
-              <div class="text-bold text-caption" :class="worker.balance>=0?'balance-positive':'balance-negative'">
-                {{ worker.balance }} Kč
+            </q-card-section>
+          </q-card>
+        </div>
+        
+        <q-btn @click="saveShift" label="Uložit směnu" color="primary"
+          :loading="loading" class="full-width" size="lg"/>
+        <div v-if="shiftSaveError" class="q-mt-sm q-pa-sm text-caption text-red-8" style="background:#ffebee;border-radius:4px">
+          ❌ {{ shiftSaveError }}
+        </div>
+      </div>
+      
+      <!-- OBĚD -->
+      <div v-if="currentTab==='lunch'" class="q-pt-md">
+        <q-input v-model="lunchDate" label="Datum oběda" outlined dense readonly class="q-mb-md">
+          <template v-slot:prepend><q-icon name="restaurant" color="orange"/></template>
+          <template v-slot:append>
+            <q-icon name="event" class="cursor-pointer" color="primary">
+              <q-popup-proxy cover ref="lunchDateProxy">
+                <q-date v-model="lunchDate" mask="DD. MM. YYYY" :locale="csLocale"
+                  @update:model-value="$refs.lunchDateProxy.hide()"/>
+              </q-popup-proxy>
+            </q-icon>
+          </template>
+        </q-input>
+
+        <div v-if="lunchPricesLoading" class="text-center q-pa-md text-grey-6">
+          <q-spinner size="2em" color="orange"/>
+          <div class="q-mt-sm">Načítám ceny...</div>
+        </div>
+        <div v-else-if="!lunchPrices" class="q-mb-md q-pa-sm text-orange-8" style="background:#fff3e0;border-radius:4px">
+          ⚠ Pro vybrané datum nebyla nalezena cena oběda
+        </div>
+        <div v-else class="q-mb-md">
+          <div class="text-subtitle2 q-mb-sm text-grey-7">Vyberte cenu oběda:</div>
+          <div class="row q-gutter-sm">
+            <q-btn :outline="lunchPrice !== lunchPrices.price1" :unelevated="lunchPrice === lunchPrices.price1"
+              color="orange" :label="lunchPrices.price1 + ' Kč'" icon="restaurant" class="col" size="lg"
+              @click="lunchPrice = lunchPrices.price1"/>
+            <q-btn v-if="lunchPrices.price2"
+              :outline="lunchPrice !== lunchPrices.price2" :unelevated="lunchPrice === lunchPrices.price2"
+              color="deep-orange" :label="lunchPrices.price2 + ' Kč'" icon="restaurant_menu" class="col" size="lg"
+              @click="lunchPrice = lunchPrices.price2"/>
+          </div>
+        </div>
+        <div v-if="lunchPrice" class="q-mb-md q-pa-sm text-center" style="background:#e8f5e9;border-radius:4px">
+          <div class="text-h6 text-green-8">✓ Vybráno: <strong>{{ lunchPrice }} Kč</strong></div>
+          <div class="text-caption text-grey-7">{{ lunchDate }}</div>
+        </div>
+        <q-btn @click="saveLunch" label="Uložit oběd" color="orange"
+          :loading="loading" class="full-width" size="lg" icon="restaurant"
+          :disabled="!lunchPrice || !lunchPrices"/>
+      </div>
+      
+      <!-- ZÁLOHA -->
+      <div v-if="currentTab==='advance'" class="q-pt-md">
+        <q-input v-model.number="advanceForm.amount" label="Částka (Kč) *"
+          type="number" outlined class="q-mb-md"/>
+        <q-input v-model="advanceForm.reason" label="Důvod *"
+          outlined class="q-mb-md" type="textarea" rows="2"/>
+        <q-btn @click="saveAdvance" label="Uložit zálohu" color="primary"
+          :loading="advanceSaving" class="full-width" size="lg"/>
+      </div>
+
+      <!-- OBJEDNAT OBĚD -->
+      <div v-if="currentTab==='objednat'" class="q-pt-md">
+        <div class="text-subtitle1 text-bold q-mb-xs">🍽 Objednávka oběda na zítřek</div>
+
+        <div v-if="objednavkaUlozena" class="q-mb-md q-pa-md text-center"
+          style="background:#e8f5e9; border-radius:8px; border:2px solid #4caf50">
+          <div class="text-h5 text-green-8">✓ Objednáno</div>
+          <div class="text-h6 text-green-7">Jídlo č. {{ objednavkaUlozenaJidlo }}</div>
+          <q-btn flat dense label="Změnit" size="sm" color="grey" class="q-mt-sm"
+            @click="objednavkaUlozena = false; objednavkaJidlo = objednavkaUlozenaJidlo"/>
+        </div>
+
+        <div v-if="objednavkaPricesLoading" class="text-center q-pa-md text-grey-6">
+          <q-spinner size="2em" color="orange"/>
+        </div>
+        <div v-else-if="!objednavkaPrices && !objednavkaUlozena" class="q-mb-md q-pa-sm text-orange-8" style="background:#fff3e0;border-radius:4px">
+          ⚠ Pro zítřejší datum nebyla nalezena cena oběda
+        </div>
+
+        <div v-if="!objednavkaUlozena && objednavkaPrices">
+          <div class="row q-gutter-md q-mb-md">
+            <q-btn v-for="n in 4" :key="n"
+              :unelevated="objednavkaJidlo === n" :outline="objednavkaJidlo !== n"
+              :color="n <= 3 ? 'orange' : 'deep-orange'"
+              class="col" style="height:72px" @click="objednavkaJidlo = n">
+              <div class="text-center">
+                <div style="font-size:1.6rem; font-weight:800; line-height:1">{{ n }}</div>
+                <div style="font-size:0.65rem; opacity:0.85">
+                  {{ n <= 3 || !objednavkaPrices.price2 ? objednavkaPrices.price1 : objednavkaPrices.price2 }} Kč
+                </div>
               </div>
-            </div>
-            <q-btn flat dense round icon="person" size="sm" color="blue-7" @click.stop="loginAs(worker)">
-              <q-tooltip>Přihlásit jako {{ worker.name }}</q-tooltip>
             </q-btn>
           </div>
+          <div v-if="objednavkaJidlo" class="q-mb-md q-pa-sm text-center" style="background:#fff3e0; border-radius:4px">
+            <div class="text-subtitle1">Jídlo č. <strong>{{ objednavkaJidlo }}</strong>
+              — <strong>{{ objednavkaJidlo <= 3 || !objednavkaPrices.price2 ? objednavkaPrices.price1 : objednavkaPrices.price2 }} Kč</strong>
+            </div>
+          </div>
+          <q-btn @click="saveObjednavka" label="Potvrdit objednávku" color="orange"
+            :loading="objednavkaSaving" :disabled="!objednavkaJidlo"
+            class="full-width" size="lg" icon="check"/>
         </div>
-      </div>
 
-      <!-- DETAIL PRACOVNÍKA -->
-      <div v-if="adminTab==='detail'&&selectedWorkerData" class="q-pt-md">
-        <q-btn flat icon="arrow_back" label="Zpět" @click="backToWorkers" class="q-mb-md"/>
-        <div class="summary-box">
-          <div class="text-h6 q-mb-xs">{{ selectedWorkerData.info.name }}</div>
-          <div class="text-caption text-grey-6 q-mb-md">ID: {{ selectedWorkerData.info.id }}</div>
-          <div class="summary-item"><span class="summary-label">Vyděleno:</span><span class="summary-value">{{ selectedWorkerData.info.totalEarnings }} Kč</span></div>
-          <div class="summary-item"><span class="summary-label">Zálohy:</span><span class="summary-value">{{ selectedWorkerData.info.totalPaid }} Kč</span></div>
-          <div class="summary-item"><span class="summary-label">Zůstatek:</span><span :class="selectedWorkerData.info.balance>=0?'balance-positive':'balance-negative'">{{ selectedWorkerData.info.balance }} Kč</span></div>
-        </div>
-        <q-tabs v-model="summaryTab" dense class="q-mt-md">
-          <q-tab name="records" label="Záznamy"/>
-          <q-tab name="advances" label="Zálohy"/>
-        </q-tabs>
-        <div v-if="summaryTab==='records'" class="q-mt-md">
-          <div v-for="(record,idx) in selectedWorkerData.records" :key="idx" class="record-card">
-            <div class="row items-center">
-              <div class="col">
-                <div class="text-bold">{{ record[0] }}</div>
-                <div class="text-caption text-grey-7">{{ record[3] }} • {{ record[14] || 'Nezadáno' }}</div>
-              </div>
-              <div class="text-right">
-                <div class="text-bold text-primary">{{ (parseFloat(record[7]) || 0).toFixed(2) }} hod</div>
-                <div class="text-caption">{{ record[2] }} Kč/hod</div>
-              </div>
-            </div>
-            <div class="text-caption text-grey-7 q-mt-sm">{{ formatTimeRange(record[4], record[5]) }}</div>
-            <div v-if="record[12] > 0" class="text-caption text-orange q-mt-xs">?? {{ record[12] }} km</div>
-            <div v-if="record[8]" class="note-display">?? {{ record[8] }}</div>
-          </div>
-        </div>
-        <div v-if="summaryTab==='advances'" class="q-mt-md">
-          <div v-for="(advance,idx) in selectedWorkerData.advances" :key="idx" class="record-card">
-            <div class="row items-center">
-              <div class="col"><div class="text-bold">{{ advance[5] }}</div></div>
-              <div class="text-right text-bold text-primary">{{ advance[4] }} Kč</div>
-            </div>
-            <div class="text-caption text-grey-7 q-mt-sm">{{ formatShortDateTime(advance[1]) }}</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- PŘEHLED DNE -->
-      <div v-if="adminTab==='day'" class="q-pt-md">
-        <div class="row q-gutter-xs q-mb-md items-center">
-          <q-btn color="primary" label="Dnes" dense size="sm" @click="setToday"/>
-          <div class="col">
-            <q-input v-model="selectedDate" outlined dense label="Datum" readonly>
-              <template v-slot:append>
-                <q-icon name="event" class="cursor-pointer">
-                  <q-popup-proxy cover ref="dayDateProxy">
-                    <q-date v-model="selectedDate" mask="DD. MM. YYYY" locale="cs"
-                      @update:model-value="$refs.dayDateProxy.hide(); loadDayRecords()" />
-                  </q-popup-proxy>
-                </q-icon>
-              </template>
-            </q-input>
-          </div>
-          <q-btn color="primary" icon="restaurant" dense size="sm" @click="openLunchDialog"><q-tooltip>Oběd</q-tooltip></q-btn>
-          <q-btn color="primary" icon="payment" dense size="sm" @click="openAdvanceDialog"><q-tooltip>Záloha</q-tooltip></q-btn>
-        </div>
-        <div v-if="dayRecords.length===0" class="text-center text-grey-7 q-mt-lg">Žádné záznamy pro {{ selectedDate }}</div>
-        <div v-for="(record,idx) in dayRecords" :key="idx" class="record-card" style="padding:8px 12px">
-          <div class="row items-center no-wrap" style="font-size:0.85rem">
-            <div style="min-width:80px" class="q-mr-xs"><div class="text-bold" style="font-size:0.9rem">{{ record[6] }}</div></div>
-            <div style="min-width:55px" class="text-grey-8 q-mr-xs">{{ record[0] }}</div>
-            <div style="min-width:55px" class="text-grey-7 q-mr-xs">{{ record[3] }}</div>
-            <div style="min-width:65px" class="text-grey-7 q-mr-xs">{{ timestampToTime(record[4]) }}-{{ timestampToTime(record[5]) }}</div>
-            <div style="min-width:45px" class="text-grey-7 q-mr-xs">{{ record[14] || '-' }}</div>
-            <div class="text-bold text-primary" style="min-width:42px">{{ (parseFloat(record[7]) || 0).toFixed(2) }}h</div>
-          </div>
-          <div class="row items-center q-mt-xs" style="min-height:28px">
-            <div class="col text-caption text-grey-7">
-              <span v-if="record[8]">?? {{ record[8] }}</span>
-              <span v-if="record[12] > 0" class="text-orange q-ml-xs">?? {{ record[12] }} km</span>
-            </div>
-            <div class="row" style="gap:5px; padding-right:5px; flex-shrink:0">
-              <q-btn flat dense round color="blue-7" icon="content_copy" size="sm" @click="openDuplicateDialog(record)"><q-tooltip>Kopírovat</q-tooltip></q-btn>
-              <q-btn flat dense round color="orange-8" icon="edit" size="sm" @click="openEditDialog(record,idx)"><q-tooltip>Upravit</q-tooltip></q-btn>
+        <div class="q-mt-md">
+          <div class="text-subtitle2 text-bold q-mb-xs">Objednávky na zítřek</div>
+          <div v-if="objednavkyOstatniLoading" class="text-center text-grey-6"><q-spinner size="1.2em"/></div>
+          <div v-else-if="objednavkyOstatnich.length === 0" class="text-caption text-grey-6">Zatím nikdo neobjednal</div>
+          <div v-else>
+            <div v-for="(r, i) in objednavkyOstatnich" :key="i"
+              class="row items-center no-wrap q-mb-xs"
+              style="border-bottom:1px solid #f5f5f5; padding:3px 0">
+              <q-badge :color="Number(r[4]) <= 3 ? 'orange' : 'deep-orange'"
+                style="font-size:0.8rem; min-width:22px; text-align:center">{{ r[4] }}</q-badge>
+              <span class="q-ml-sm" style="font-size:0.85rem">{{ r[1] }}</span>
+              <span class="col"/>
+              <span class="text-grey-6" style="font-size:0.78rem">{{ r[5] }} Kč</span>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- NEDOKONČENÉ - v2026-09-02 NOVÉ: napříč všemi pracovníky -->
-      <div v-if="adminTab==='nedokoncene'" class="q-pt-md">
-        <div class="q-mb-sm q-pa-xs text-caption text-orange-8" style="background:#fff3e0;border-radius:4px">
-          ⚠ Nedokončené směny od všech pracovníků. Vyber pracovníka vlevo v seznamu a doplň chybějící údaje v dialogu.
-        </div>
-        <div v-if="allNedokoncene.length===0" class="text-center text-grey-7 q-mt-lg">✓ Žádné nedokončené směny</div>
-        <div v-for="(r, idx) in allNedokoncene" :key="idx" class="record-card">
-          <div class="row items-center">
-            <div class="col">
-              <div class="text-bold">{{ r[6] || 'Neznámý pracovník' }}</div>
-              <div class="text-caption text-grey-7">Příchod: {{ formatShortDateTime(r[4]) }}</div>
-            </div>
-            <q-btn color="orange" icon="edit" label="Doplnit" size="sm" unelevated @click="openNedokonceneEditDialog(r, idx)"/>
-          </div>
-        </div>
-      </div>
-
-      <!-- ZÁLOHY -->
-      <div v-if="adminTab==='zalohy'" class="q-pt-md">
-        <div v-if="recentAdvancesByWorker.length === 0" class="text-center text-grey-7 q-mt-lg">Žádné zálohy</div>
-        <div v-for="row in recentAdvancesByWorker" :key="row.id" class="row items-start no-wrap q-mb-xs" style="border-bottom:1px solid #f0f0f0; padding:6px 4px">
-          <!-- Jméno pracovníka -->
-          <div style="min-width:90px; max-width:90px; padding-top:2px">
-            <div class="text-bold" style="font-size:0.82rem; line-height:1.2">{{ row.name }}</div>
-          </div>
-          <!-- Zálohy vedle sebe -->
-          <div class="row col q-gutter-xs">
-            <div v-for="(adv, i) in row.advances" :key="i"
-              style="min-width:85px; background:#f5f5f5; border-radius:4px; padding:3px 6px">
-              <div class="text-bold text-primary" style="font-size:0.85rem">{{ adv[4] }} Kč</div>
-              <div class="text-caption text-grey-7" style="font-size:0.72rem">{{ formatShortDateTime(adv[1]) }}</div>
-              <div class="text-caption text-grey-8" style="font-size:0.72rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:80px">{{ adv[5] }}</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-            <!-- NÁSTROJE -->
-      <div v-if="adminTab==='tools'" class="q-pt-md">
-        <q-card flat bordered class="q-mb-md">
-          <q-card-section>
-            <div class="text-subtitle1 text-bold q-mb-xs">?? Oprava sazeb v historii</div>
-            <div class="text-body2 text-grey-7 q-mb-md">
-              Projde všechny záznamy v listu <strong>záznamy_historie</strong> a přepíše sazbu (sloupec C)
-              podle sazebníku platného pro datum záznamu.
-            </div>
-            <q-btn color="deep-orange" icon="build" label="Opravit sazby v historii" :loading="toolsLoading" @click="opravSazbyHistorie"/>
-            <div v-if="toolsResult" class="q-mt-md q-pa-sm" :style="toolsResult.ok ? 'background:#e8f5e9;border-radius:4px' : 'background:#ffebee;border-radius:4px'">
-              <span :class="toolsResult.ok ? 'text-green-8' : 'text-red-8'">{{ toolsResult.ok ? '✓' : '✗' }} {{ toolsResult.msg }}</span>
-            </div>
-          </q-card-section>
-        </q-card>
-      </div>
-
-      <!-- DIALOG - ÚPRAVA -->
-      <q-dialog v-model="editDialog">
-        <q-card style="width:95%; max-width:500px">
-          <q-card-section>
-            <div class="text-h6">Upravit záznam</div>
-            <!-- v2026-04-09: zobrazíme zdroj záznamu -->
-            <div v-if="originalRecord && originalRecord.sourceSheet === 'záznamy_historie'" class="text-caption text-orange-8">📁 Historický záznam — uloží se zpět do záznamy_historie</div>
-          </q-card-section>
-          <q-card-section class="q-pt-none" style="max-height:65vh; overflow-y:auto">
-            <div class="row q-col-gutter-sm">
-              <!-- LEVÝ SLOUPEC - původní -->
-              <div class="col-6">
-                <div class="text-caption text-grey-7 q-mb-xs">Původní:</div>
-                <q-input v-model="originalRecord.worker" label="Pracovník" dense readonly filled class="q-mb-xs"/>
-                <q-input v-model="originalRecord.contract" label="Zakázka" dense readonly filled class="q-mb-xs"/>
-                <q-input v-model="originalRecord.job" label="Práce" dense readonly filled class="q-mb-xs"/>
-                <q-input v-model="originalRecord.place" label="Místo" dense readonly filled class="q-mb-xs"/>
-                <q-input v-model="originalRecord.date" label="Datum" dense readonly filled class="q-mb-xs"/>
-                <q-input v-model="originalRecord.timeFrom" label="Od" dense readonly filled class="q-mb-xs"/>
-                <q-input v-model="originalRecord.timeTo" label="Do" dense readonly filled class="q-mb-xs"/>
-                <q-input v-model="originalRecord.note" label="Poznámka" dense readonly filled type="textarea" rows="2" class="q-mb-xs"/>
-                <q-input :model-value="String(originalRecord.km) + ' km'" label="Km celkem" dense readonly filled/>
-              </div>
-              <!-- PRAVÝ SLOUPEC - nové -->
-              <div class="col-6">
-                <div class="text-caption text-grey-7 q-mb-xs">Nové:</div>
-                <q-select v-model="editForm.workerId" :options="workerOptions" label="Pracovník" emit-value map-options dense outlined class="q-mb-xs"/>
-                <q-select v-model="editForm.contractId" :options="contractOptions" label="Zakázka" emit-value map-options dense outlined class="q-mb-xs"/>
-                <q-select v-model="editForm.jobId" :options="jobOptions" label="Práce" emit-value map-options dense outlined class="q-mb-xs"/>
-                <q-select v-model="editForm.placeId" :options="placeOptions" label="Místo" emit-value map-options dense outlined class="q-mb-xs"/>
-                <q-input v-model="editForm.dateEdit" label="Datum" dense outlined readonly class="q-mb-xs">
-                  <template v-slot:append><q-icon name="event" class="cursor-pointer"><q-popup-proxy cover ref="editDateProxy"><q-date v-model="editForm.dateEdit" mask="DD. MM. YYYY" locale="cs" @update:model-value="$refs.editDateProxy.hide()"/></q-popup-proxy></q-icon></template>
-                </q-input>
-                <q-input v-model="editForm.timeFrom" label="Od" dense outlined class="q-mb-xs">
-                  <template v-slot:append>
-                    <q-icon name="schedule" class="cursor-pointer">
-                      <q-popup-proxy cover ref="editTimeFromProxy">
-                        <q-time v-model="editForm.timeFrom" mask="HH:mm" format24h
-                          @update:model-value="val => { if (val && val.length === 5) $refs.editTimeFromProxy.hide(); }"/>
-                      </q-popup-proxy>
-                    </q-icon>
-                  </template>
-                </q-input>
-                <q-input v-model="editForm.timeTo" label="Do" dense outlined class="q-mb-xs">
-                  <template v-slot:append>
-                    <q-icon name="schedule" class="cursor-pointer">
-                      <q-popup-proxy cover ref="editTimeToProxy">
-                        <q-time v-model="editForm.timeTo" mask="HH:mm" format24h
-                          @update:model-value="val => { if (val && val.length === 5) $refs.editTimeToProxy.hide(); }"/>
-                      </q-popup-proxy>
-                    </q-icon>
-                  </template>
-                </q-input>
-                <q-input v-model="editForm.note" label="Poznámka" dense outlined type="textarea" rows="2" class="q-mb-xs"/>
-                <q-input v-model.number="editForm.kmJednosmer" label="Km jednosměr" type="number" dense outlined class="q-mb-xs"/>
-                <q-checkbox v-model="editForm.kmRoundTrip" label="Tam a zpět (×2)" dense class="q-mb-xs"/>
-                <div class="text-caption text-primary q-mb-xs">Celkem: {{ editForm.kmRoundTrip ? (editForm.kmJednosmer || 0) * 2 : (editForm.kmJednosmer || 0) }} km</div>
-              </div>
-            </div>
-          </q-card-section>
-          <q-card-actions align="right">
-            <q-btn flat label="Zrušit" color="grey" v-close-popup size="sm"/>
-            <q-btn label="Uložit" color="primary" @click="saveEdit" size="sm"/>
-          </q-card-actions>
-        </q-card>
-      </q-dialog>
-      
-      <!-- DIALOG - DUPLIKACE -->
-      <q-dialog v-model="duplicateDialog">
-        <q-card style="width:100%; max-width:400px">
-          <q-card-section><div class="text-h6">Duplikovat</div></q-card-section>
-          <q-card-section class="q-pt-none">
-            <q-select v-model="editForm.workerId" :options="workerOptions" label="Pracovník" emit-value map-options outlined dense class="q-mb-sm"/>
-            <q-select v-model="editForm.contractId" :options="contractOptions" label="Zakázka" emit-value map-options outlined dense class="q-mb-sm"/>
-            <q-select v-model="editForm.jobId" :options="jobOptions" label="Práce" emit-value map-options outlined dense class="q-mb-sm"/>
-            <q-select v-model="editForm.placeId" :options="placeOptions" label="Místo" emit-value map-options outlined dense class="q-mb-sm"/>
-            <q-input v-model="editForm.dateEdit" label="Datum" outlined dense readonly class="q-mb-sm">
-              <template v-slot:append><q-icon name="event" class="cursor-pointer"><q-popup-proxy cover ref="dupDateProxy"><q-date v-model="editForm.dateEdit" mask="DD. MM. YYYY" locale="cs" @update:model-value="$refs.dupDateProxy.hide()"/></q-popup-proxy></q-icon></template>
-            </q-input>
-            <q-input v-model="editForm.timeFrom" label="Od" outlined dense class="q-mb-sm">
-              <template v-slot:append><q-icon name="schedule" class="cursor-pointer"><q-popup-proxy cover ref="dupTimeFromProxy"><q-time v-model="editForm.timeFrom" mask="HH:mm" format24h @update:model-value="val => { if(val && val.length===5) $refs.dupTimeFromProxy.hide() }"/></q-popup-proxy></q-icon></template>
-            </q-input>
-            <q-input v-model="editForm.timeTo" label="Do" outlined dense class="q-mb-sm">
-              <template v-slot:append><q-icon name="schedule" class="cursor-pointer"><q-popup-proxy cover ref="dupTimeToProxy"><q-time v-model="editForm.timeTo" mask="HH:mm" format24h @update:model-value="val => { if(val && val.length===5) $refs.dupTimeToProxy.hide() }"/></q-popup-proxy></q-icon></template>
-            </q-input>
-            <q-input v-model="editForm.note" label="Poznámka" outlined dense/>
-          </q-card-section>
-          <q-card-actions align="right">
-            <q-btn flat label="Zrušit" color="grey" v-close-popup/>
-            <q-btn label="Uložit" color="primary" @click="saveDuplicate"/>
-          </q-card-actions>
-        </q-card>
-      </q-dialog>
-      
-      <!-- DIALOG - OBĚD -->
-      <q-dialog v-model="lunchDialog">
-        <q-card style="width:100%; max-width:350px">
-          <q-card-section><div class="text-h6">Oběd</div></q-card-section>
-          <q-card-section class="q-pt-none">
-            <q-select v-model="newLunch.workerId" :options="workerOptions" label="Pracovník *" emit-value map-options outlined dense class="q-mb-sm"/>
-            <q-input v-model="newLunch.date" label="Datum" outlined dense readonly class="q-mb-sm">
-              <template v-slot:append><q-icon name="event" class="cursor-pointer"><q-popup-proxy cover ref="lunchDateProxy"><q-date v-model="newLunch.date" mask="DD. MM. YYYY" locale="cs" @update:model-value="$refs.lunchDateProxy.hide()"/></q-popup-proxy></q-icon></template>
-            </q-input>
-            <q-input v-model="newLunch.time" label="Čas" outlined dense>
-              <template v-slot:append><q-icon name="schedule" class="cursor-pointer"><q-popup-proxy cover ref="lunchTimeProxy"><q-time v-model="newLunch.time" mask="HH:mm" format24h @update:model-value="val => { if(val && val.length===5) $refs.lunchTimeProxy.hide() }"/></q-popup-proxy></q-icon></template>
-            </q-input>
-          </q-card-section>
-          <q-card-actions align="right">
-            <q-btn flat label="Zrušit" color="grey" v-close-popup/>
-            <q-btn label="Uložit" color="primary" @click="saveLunch"/>
-          </q-card-actions>
-        </q-card>
-      </q-dialog>
-      
-      <!-- DIALOG - ZÁLOHA -->
-      <q-dialog v-model="advanceDialog">
-        <q-card style="width:100%; max-width:350px">
-          <q-card-section><div class="text-h6">Záloha</div></q-card-section>
-          <q-card-section class="q-pt-none">
-            <q-select v-model="newAdvance.workerId" :options="workerOptions" label="Pracovník *" emit-value map-options outlined dense class="q-mb-sm"/>
-            <q-input v-model="newAdvance.date" label="Datum" outlined dense readonly class="q-mb-sm">
-              <template v-slot:append><q-icon name="event" class="cursor-pointer"><q-popup-proxy cover ref="advanceDateProxy"><q-date v-model="newAdvance.date" mask="DD. MM. YYYY" locale="cs" @update:model-value="$refs.advanceDateProxy.hide()"/></q-popup-proxy></q-icon></template>
-            </q-input>
-            <q-input v-model.number="newAdvance.amount" label="Částka (Kč) *" type="number" outlined dense class="q-mb-sm"/>
-            <q-input v-model="newAdvance.reason" label="Důvod *" outlined dense/>
-          </q-card-section>
-          <q-card-actions align="right">
-            <q-btn flat label="Zrušit" color="grey" v-close-popup/>
-            <q-btn label="Uložit" color="primary" @click="saveAdvance"/>
-          </q-card-actions>
-        </q-card>
-      </q-dialog>
     </div>
   `
 });
