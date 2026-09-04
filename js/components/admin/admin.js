@@ -100,6 +100,12 @@ window.app.component('admin-component', {
     },
     activeRecords() { return this.localRecords !== null ? this.localRecords : this.allRecords; },
     activeAdvances() { return this.localAdvances !== null ? this.localAdvances : this.allAdvances; },
+    // v2026-09-02 NOVÉ: nedokončené směny napříč VŠEMI pracovníky (ne jen dnešek)
+    allNedokoncene() {
+      return this.activeRecords
+        .filter(r => String(r[15] || '').trim() === 'rozpracováno')
+        .sort((a, b) => Number(b[4]) - Number(a[4]));
+    },
     contractOptions() { return this.contracts.map(c => ({ label: c[0] + ' - ' + c[1], value: c[0] })); },
     jobOptions() { return this.jobs.map(j => ({ label: j[1], value: j[0] })); },
     placeOptions() { return this.places ? this.places.map(p => ({ label: p[1], value: p[0] })) : []; },
@@ -245,6 +251,49 @@ window.app.component('admin-component', {
       this.duplicateDialog = true;
     },
     
+    // v2026-09-02 NOVÉ: doplnění nedokončené směny (admin, napříč všemi pracovníky)
+    // Používá stejný dialog jako Upravit/Duplikovat - jen bezpečně ošetřuje
+    // chybějící čas odchodu (record[5] je u rozpracováno prázdné).
+    openNedokonceneEditDialog(record, index) {
+      this.editingRecord = { data: record, index: index };
+      const worker = this.workers.find(w => w[1] === record[6]);
+      const contract = this.contracts.find(c => c[1] === record[0]);
+      const job = this.jobs.find(j => j[1] === record[3]);
+      const place = this.places ? this.places.find(p => p[1] === record[14]) : null;
+      const timeFrom = this.timestampToTime(record[4]);
+      const dateEdit = this.timestampToDate(record[4]);
+      const hasTimeTo = record[5] !== undefined && record[5] !== null && record[5] !== '';
+      const timeTo = hasTimeTo ? this.timestampToTime(record[5]) : this.getCurrentTime();
+
+      this.originalRecord = {
+        worker: record[6] || 'Nezadáno',
+        contract: record[0] || 'Nezadáno',
+        job: record[3] || 'Nezadáno',
+        place: record[14] || 'Nezadáno',
+        timeFrom: timeFrom,
+        timeTo: hasTimeTo ? timeTo : 'Nezadáno (chybí odchod)',
+        date: dateEdit,
+        note: record[8] || '',
+        km: record[12] || 0,
+        sourceSheet: record[18] || 'záznamy'
+      };
+
+      this.editForm = {
+        workerId: worker ? worker[0] : null,
+        contractId: contract ? contract[0] : null,
+        jobId: job ? job[0] : null,
+        placeId: place ? place[0] : null,
+        dateEdit: dateEdit,
+        timeFrom: timeFrom,
+        timeTo: timeTo,
+        note: record[8] || '',
+        kmJednosmer: parseFloat(record[11]) || 0,
+        kmManual: true,
+        kmRoundTrip: (parseFloat(record[11]) || 0) > 0 ? (parseFloat(record[12]) === parseFloat(record[11]) * 2) : true
+      };
+      this.editDialog = true;
+    },
+
     openLunchDialog() {
       this.newLunch = { workerId: null, date: this.selectedDate || this.getTodayDate(), time: this.getCurrentTime() };
       this.lunchDialog = true;
@@ -365,6 +414,7 @@ window.app.component('admin-component', {
       <q-tabs v-model="adminTab" dense align="justify" class="text-primary">
         <q-tab name="workers" label="Pracovníci"/>
         <q-tab name="day" label="Přehled dne"/>
+        <q-tab name="nedokoncene" label="Nedokončené"/>
         <q-tab name="zalohy" label="Zálohy"/>
         <q-tab name="tools" label="Nástroje"/>
       </q-tabs>
@@ -482,6 +532,23 @@ window.app.component('admin-component', {
               <q-btn flat dense round color="blue-7" icon="content_copy" size="sm" @click="openDuplicateDialog(record)"><q-tooltip>Kopírovat</q-tooltip></q-btn>
               <q-btn flat dense round color="orange-8" icon="edit" size="sm" @click="openEditDialog(record,idx)"><q-tooltip>Upravit</q-tooltip></q-btn>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- NEDOKONČENÉ - v2026-09-02 NOVÉ: napříč všemi pracovníky -->
+      <div v-if="adminTab==='nedokoncene'" class="q-pt-md">
+        <div class="q-mb-sm q-pa-xs text-caption text-orange-8" style="background:#fff3e0;border-radius:4px">
+          ⚠ Nedokončené směny od všech pracovníků. Vyber pracovníka vlevo v seznamu a doplň chybějící údaje v dialogu.
+        </div>
+        <div v-if="allNedokoncene.length===0" class="text-center text-grey-7 q-mt-lg">✓ Žádné nedokončené směny</div>
+        <div v-for="(r, idx) in allNedokoncene" :key="idx" class="record-card">
+          <div class="row items-center">
+            <div class="col">
+              <div class="text-bold">{{ r[6] || 'Neznámý pracovník' }}</div>
+              <div class="text-caption text-grey-7">Příchod: {{ formatShortDateTime(r[4]) }}</div>
+            </div>
+            <q-btn color="orange" icon="edit" label="Doplnit" size="sm" unelevated @click="openNedokonceneEditDialog(r, idx)"/>
           </div>
         </div>
       </div>
