@@ -661,34 +661,43 @@ window.app.component('admin-component', {
           </q-card-section>
           <q-card-section class="q-pt-none" style="max-height:65vh; overflow-y:auto">
 
-            <!-- v2026-09-02b NOVÉ: porovnání s kolegou, jen v režimu Nedokončených -->
-            <div v-if="dialogModeNedokoncene" class="q-mb-md q-pa-sm" style="background:#e3f2fd;border-radius:8px">
-              <div class="text-caption text-grey-7 q-mb-xs">Porovnat s kolegou (nejpodobnější první):</div>
-              <q-select
-                v-if="colleagueOptions.length > 0"
-                v-model="selectedColleagueIdx" :options="colleagueOptions"
-                emit-value map-options outlined dense class="q-mb-sm"/>
-              <div v-else class="text-caption text-grey-6">Žádný kolega ten den nepracoval.</div>
-
-              <div v-if="selectedColleague" class="q-pa-sm" style="background:white;border-radius:4px">
-                <div class="row items-center q-mb-xs">
-                  <div class="col text-caption">Zakázka: <strong>{{ selectedColleague[0] }}</strong></div>
-                  <q-btn flat dense size="sm" color="primary" label="Použít" @click="editForm.contractId = findContractIdByName(selectedColleague[0])"/>
-                </div>
-                <div class="row items-center q-mb-xs">
-                  <div class="col text-caption">Práce: <strong>{{ selectedColleague[3] }}</strong></div>
-                  <q-btn flat dense size="sm" color="primary" label="Použít" @click="editForm.jobId = findJobIdByName(selectedColleague[3])"/>
-                </div>
-                <div class="row items-center q-mb-sm">
-                  <div class="col text-caption">Místo: <strong>{{ selectedColleague[14] || 'Nezadáno' }}</strong></div>
-                  <q-btn flat dense size="sm" color="primary" label="Použít" @click="editForm.placeId = findPlaceIdByName(selectedColleague[14])"/>
-                </div>
-                <q-btn color="deep-orange" icon="content_copy" label="Opsat vše (bez poznámky)" size="sm" class="full-width" @click="copyAllFromColleague"/>
-              </div>
+            <!-- v2026-09-02c: kdo se doplňuje, jen v režimu Nedokončených -->
+            <div v-if="dialogModeNedokoncene" class="text-caption text-grey-7 q-mb-sm">
+              Doplňuješ: <strong>{{ originalRecord.worker }}</strong> — příchod {{ originalRecord.date }} {{ originalRecord.timeFrom }}
             </div>
 
             <div class="row q-col-gutter-sm">
-              <div class="col-6">
+              <!-- v2026-09-02c: LEVÝ SLOUPEC - v režimu Nedokončených ukazuje VZOR od kolegy
+                   (přepínatelný nahoře výběrem), jinak (běžná Úprava) původní hodnoty jako dřív -->
+              <div class="col-6" v-if="dialogModeNedokoncene">
+                <div class="text-caption text-grey-7 q-mb-xs">Vzor od kolegy (nejpodobnější první):</div>
+                <q-select
+                  v-if="colleagueOptions.length > 0"
+                  v-model="selectedColleagueIdx" :options="colleagueOptions"
+                  emit-value map-options outlined dense class="q-mb-sm"/>
+                <div v-else class="text-caption text-grey-6 q-mb-sm">Žádný kolega ten den nepracoval.</div>
+
+                <template v-if="selectedColleague">
+                  <q-input :model-value="selectedColleague[6]" label="Pracovník" dense readonly filled class="q-mb-xs"/>
+                  <div class="row items-center no-wrap q-mb-xs">
+                    <q-input :model-value="selectedColleague[0]" label="Zakázka" dense readonly filled class="col"/>
+                    <q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="editForm.contractId = findContractIdByName(selectedColleague[0])"><q-tooltip>Použít u pravého sloupce</q-tooltip></q-btn>
+                  </div>
+                  <div class="row items-center no-wrap q-mb-xs">
+                    <q-input :model-value="selectedColleague[3]" label="Práce" dense readonly filled class="col"/>
+                    <q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="editForm.jobId = findJobIdByName(selectedColleague[3])"><q-tooltip>Použít u pravého sloupce</q-tooltip></q-btn>
+                  </div>
+                  <div class="row items-center no-wrap q-mb-sm">
+                    <q-input :model-value="selectedColleague[14] || 'Nezadáno'" label="Místo" dense readonly filled class="col"/>
+                    <q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="editForm.placeId = findPlaceIdByName(selectedColleague[14])"><q-tooltip>Použít u pravého sloupce</q-tooltip></q-btn>
+                  </div>
+                  <q-input :model-value="formatTimeRange(selectedColleague[4], selectedColleague[5])" label="Čas kolegy" dense readonly filled class="q-mb-sm"/>
+                  <q-btn color="deep-orange" icon="content_copy" label="Opsat vše (bez poznámky)" size="sm" class="full-width" @click="copyAllFromColleague"/>
+                </template>
+              </div>
+
+              <!-- Běžná Úprava (ne Nedokončené) - původní chování beze změny -->
+              <div class="col-6" v-else>
                 <div class="text-caption text-grey-7 q-mb-xs">Původní:</div>
                 <q-input v-model="originalRecord.worker" label="Pracovník" dense readonly filled class="q-mb-xs"/>
                 <q-input v-model="originalRecord.contract" label="Zakázka" dense readonly filled class="q-mb-xs"/>
@@ -700,6 +709,7 @@ window.app.component('admin-component', {
                 <q-input v-model="originalRecord.note" label="Poznámka" dense readonly filled type="textarea" rows="2" class="q-mb-xs"/>
                 <q-input :model-value="String(originalRecord.km) + ' km'" label="Km celkem" dense readonly filled/>
               </div>
+
               <div class="col-6">
                 <div class="text-caption text-grey-7 q-mb-xs">Nové:</div>
                 <q-select v-model="editForm.workerId" :options="workerOptions" label="Pracovník" emit-value map-options dense outlined class="q-mb-xs"/>
