@@ -1,15 +1,15 @@
 // KONTROLA.JS - Kontrola migrace dat mezi "záznamy" (nová appka) a "záznamy_historie" (stará appka)
 // v2026-08-08 - NOVÝ SOUBOR
 // v2026-08-08b - NOVÉ: záložka Migrace - doplní chybějící dny z historie do nové appky
-// v2026-09-03 - NOVÉ: záložka "Oprava přiřazení" - obecný nástroj pro libovolného
-//             pracovníka. Najde jeho dokončené směny, kde název zakázky nesedí
-//             přesně s žádnou existující zakázkou (prázdné/překlep - typicky u
-//             lidí co používají jen starou appku). U každé lze vybrat kolegu ze
-//             stejného dne (nejpodobnější podle času přednastaven) a "Opsat vše"
-//             (zakázka+práce+místo, bez poznámky) - stejný princip jako doplnění
-//             Nedokončených v adminu, jen napříč libovolnými (ne jen rozpracovanými)
-//             záznamy. Samostatně si načítá workers/contracts/jobs/places, protože
-//             main.js komponentu kontrola-component posílá bez props.
+// v2026-09-03 - NOVÉ: záložka "Oprava přiřazení" - obecný nástroj pro libovolného pracovníka
+// v2026-09-12 - PŘEPRACOVÁNO: detekce podezřelých záznamů už nekontroluje jen "existuje
+//             zakázka v seznamu" (to nic neřeší, zakázka se vybírá z menu takže je vždy
+//             platná). Místo toho: pro každý záznam pracovníka najde KOLEGY se stejným
+//             dnem a PŘEKRÝVAJÍCÍM SE ČASEM (ne jen podobným začátkem - kvůli cestujícím
+//             jako Fido, kde se časy liší kvůli dojezdu), zjistí jejich NEJČASTĚJŠÍ
+//             (většinovou) zakázku, a pokud se liší od zakázky kontrolovaného pracovníka,
+//             označí záznam jako podezřelý a rovnou navrhne většinovou zakázku.
+//             Funguje pro kteréhokoli vybraného pracovníka, ne jen pro jednoho.
 
 window.app.component('kontrola-component', {
   props: [],
@@ -22,7 +22,7 @@ window.app.component('kontrola-component', {
       // PŘEHLED (read-only)
       loading: false,
       rows: [],
-      allRawRecords: [], // v2026-09-03: uchováno i pro záložku Oprava přiřazení
+      allRawRecords: [],
       filterOnlyConflicts: true,
 
       // MIGRACE
@@ -35,7 +35,7 @@ window.app.component('kontrola-component', {
       migResult: null,
       migConfirmDialog: false,
 
-      // v2026-09-03 NOVÉ: OPRAVA PŘIŘAZENÍ
+      // OPRAVA PŘIŘAZENÍ
       metaLoading: false,
       workers: [],
       contracts: [],
@@ -46,6 +46,7 @@ window.app.component('kontrola-component', {
       fixingRecord: null,
       fixForm: { contractId: null, jobId: null, placeId: null, timeFrom: '', timeTo: '', note: '', dateEdit: '' },
       fixOriginal: null,
+      fixSuggestion: null, // v2026-09-12: většinová zakázka týmu pro aktuálně otevřený záznam
       colleagueOptionsFix: [],
       colleagueRecordsFix: [],
       selectedColleagueIdxFix: null,
@@ -72,7 +73,6 @@ window.app.component('kontrola-component', {
       if (!this.migUseFilter) return 'Celé období (vše chybějící)';
       return (this.migDateFrom || '?') + ' — ' + (this.migDateTo || '?');
     },
-    // v2026-09-03 NOVÉ
     workerOptions() {
       return this.workers.map(w => ({ label: w[1], value: w[0] }));
     },
@@ -85,19 +85,27 @@ window.app.component('kontrola-component', {
     placeOptions() {
       return this.places ? this.places.map(p => ({ label: p[1], value: p[0] })) : [];
     },
-    // Dokončené záznamy vybraného pracovníka, kde zakázka nesedí přesně
+    // v2026-09-12 PŘEPRACOVÁNO: podezřelé = zakázka se liší od většinové zakázky
+    // kolegů se stejným dnem a překrývajícím se časem
     problemRecordsForWorker() {
       if (!this.selectedWorkerId) return [];
       const worker = this.workers.find(w => String(w[0]) === String(this.selectedWorkerId));
       if (!worker) return [];
       const workerName = worker[1];
-      return this.allRawRecords.filter(r => {
+      const own = this.allRawRecords.filter(r => {
         if (r[6] !== workerName) return false;
         if (String(r[15] || '').trim() === 'rozpracováno') return false; // to řeší Nedokončené
         if (!r[4] || !r[5]) return false; // musí mít příchod i odchod
-        const contractOk = r[0] && this.contracts.some(c => c[1] === r[0]);
-        return !contractOk;
-      }).sort((a, b) => Number(b[4]) - Number(a[4]));
+        return true;
+      });
+      const result = [];
+      own.forEach(r => {
+        const majority = this.getMajorityContract(r);
+        if (majority && majority.name !== r[0]) {
+          result.push({ rec: r, majority: majority });
+        }
+      });
+      return result.sort((a, b) => Number(b.rec[4]) - Number(a.rec[4]));
     },
     selectedColleagueFix() {
       return this.selectedColleagueIdxFix !== null ? this.colleagueRecordsFix[this.selectedColleagueIdxFix] : null;
@@ -115,7 +123,7 @@ window.app.component('kontrola-component', {
           this.loading = false;
           return;
         }
-        this.allRawRecords = res.data; // v2026-09-03: uložit i pro Opravu přiřazení
+        this.allRawRecords = res.data;
         const map = {};
         res.data.forEach(r => {
           const workerId = String(r[1]);
@@ -213,7 +221,7 @@ window.app.component('kontrola-component', {
       this.migCopyLoading = false;
     },
 
-    // ── v2026-09-03 NOVÉ: OPRAVA PŘIŘAZENÍ ──────────────────────────────
+    // ── OPRAVA PŘIŘAZENÍ ──────────────────────────────────────
     async loadMeta() {
       this.metaLoading = true;
       try {
@@ -259,11 +267,53 @@ window.app.component('kontrola-component', {
       return new Date(dp[2], dp[1] - 1, dp[0], tp[0], tp[1]).getTime();
     },
 
-    openFixDialog(record) {
+    // v2026-09-12 NOVÉ: mají se dva časové rozsahy překrýt (ne jen podobný začátek)
+    shiftsOverlap_(aFr, aTo, bFr, bTo) {
+      return Number(aFr) < Number(bTo) && Number(bFr) < Number(aTo);
+    },
+    // v2026-09-12 NOVÉ: kolik ms se rozsahy překrývají (pro řazení "nejpodobnější")
+    overlapAmount_(aFr, aTo, bFr, bTo) {
+      return Math.max(0, Math.min(Number(aTo), Number(bTo)) - Math.max(Number(aFr), Number(bFr)));
+    },
+
+    // v2026-09-12 NOVÉ: najde kolegy stejného dne s překrývajícím se časem
+    // (vynechává stejného pracovníka, rozpracované, a ty bez platné zakázky)
+    getOverlappingColleagues(record) {
+      const ts = Number(record[4]);
+      const d = new Date(ts);
+      const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+      const dayEnd = dayStart + 86400000;
+      return this.allRawRecords.filter(r => {
+        const rts = Number(r[4]);
+        if (isNaN(rts) || rts < dayStart || rts >= dayEnd) return false;
+        if (r[6] === record[6]) return false;
+        if (String(r[15] || '').trim() === 'rozpracováno') return false;
+        if (!r[4] || !r[5]) return false;
+        if (!r[0] || !this.contracts.some(c => c[1] === r[0])) return false;
+        return this.shiftsOverlap_(record[4], record[5], r[4], r[5]);
+      });
+    },
+
+    // v2026-09-12 NOVÉ: zjistí nejčastější (většinovou) zakázku mezi překrývajícími se kolegy
+    getMajorityContract(record) {
+      const colleagues = this.getOverlappingColleagues(record);
+      if (colleagues.length === 0) return null;
+      const counts = {};
+      colleagues.forEach(r => { counts[r[0]] = (counts[r[0]] || 0) + 1; });
+      let best = null, bestCount = 0;
+      Object.keys(counts).forEach(k => {
+        if (counts[k] > bestCount) { best = k; bestCount = counts[k]; }
+      });
+      return { name: best, count: bestCount, total: colleagues.length };
+    },
+
+    openFixDialog(problem) {
+      const record = problem.rec;
       this.fixingRecord = record;
+      this.fixSuggestion = problem.majority;
       this.fixOriginal = {
         worker: record[6],
-        contract: record[0] || 'Nezadáno / neshoduje se',
+        contract: record[0] || 'Nezadáno',
         job: record[3] || 'Nezadáno',
         place: record[14] || 'Nezadáno',
         date: this.timestampToDateFix(record[4]),
@@ -286,20 +336,15 @@ window.app.component('kontrola-component', {
       this.fixDialog = true;
     },
 
+    // v2026-09-12 OPRAVA: řazeno podle VELIKOSTI PŘEKRYVU (nejvíc společných hodin
+    // první), ne podle blízkosti začátku - kvůli cestujícím (Fido) kde se čas
+    // příchodu liší kvůli dojezdu, ale reálně dělali spolu
     loadColleaguesForFix(record) {
-      const ts = Number(record[4]);
-      const d = new Date(ts);
-      const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-      const dayEnd = dayStart + 86400000;
-
-      this.colleagueRecordsFix = this.allRawRecords.filter(r => {
-        const rts = Number(r[4]);
-        if (isNaN(rts) || rts < dayStart || rts >= dayEnd) return false;
-        if (r[6] === record[6]) return false; // vynechat stejného pracovníka
-        if (String(r[15] || '').trim() === 'rozpracováno') return false;
-        if (!r[0] || !this.contracts.some(c => c[1] === r[0])) return false; // jen validní zakázky
-        return true;
-      }).sort((a, b) => Math.abs(Number(a[4]) - ts) - Math.abs(Number(b[4]) - ts));
+      this.colleagueRecordsFix = this.getOverlappingColleagues(record)
+        .sort((a, b) =>
+          this.overlapAmount_(record[4], record[5], b[4], b[5]) -
+          this.overlapAmount_(record[4], record[5], a[4], a[5])
+        );
 
       this.colleagueOptionsFix = this.colleagueRecordsFix.map((r, i) => ({
         label: r[6] + ' • ' + this.formatTimeRangeFix(r[4], r[5]) + ' • ' + r[0] + ' - ' + r[3],
@@ -329,6 +374,12 @@ window.app.component('kontrola-component', {
       this.fixForm.contractId = this.findContractIdByNameFix(r[0]);
       this.fixForm.jobId = this.findJobIdByNameFix(r[3]);
       this.fixForm.placeId = this.findPlaceIdByNameFix(r[14]);
+    },
+
+    // v2026-09-12 NOVÉ: rovnou použít navrženou většinovou zakázku (bez výběru kolegy)
+    useSuggestedContract() {
+      if (!this.fixSuggestion) return;
+      this.fixForm.contractId = this.findContractIdByNameFix(this.fixSuggestion.name);
     },
 
     async saveFix() {
@@ -494,12 +545,12 @@ window.app.component('kontrola-component', {
         </div>
       </div>
 
-      <!-- ═══════════ OPRAVA PŘIŘAZENÍ (v2026-09-03 NOVÉ) ═══════════ -->
+      <!-- ═══════════ OPRAVA PŘIŘAZENÍ ═══════════ -->
       <div v-if="mainTab === 'oprava'">
         <div class="q-mb-md q-pa-sm text-caption text-orange-8" style="background:#fff3e0;border-radius:4px">
-          ⚠ Najde dokončené směny vybraného pracovníka, kde název zakázky nesedí přesně
-          se žádnou existující zakázkou (typicky u lidí co používají jen starou appku).
-          U každé lze vybrat kolegu ze stejného dne a opsat od něj zakázku/práci/místo.
+          ⚠ Pro vybraného pracovníka najde záznamy, kde se jeho zakázka LIŠÍ od většinové
+          zakázky kolegů, kteří měli ten den PŘEKRÝVAJÍCÍ SE ČAS (ne nutně stejný začátek).
+          U každého rovnou navrhne většinovou zakázku, nebo lze vybrat konkrétního kolegu.
         </div>
 
         <div v-if="metaLoading" class="text-center q-pa-md"><q-spinner color="primary" size="2em"/></div>
@@ -509,16 +560,19 @@ window.app.component('kontrola-component', {
 
         <div v-if="selectedWorkerId">
           <div v-if="problemRecordsForWorker.length === 0" class="text-center text-grey-7 q-mt-lg">
-            ✓ Žádné záznamy s neshodou zakázky
+            ✓ Žádné podezřelé záznamy (nebo nejsou žádní překrývající se kolegové ke srovnání)
           </div>
-          <div v-for="(r, idx) in problemRecordsForWorker" :key="idx" class="record-card">
+          <div v-for="(p, idx) in problemRecordsForWorker" :key="idx" class="record-card" style="border-left:4px solid #e53935">
             <div class="row items-center">
               <div class="col">
-                <div class="text-bold">{{ r[0] || 'Zakázka nevyplněna' }}</div>
-                <div class="text-caption text-grey-7">{{ formatShortDateTime(r[4]) }} — {{ formatTimeRangeFix(r[4], r[5]) }}</div>
-                <div class="text-caption text-grey-7">{{ r[3] || 'Práce nevyplněna' }} • {{ r[14] || 'Místo nevyplněno' }}</div>
+                <div class="text-bold">{{ p.rec[0] || 'Zakázka nevyplněna' }}</div>
+                <div class="text-caption text-grey-7">{{ formatShortDateTime(p.rec[4]) }} — {{ formatTimeRangeFix(p.rec[4], p.rec[5]) }}</div>
+                <div class="text-caption text-grey-7">{{ p.rec[3] || 'Práce nevyplněna' }} • {{ p.rec[14] || 'Místo nevyplněno' }}</div>
+                <div class="text-caption text-red-8 q-mt-xs">
+                  ⚠ Kolegové ({{ p.majority.count }}/{{ p.majority.total }}) měli: <strong>{{ p.majority.name }}</strong>
+                </div>
               </div>
-              <q-btn color="orange" icon="edit" label="Opravit" size="sm" unelevated @click="openFixDialog(r)"/>
+              <q-btn color="orange" icon="edit" label="Opravit" size="sm" unelevated @click="openFixDialog(p)"/>
             </div>
           </div>
         </div>
@@ -543,7 +597,7 @@ window.app.component('kontrola-component', {
         </q-card>
       </q-dialog>
 
-      <!-- DIALOG OPRAVY PŘIŘAZENÍ (v2026-09-03 NOVÉ) -->
+      <!-- DIALOG OPRAVY PŘIŘAZENÍ -->
       <q-dialog v-model="fixDialog">
         <q-card style="width:95%; max-width:500px">
           <q-card-section>
@@ -551,16 +605,20 @@ window.app.component('kontrola-component', {
             <div v-if="fixOriginal" class="text-caption text-grey-7">
               {{ fixOriginal.worker }} — {{ fixOriginal.date }} {{ fixOriginal.timeFrom }}-{{ fixOriginal.timeTo }}
             </div>
+            <div v-if="fixSuggestion" class="text-caption text-red-8 q-mt-xs">
+              ⚠ Většina kolegů ({{ fixSuggestion.count }}/{{ fixSuggestion.total }}) měla: <strong>{{ fixSuggestion.name }}</strong>
+              <q-btn flat dense size="sm" color="primary" label="Použít rovnou" @click="useSuggestedContract"/>
+            </div>
           </q-card-section>
           <q-card-section class="q-pt-none" style="max-height:65vh; overflow-y:auto">
             <div class="row q-col-gutter-sm">
               <div class="col-6">
-                <div class="text-caption text-grey-7 q-mb-xs">Vzor od kolegy (nejpodobnější první):</div>
+                <div class="text-caption text-grey-7 q-mb-xs">Vzor od kolegy (nejvíc překryv času první):</div>
                 <q-select
                   v-if="colleagueOptionsFix.length > 0"
                   v-model="selectedColleagueIdxFix" :options="colleagueOptionsFix"
                   emit-value map-options outlined dense class="q-mb-sm"/>
-                <div v-else class="text-caption text-grey-6 q-mb-sm">Žádný kolega ten den nepracoval.</div>
+                <div v-else class="text-caption text-grey-6 q-mb-sm">Žádný kolega se ten den nepřekrývá časem.</div>
 
                 <template v-if="selectedColleagueFix">
                   <q-input :model-value="selectedColleagueFix[6]" label="Pracovník" dense readonly filled class="q-mb-xs"/>
