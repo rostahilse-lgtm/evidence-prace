@@ -391,7 +391,7 @@ window.app.component('kontrola-component', {
       try {
         const timeFr = this.dateTimeToTimestampFix(this.fixForm.dateEdit, this.fixForm.timeFrom);
         const timeTo = this.dateTimeToTimestampFix(this.fixForm.dateEdit, this.fixForm.timeTo);
-        const worker = this.workers.find(w => w[1] === this.fixingRecord[6]);
+        const worker = this.workers.find(w => String(w[0]) === String(this.fixingRecord[1])) || this.workers.find(w => w[1] === this.fixingRecord[6]);
         const payload = {
           row_index: this.fixingRecord[17],
           source_sheet: this.fixingRecord[18] || 'záznamy',
