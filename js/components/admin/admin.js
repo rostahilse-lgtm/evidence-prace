@@ -221,7 +221,7 @@ window.app.component('admin-component', {
         km: record[12] || 0,
         sourceSheet: record[18] || 'záznamy'
       };
-      const worker = this.workers.find(w => w[1] === record[6]);
+      const worker = this.workers.find(w => String(w[0]) === String(record[1])) || this.workers.find(w => w[1] === record[6]);
       const contract = this.contracts.find(c => c[1] === record[0]);
       const job = this.jobs.find(j => j[1] === record[3]);
       const place = this.places ? this.places.find(p => p[1] === record[14]) : null;
@@ -245,7 +245,7 @@ window.app.component('admin-component', {
     openNedokonceneEditDialog(record, index) {
       this.dialogModeNedokoncene = true; // v2026-09-02b: zapne porovnání s kolegou
       this.editingRecord = { data: record, index: index };
-      const worker = this.workers.find(w => w[1] === record[6]);
+      const worker = this.workers.find(w => String(w[0]) === String(record[1])) || this.workers.find(w => w[1] === record[6]);
       const contract = this.contracts.find(c => c[1] === record[0]);
       const job = this.jobs.find(j => j[1] === record[3]);
       const place = this.places ? this.places.find(p => p[1] === record[14]) : null;
@@ -338,7 +338,7 @@ window.app.component('admin-component', {
     },
     
     openDuplicateDialog(record) {
-      const worker = this.workers.find(w => w[1] === record[6]);
+      const worker = this.workers.find(w => String(w[0]) === String(record[1])) || this.workers.find(w => w[1] === record[6]);
       const contract = this.contracts.find(c => c[1] === record[0]);
       const job = this.jobs.find(j => j[1] === record[3]);
       const place = this.places ? this.places.find(p => p[1] === record[14]) : null;
