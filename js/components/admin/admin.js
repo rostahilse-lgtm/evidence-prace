@@ -209,6 +209,23 @@ window.app.component('admin-component', {
     },
     
     setToday() { this.selectedDate = this.getTodayDate(); this.loadDayRecords(); },
+
+    // v2026-09-13 NOVÉ: smazání záznamu přímo z Přehledu dne
+    async deleteRecordFromDay(record) {
+      if (!confirm('Opravdu smazat tento záznam? (' + record[6] + ', ' + this.timestampToTime(record[4]) + '-' + this.timestampToTime(record[5]) + ')')) return;
+      try {
+        const res = await apiCall('deleterecord', { row_index: record[17], source_sheet: record[18] || 'záznamy' });
+        if (res.code === '000') {
+          this.$emit('message', '✓ Záznam smazán');
+          this.$emit('reload');
+          this.loadDayRecords();
+        } else {
+          this.$emit('message', 'Chyba: ' + (res.error || ''));
+        }
+      } catch (e) {
+        this.$emit('message', 'Chyba při mazání');
+      }
+    },
     
     openEditDialog(record, index) {
       this.dialogModeNedokoncene = false; // v2026-09-02: standardní editace, bez porovnání s kolegou
@@ -595,6 +612,7 @@ window.app.component('admin-component', {
             <div class="row" style="gap:5px; padding-right:5px; flex-shrink:0">
               <q-btn flat dense round color="blue-7" icon="content_copy" size="sm" @click="openDuplicateDialog(record)"><q-tooltip>Kopírovat</q-tooltip></q-btn>
               <q-btn flat dense round color="orange-8" icon="edit" size="sm" @click="openEditDialog(record,idx)"><q-tooltip>Upravit</q-tooltip></q-btn>
+              <q-btn flat dense round color="red-8" icon="delete" size="sm" @click="deleteRecordFromDay(record)"><q-tooltip>Smazat</q-tooltip></q-btn>
             </div>
           </div>
         </div>
