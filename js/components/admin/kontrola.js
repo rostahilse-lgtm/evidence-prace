@@ -382,6 +382,37 @@ window.app.component('kontrola-component', {
       this.fixForm.contractId = this.findContractIdByNameFix(this.fixSuggestion.name);
     },
 
+    // v2026-09-13 NOVÉ: smazání konfliktních záznamů přímo z Přehledu (Kontrola dat)
+    // Maže VŠECHNY záznamy daného pracovníka/dne z vybraného zdroje (obvykle 1 kus).
+    // Mazání jde od nejvyššího row_index dolů, aby se při vícenásobném mazání
+    // neposunuly indexy zbývajících řádků.
+    async deleteRowSource(row, source) {
+      const matches = this.allRawRecords.filter(r => {
+        if (String(r[1]) !== String(row.workerId)) return false;
+        const ts = Number(r[4]);
+        if (isNaN(ts)) return false;
+        if (ts < row.dateTs || ts >= row.dateTs + 86400000) return false;
+        return r[18] === source;
+      });
+      if (matches.length === 0) {
+        this.$emit('message', 'Nenalezeny žádné záznamy ke smazání');
+        return;
+      }
+      const label = source === 'záznamy' ? 'nové appky' : 'historie';
+      if (!confirm('Opravdu smazat ' + matches.length + ' záznam(y) z ' + label + ' pro ' + row.workerName + ' (' + row.dateKey + ')?')) return;
+
+      const sorted = [...matches].sort((a, b) => Number(b[17]) - Number(a[17]));
+      let deleted = 0, failed = 0;
+      for (const r of sorted) {
+        try {
+          const res = await apiCall('deleterecord', { row_index: r[17], source_sheet: r[18] });
+          if (res.code === '000') deleted++; else failed++;
+        } catch (e) { failed++; }
+      }
+      this.$emit('message', '✓ Smazáno ' + deleted + (failed ? (', chyba u ' + failed) : ''));
+      await this.loadData();
+    },
+
     async saveFix() {
       if (!this.fixForm.contractId || !this.fixForm.jobId || !this.fixForm.placeId) {
         this.$emit('message', 'Vyplňte zakázku, práci a místo');
@@ -473,7 +504,11 @@ window.app.component('kontrola-component', {
               </div>
             </div>
             <div v-if="row.newHours > 0 && row.histHours > 0" class="text-caption text-red-8 q-mt-xs">
-              ⚠ Záznam existuje v OBOU listech tento den — zkontroluj v Google Sheetu a případně jeden smaž ručně.
+              ⚠ Záznam existuje v OBOU listech tento den.
+            </div>
+            <div v-if="row.newHours > 0 && row.histHours > 0" class="row q-gutter-sm q-mt-xs">
+              <q-btn flat dense size="sm" color="red" icon="delete" label="Smazat NOVOU" @click="deleteRowSource(row, 'záznamy')"/>
+              <q-btn flat dense size="sm" color="red" icon="delete" label="Smazat HISTORII" @click="deleteRowSource(row, 'záznamy_historie')"/>
             </div>
           </div>
         </div>
