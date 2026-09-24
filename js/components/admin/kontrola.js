@@ -62,7 +62,11 @@ window.app.component('kontrola-component', {
       longFixRecord: null,
       longFixForm: { workerId: null, contractId: null, jobId: null, placeId: null, dateEdit: '', timeFrom: '', timeTo: '', note: '' },
       longFixOriginal: null,
-      longFixSaving: false
+      longFixSaving: false,
+      // v2026-09-16 NOVÉ: bohaté porovnání s kolegou i pro dlouhé směny (jako u Nedokončených)
+      colleagueOptionsLongFix: [],
+      colleagueRecordsLongFix: [],
+      selectedColleagueIdxLongFix: null
     }
   },
 
