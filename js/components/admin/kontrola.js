@@ -109,6 +109,10 @@ window.app.component('kontrola-component', {
     selectedColleagueFix() {
       return this.selectedColleagueIdxFix !== null ? this.colleagueRecordsFix[this.selectedColleagueIdxFix] : null;
     },
+    // v2026-09-16 NOVÉ: vybraný kolega pro porovnání u dlouhé směny
+    selectedColleagueLongFix() {
+      return this.selectedColleagueIdxLongFix !== null ? this.colleagueRecordsLongFix[this.selectedColleagueIdxLongFix] : null;
+    },
 
     // ── v2026-09-15 NOVÉ: CHYBY ──────────────────────────────
     duplicateShiftGroups() {
