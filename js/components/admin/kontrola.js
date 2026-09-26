@@ -15,6 +15,19 @@
 //             znovunačtením ještě čeká na drobnou úpravu kod.gs (getAllAdvances
 //             teď nevrací zpět příznak sloupce G) - zatím funguje v rámci
 //             aktuální session (lokálně skryto po potvrzení).
+// v2026-09-26 - DOKONČENO: dialog "Opravit dlouhou směnu" teď skutečně
+//             používá porovnání s kolegou (výběr + tlačítko "Opsat vše"),
+//             stejně jako u "Oprava přiřazení" - dřív byla jen datová kostra
+//             bez propojení na dialog, takže se nic neděl.
+// v2026-09-26b - NOVÉ: u "Duplicitní směny" i "Podezřele dlouhé směny" se u
+//             kolegů ten den vypisuje i zakázka/práce, ne jen hodiny.
+// v2026-09-26c - NOVÉ: u "Duplicitní zálohy" se u každé položky vypisuje i
+//             datum a čas (dřív jen v záhlaví skupiny).
+// v2026-09-26d - NOVÉ: u vzoru od kolegy (Oprava přiřazení i Dlouhá směna) se
+//             navíc zobrazuje i jeho POZNÁMKA (např. kdyby si napsal "řidič").
+// v2026-09-26e - OPRAVA: "potvrzeno" u záloh teď zůstává potvrzené i po
+//             znovunačtení appky - čte se z r[8], které nově vrací kod.gs
+//             (viz oprava getAllAdvances). Vyžaduje nahraný nový kod.gs!
 
 window.app.component('kontrola-component', {
   props: [],
@@ -145,6 +158,10 @@ window.app.component('kontrola-component', {
       const map = {};
       this.allRawAdvances.forEach(a => {
         if (a[5] === 'oběd') return;
+        // v2026-09-26: kromě lokální session teď kontrolujeme i trvalý příznak
+        // ze sloupce G (a[8]) - dřív appka po znovunačtení "zapomněla", že už
+        // bylo potvrzeno, protože se sloupec G vůbec nevracel z kod.gs
+        if (String(a[8] || '').trim() === 'potvrzeno') return;
         if (this.confirmedKeys['adv_' + a[6] + '_' + a[7]]) return;
         const ts = Number(a[1]);
         if (isNaN(ts)) return;
@@ -437,7 +454,13 @@ window.app.component('kontrola-component', {
     sameDayColleaguesLabel(record) {
       const cols = this.getSameDayColleagues(record);
       if (cols.length === 0) return 'Žádní kolegové ten den';
-      return cols.map(r => r[6] + ' ' + (parseFloat(r[7]) || 0).toFixed(1) + 'h').join(', ');
+      // v2026-09-26b: kromě hodin i zakázka/práce + poznámka (jako u Nedokončených),
+      // ať je hned vidět, jestli to sedí a co si kdo případně napsal (např. "řidič")
+      return cols.map(r => {
+        let label = r[6] + ' ' + (parseFloat(r[7]) || 0).toFixed(1) + 'h' + ' • ' + (r[0] || '?') + ' - ' + (r[3] || '?');
+        if (r[8]) label += ' • 📝 ' + r[8];
+        return label;
+      }).join(', ');
     },
 
     // v2026-09-16 NOVÉ: kolegové stejného dne pro dlouhou směnu, řazeno podle
@@ -473,7 +496,20 @@ window.app.component('kontrola-component', {
         dateEdit: this.timestampToDateFix(record[4]), timeFrom: this.timestampToTimeFix(record[4]),
         timeTo: this.timestampToTimeFix(record[5]), note: record[8] || ''
       };
+      // v2026-09-26: DOKONČENO - dřív se tohle volalo, ale nikdo to nezobrazoval
+      this.loadColleaguesForLongFix(record);
       this.longFixDialog = true;
+    },
+
+    // v2026-09-26 NOVÉ: opsání zakázky/práce/místa od vybraného kolegy pro dlouhou
+    // směnu - obdoba copyAllFromColleagueFix() u Oprava přiřazení
+    copyAllFromColleagueLongFix() {
+      if (!this.selectedColleagueLongFix) return;
+      const r = this.selectedColleagueLongFix;
+      if (!confirm('Opravdu opsat zakázku, práci a místo od pracovníka ' + r[6] + '?')) return;
+      this.longFixForm.contractId = this.findContractIdByNameFix(r[0]);
+      this.longFixForm.jobId = this.findJobIdByNameFix(r[3]);
+      this.longFixForm.placeId = this.findPlaceIdByNameFix(r[14]);
     },
 
     async saveLongFix() {
@@ -606,6 +642,7 @@ window.app.component('kontrola-component', {
             <div class="col text-caption">{{ r[0] }} • {{ r[3] }} • {{ r[18] }}</div>
             <q-btn flat dense round icon="delete" color="red" size="sm" @click="deleteRecordSimple(r)"><q-tooltip>Smazat</q-tooltip></q-btn>
           </div>
+          <div class="text-caption text-grey-6 q-mt-xs">Kolegové ten den: {{ sameDayColleaguesLabel(group[0]) }}</div>
           <q-btn flat dense size="sm" color="grey-7" label="Potvrdit vše, není chyba" @click="confirmGroup(group)"/>
         </div>
 
@@ -640,7 +677,7 @@ window.app.component('kontrola-component', {
         <div v-for="(group, gi) in duplicateAdvanceGroups" :key="'dupadv'+gi" class="q-mb-md q-pa-sm" style="background:#fff3e0;border-radius:8px">
           <div class="text-bold q-mb-xs">{{ group[0][2] }} — {{ formatShortDateTime(group[0][1]) }} ({{ group.length }}x)</div>
           <div v-for="(a, ai) in group" :key="ai" class="row items-center no-wrap q-mb-xs" style="background:white;border-radius:4px;padding:4px 8px">
-            <div class="col text-caption">{{ a[4] }} Kč • {{ a[5] }} • {{ a[7] }}</div>
+            <div class="col text-caption">{{ formatShortDateTime(a[1]) }} • {{ a[4] }} Kč • {{ a[5] }} • {{ a[7] }}</div>
             <q-btn flat dense round icon="delete" color="red" size="sm" @click="deleteAdvanceSimple(a)"><q-tooltip>Smazat</q-tooltip></q-btn>
           </div>
           <q-btn flat dense size="sm" color="grey-7" label="Potvrdit vše, není chyba" @click="confirmAdvanceGroup(group)"/>
@@ -678,6 +715,7 @@ window.app.component('kontrola-component', {
                   <div class="row items-center no-wrap q-mb-xs"><q-input :model-value="selectedColleagueFix[0]" label="Zakázka" dense readonly filled class="col"/><q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="fixForm.contractId = findContractIdByNameFix(selectedColleagueFix[0])"/></div>
                   <div class="row items-center no-wrap q-mb-xs"><q-input :model-value="selectedColleagueFix[3]" label="Práce" dense readonly filled class="col"/><q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="fixForm.jobId = findJobIdByNameFix(selectedColleagueFix[3])"/></div>
                   <div class="row items-center no-wrap q-mb-sm"><q-input :model-value="selectedColleagueFix[14] || 'Nezadáno'" label="Místo" dense readonly filled class="col"/><q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="fixForm.placeId = findPlaceIdByNameFix(selectedColleagueFix[14])"/></div>
+                  <q-input v-if="selectedColleagueFix[8]" :model-value="selectedColleagueFix[8]" label="Poznámka kolegy" dense readonly filled type="textarea" rows="2" class="q-mb-sm"/>
                   <q-btn color="deep-orange" icon="content_copy" label="Opsat vše" size="sm" class="full-width" @click="copyAllFromColleagueFix"/>
                 </template>
               </div>
@@ -704,14 +742,33 @@ window.app.component('kontrola-component', {
             <div v-if="longFixOriginal" class="text-caption text-grey-7">{{ longFixOriginal.worker }} — {{ longFixOriginal.hours }} h ({{ longFixOriginal.timeFrom }}-{{ longFixOriginal.timeTo }})</div>
           </q-card-section>
           <q-card-section class="q-pt-none" style="max-height:65vh; overflow-y:auto">
-            <q-select v-model="longFixForm.workerId" :options="workerOptions" label="Pracovník" emit-value map-options dense outlined class="q-mb-xs"/>
-            <q-select v-model="longFixForm.contractId" :options="contractOptions" label="Zakázka" emit-value map-options dense outlined class="q-mb-xs"/>
-            <q-select v-model="longFixForm.jobId" :options="jobOptions" label="Práce" emit-value map-options dense outlined class="q-mb-xs"/>
-            <q-select v-model="longFixForm.placeId" :options="placeOptions" label="Místo" emit-value map-options dense outlined class="q-mb-xs"/>
-            <q-input v-model="longFixForm.dateEdit" label="Datum" dense outlined readonly class="q-mb-xs"><template v-slot:append><q-icon name="event" class="cursor-pointer"><q-popup-proxy cover ref="longFixDateProxy"><q-date v-model="longFixForm.dateEdit" mask="DD. MM. YYYY" locale="cs" @update:model-value="$refs.longFixDateProxy.hide()"/></q-popup-proxy></q-icon></template></q-input>
-            <q-input v-model="longFixForm.timeFrom" label="Od" dense outlined class="q-mb-xs"><template v-slot:append><q-icon name="schedule" class="cursor-pointer"><q-popup-proxy cover ref="longFixTimeFromProxy"><q-time v-model="longFixForm.timeFrom" mask="HH:mm" format24h @update:model-value="val => { if (val && val.length === 5) $refs.longFixTimeFromProxy.hide(); }"/></q-popup-proxy></q-icon></template></q-input>
-            <q-input v-model="longFixForm.timeTo" label="Do" dense outlined class="q-mb-xs"><template v-slot:append><q-icon name="schedule" class="cursor-pointer"><q-popup-proxy cover ref="longFixTimeToProxy"><q-time v-model="longFixForm.timeTo" mask="HH:mm" format24h @update:model-value="val => { if (val && val.length === 5) $refs.longFixTimeToProxy.hide(); }"/></q-popup-proxy></q-icon></template></q-input>
-            <q-input v-model="longFixForm.note" label="Poznámka" dense outlined type="textarea" rows="2"/>
+            <div class="row q-col-gutter-sm">
+              <div class="col-6">
+                <div class="text-caption text-grey-7 q-mb-xs">Vzor od kolegy (ten samý den):</div>
+                <q-select v-if="colleagueOptionsLongFix.length > 0" v-model="selectedColleagueIdxLongFix" :options="colleagueOptionsLongFix" emit-value map-options outlined dense class="q-mb-sm"/>
+                <div v-else class="text-caption text-grey-6 q-mb-sm">Žádný kolega ten den.</div>
+                <template v-if="selectedColleagueLongFix">
+                  <q-input :model-value="selectedColleagueLongFix[6]" label="Pracovník" dense readonly filled class="q-mb-xs"/>
+                  <q-input :model-value="formatTimeRangeFix(selectedColleagueLongFix[4], selectedColleagueLongFix[5])" label="Čas" dense readonly filled class="q-mb-xs"/>
+                  <div class="row items-center no-wrap q-mb-xs"><q-input :model-value="selectedColleagueLongFix[0]" label="Zakázka" dense readonly filled class="col"/><q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="longFixForm.contractId = findContractIdByNameFix(selectedColleagueLongFix[0])"/></div>
+                  <div class="row items-center no-wrap q-mb-xs"><q-input :model-value="selectedColleagueLongFix[3]" label="Práce" dense readonly filled class="col"/><q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="longFixForm.jobId = findJobIdByNameFix(selectedColleagueLongFix[3])"/></div>
+                  <div class="row items-center no-wrap q-mb-sm"><q-input :model-value="selectedColleagueLongFix[14] || 'Nezadáno'" label="Místo" dense readonly filled class="col"/><q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="longFixForm.placeId = findPlaceIdByNameFix(selectedColleagueLongFix[14])"/></div>
+                  <q-input v-if="selectedColleagueLongFix[8]" :model-value="selectedColleagueLongFix[8]" label="Poznámka kolegy" dense readonly filled type="textarea" rows="2" class="q-mb-sm"/>
+                  <q-btn color="deep-orange" icon="content_copy" label="Opsat vše" size="sm" class="full-width" @click="copyAllFromColleagueLongFix"/>
+                </template>
+              </div>
+              <div class="col-6">
+                <div class="text-caption text-grey-7 q-mb-xs">Nové:</div>
+                <q-select v-model="longFixForm.workerId" :options="workerOptions" label="Pracovník" emit-value map-options dense outlined class="q-mb-xs"/>
+                <q-select v-model="longFixForm.contractId" :options="contractOptions" label="Zakázka" emit-value map-options dense outlined class="q-mb-xs"/>
+                <q-select v-model="longFixForm.jobId" :options="jobOptions" label="Práce" emit-value map-options dense outlined class="q-mb-xs"/>
+                <q-select v-model="longFixForm.placeId" :options="placeOptions" label="Místo" emit-value map-options dense outlined class="q-mb-xs"/>
+                <q-input v-model="longFixForm.dateEdit" label="Datum" dense outlined readonly class="q-mb-xs"><template v-slot:append><q-icon name="event" class="cursor-pointer"><q-popup-proxy cover ref="longFixDateProxy"><q-date v-model="longFixForm.dateEdit" mask="DD. MM. YYYY" locale="cs" @update:model-value="$refs.longFixDateProxy.hide()"/></q-popup-proxy></q-icon></template></q-input>
+                <q-input v-model="longFixForm.timeFrom" label="Od" dense outlined class="q-mb-xs"><template v-slot:append><q-icon name="schedule" class="cursor-pointer"><q-popup-proxy cover ref="longFixTimeFromProxy"><q-time v-model="longFixForm.timeFrom" mask="HH:mm" format24h @update:model-value="val => { if (val && val.length === 5) $refs.longFixTimeFromProxy.hide(); }"/></q-popup-proxy></q-icon></template></q-input>
+                <q-input v-model="longFixForm.timeTo" label="Do" dense outlined class="q-mb-xs"><template v-slot:append><q-icon name="schedule" class="cursor-pointer"><q-popup-proxy cover ref="longFixTimeToProxy"><q-time v-model="longFixForm.timeTo" mask="HH:mm" format24h @update:model-value="val => { if (val && val.length === 5) $refs.longFixTimeToProxy.hide(); }"/></q-popup-proxy></q-icon></template></q-input>
+                <q-input v-model="longFixForm.note" label="Poznámka" dense outlined type="textarea" rows="2"/>
+              </div>
+            </div>
           </q-card-section>
           <q-card-actions align="right"><q-btn flat label="Zrušit" color="grey" v-close-popup size="sm"/><q-btn label="Uložit opravu" color="primary" :loading="longFixSaving" @click="saveLongFix" size="sm"/></q-card-actions>
         </q-card>
