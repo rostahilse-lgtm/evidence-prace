@@ -440,6 +440,20 @@ window.app.component('kontrola-component', {
       return cols.map(r => r[6] + ' ' + (parseFloat(r[7]) || 0).toFixed(1) + 'h').join(', ');
     },
 
+    // v2026-09-16 NOVÉ: kolegové stejného dne pro dlouhou směnu, řazeno podle
+    // blízkosti ČASU PŘÍCHODU (ne překryvu) - u "zapomněl vypnout" chyby bývá
+    // příchod správný, jen odchod je špatně, takže překryv nejde spolehlivě použít
+    loadColleaguesForLongFix(record) {
+      this.colleagueRecordsLongFix = this.getSameDayColleagues(record)
+        .filter(r => r[0] && this.contracts.some(c => c[1] === r[0]))
+        .sort((a, b) => Math.abs(Number(a[4]) - Number(record[4])) - Math.abs(Number(b[4]) - Number(record[4])));
+      this.colleagueOptionsLongFix = this.colleagueRecordsLongFix.map((r, i) => ({
+        label: r[6] + ' • ' + this.formatTimeRangeFix(r[4], r[5]) + ' • ' + r[0] + ' - ' + r[3],
+        value: i
+      }));
+      this.selectedColleagueIdxLongFix = this.colleagueRecordsLongFix.length > 0 ? 0 : null;
+    },
+
     // v2026-09-15 NOVÉ: oprava dlouhé směny - volá STEJNÝ endpoint updaterecord
     // jako Upravit v Adminu, takže se automaticky zaloguje "co bylo předtím" do sloupce Q
     openLongFixDialog(record) {
