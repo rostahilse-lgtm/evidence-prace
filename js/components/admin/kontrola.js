@@ -28,6 +28,24 @@
 // v2026-09-26e - OPRAVA: "potvrzeno" u záloh teď zůstává potvrzené i po
 //             znovunačtení appky - čte se z r[8], které nově vrací kod.gs
 //             (viz oprava getAllAdvances). Vyžaduje nahraný nový kod.gs!
+// v2026-09-28 - NOVÁ POJISTKA: u "Opravit záznam" i "Opravit dlouhou směnu"
+//             appka teď odmítne uložit, pokud by "Do" vyšlo dřív nebo stejně
+//             jako "Od" (oba dialogy mají jen JEDNO datum pro Od i Do, takže
+//             by jinak vznikl záporný/nulový počet hodin). Jasná hláška
+//             místo tichého uložení nesmyslu.
+// v2026-09-28b - OPRAVA + NOVÉ (obojí v obou dialozích "Opravit záznam" i
+//             "Opravit dlouhou směnu"):
+//             1) Tlačítko "Opsat vše" od kolegy teď opisuje i ČAS (dřív jen
+//                zakázku/práci/místo). U "Opravit záznam" navíc přibyl
+//                samostatný řádek "Čas" se šipkou (šlo opsat jen zakázku
+//                atd., čas vůbec zobrazený nebyl).
+//             2) OPRAVENO chování výběru času (q-time): dřív se popup zavřel
+//                hned po kliknutí na HODINU (protože staré minuty zůstaly
+//                a appka to brala jako hotový čas), takže minuty šlo nastavit
+//                až napodruhé. Teď se čeká na 2 kliknutí (hodina, pak minuta)
+//                a zavře se až po druhém - opraveno na VŠECH 4 místech výběru
+//                času v tomto souboru (Opravit záznam Od/Do, Opravit dlouhou
+//                směnu Od/Do).
 
 window.app.component('kontrola-component', {
   props: [],
@@ -67,6 +85,9 @@ window.app.component('kontrola-component', {
       colleagueRecordsFix: [],
       selectedColleagueIdxFix: null,
       fixSaving: false,
+      // v2026-09-28b NOVÉ: sleduje krok (hodina/minuta) u výběru času (q-time),
+      // aby se popup zavřel až PO výběru minuty, ne hned po hodině
+      timePickerStep: {},
 
       // v2026-09-15 NOVÉ: Chyby
       longShiftThreshold: 14,
@@ -355,13 +376,35 @@ window.app.component('kontrola-component', {
     findJobIdByNameFix(name) { const j = this.jobs.find(x => x[1] === name); return j ? j[0] : null; },
     findPlaceIdByNameFix(name) { if (!this.places) return null; const p = this.places.find(x => x[1] === name); return p ? p[0] : null; },
 
+    // v2026-09-28b OPRAVA: výběr času (q-time) se dřív zavřel hned po kliknutí
+    // na HODINU, protože model-value už mělo 5 znaků (staré minuty se
+    // ponechaly) - appka to brala jako "hotovo". Teď se sleduje KROK: po
+    // 1. změně (hodina) se nezavírá, čeká se na 2. změnu (minuta), pak zavře.
+    // resetTimeStep se volá při otevření popupu (@show), aby to fungovalo
+    // pokaždé znovu, ne jen napoprvé.
+    resetTimeStep(key) {
+      this.timePickerStep[key] = 'hour';
+    },
+    handleTimeStep(key, val, proxyRef) {
+      if (!val) return;
+      if (this.timePickerStep[key] !== 'minute') {
+        this.timePickerStep[key] = 'minute';
+      } else {
+        this.timePickerStep[key] = 'hour';
+        this.$refs[proxyRef].hide();
+      }
+    },
+
+    // v2026-09-28b ZMĚNA: teď opisuje i čas (dřív jen zakázku/práci/místo)
     copyAllFromColleagueFix() {
       if (!this.selectedColleagueFix) return;
       const r = this.selectedColleagueFix;
-      if (!confirm('Opravdu opsat zakázku, práci a místo od pracovníka ' + r[6] + '?')) return;
+      if (!confirm('Opravdu opsat zakázku, práci, místo a čas od pracovníka ' + r[6] + '?')) return;
       this.fixForm.contractId = this.findContractIdByNameFix(r[0]);
       this.fixForm.jobId = this.findJobIdByNameFix(r[3]);
       this.fixForm.placeId = this.findPlaceIdByNameFix(r[14]);
+      this.fixForm.timeFrom = this.timestampToTimeFix(r[4]);
+      this.fixForm.timeTo = this.timestampToTimeFix(r[5]);
     },
 
     useSuggestedContract() {
@@ -375,6 +418,14 @@ window.app.component('kontrola-component', {
       try {
         const timeFr = this.dateTimeToTimestampFix(this.fixForm.dateEdit, this.fixForm.timeFrom);
         const timeTo = this.dateTimeToTimestampFix(this.fixForm.dateEdit, this.fixForm.timeTo);
+        // v2026-09-28 NOVÁ POJISTKA: formulář má jen jedno datum pro Od i Do,
+        // takže když by "Do" vyšlo dřív/stejně jako "Od", byl by z toho záporný
+        // nebo nulový počet hodin - zablokovat a napsat proč, místo tichého uložení.
+        if (timeTo <= timeFr) {
+          this.$emit('message', 'Čas "Do" musí být později než "Od" (formulář počítá s jedním dnem)');
+          this.fixSaving = false;
+          return;
+        }
         const worker = this.workers.find(w => String(w[0]) === String(this.fixingRecord[1])) || this.workers.find(w => w[1] === this.fixingRecord[6]);
         const payload = {
           row_index: this.fixingRecord[17], source_sheet: this.fixingRecord[18] || 'záznamy',
@@ -503,13 +554,16 @@ window.app.component('kontrola-component', {
 
     // v2026-09-26 NOVÉ: opsání zakázky/práce/místa od vybraného kolegy pro dlouhou
     // směnu - obdoba copyAllFromColleagueFix() u Oprava přiřazení
+    // v2026-09-28b ZMĚNA: teď opisuje i čas (dřív jen zakázku/práci/místo)
     copyAllFromColleagueLongFix() {
       if (!this.selectedColleagueLongFix) return;
       const r = this.selectedColleagueLongFix;
-      if (!confirm('Opravdu opsat zakázku, práci a místo od pracovníka ' + r[6] + '?')) return;
+      if (!confirm('Opravdu opsat zakázku, práci, místo a čas od pracovníka ' + r[6] + '?')) return;
       this.longFixForm.contractId = this.findContractIdByNameFix(r[0]);
       this.longFixForm.jobId = this.findJobIdByNameFix(r[3]);
       this.longFixForm.placeId = this.findPlaceIdByNameFix(r[14]);
+      this.longFixForm.timeFrom = this.timestampToTimeFix(r[4]);
+      this.longFixForm.timeTo = this.timestampToTimeFix(r[5]);
     },
 
     async saveLongFix() {
@@ -520,6 +574,14 @@ window.app.component('kontrola-component', {
       try {
         const timeFr = this.dateTimeToTimestampFix(this.longFixForm.dateEdit, this.longFixForm.timeFrom);
         const timeTo = this.dateTimeToTimestampFix(this.longFixForm.dateEdit, this.longFixForm.timeTo);
+        // v2026-09-28 NOVÁ POJISTKA: stejný důvod jako u saveFix - jedno datum
+        // pro Od i Do, takže "Do" musí být později, jinak by vyšel záporný/nulový
+        // počet hodin (typicky když se zapomene přepsat "Do" ze starého záznamu).
+        if (timeTo <= timeFr) {
+          this.$emit('message', 'Čas "Do" musí být později než "Od" (formulář počítá s jedním dnem)');
+          this.longFixSaving = false;
+          return;
+        }
         const payload = {
           row_index: this.longFixRecord[17], source_sheet: this.longFixRecord[18] || 'záznamy',
           id_contract: this.longFixForm.contractId, id_worker: this.longFixForm.workerId,
@@ -712,6 +774,7 @@ window.app.component('kontrola-component', {
                 <div v-else class="text-caption text-grey-6 q-mb-sm">Žádný kolega.</div>
                 <template v-if="selectedColleagueFix">
                   <q-input :model-value="selectedColleagueFix[6]" label="Pracovník" dense readonly filled class="q-mb-xs"/>
+                  <div class="row items-center no-wrap q-mb-xs"><q-input :model-value="formatTimeRangeFix(selectedColleagueFix[4], selectedColleagueFix[5])" label="Čas" dense readonly filled class="col"/><q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="fixForm.timeFrom = timestampToTimeFix(selectedColleagueFix[4]); fixForm.timeTo = timestampToTimeFix(selectedColleagueFix[5])"/></div>
                   <div class="row items-center no-wrap q-mb-xs"><q-input :model-value="selectedColleagueFix[0]" label="Zakázka" dense readonly filled class="col"/><q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="fixForm.contractId = findContractIdByNameFix(selectedColleagueFix[0])"/></div>
                   <div class="row items-center no-wrap q-mb-xs"><q-input :model-value="selectedColleagueFix[3]" label="Práce" dense readonly filled class="col"/><q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="fixForm.jobId = findJobIdByNameFix(selectedColleagueFix[3])"/></div>
                   <div class="row items-center no-wrap q-mb-sm"><q-input :model-value="selectedColleagueFix[14] || 'Nezadáno'" label="Místo" dense readonly filled class="col"/><q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="fixForm.placeId = findPlaceIdByNameFix(selectedColleagueFix[14])"/></div>
@@ -724,8 +787,8 @@ window.app.component('kontrola-component', {
                 <q-select v-model="fixForm.contractId" :options="contractOptions" label="Zakázka" emit-value map-options dense outlined class="q-mb-xs"/>
                 <q-select v-model="fixForm.jobId" :options="jobOptions" label="Práce" emit-value map-options dense outlined class="q-mb-xs"/>
                 <q-select v-model="fixForm.placeId" :options="placeOptions" label="Místo" emit-value map-options dense outlined class="q-mb-xs"/>
-                <q-input v-model="fixForm.timeFrom" label="Od" dense outlined class="q-mb-xs"><template v-slot:append><q-icon name="schedule" class="cursor-pointer"><q-popup-proxy cover ref="fixTimeFromProxy"><q-time v-model="fixForm.timeFrom" mask="HH:mm" format24h @update:model-value="val => { if (val && val.length === 5) $refs.fixTimeFromProxy.hide(); }"/></q-popup-proxy></q-icon></template></q-input>
-                <q-input v-model="fixForm.timeTo" label="Do" dense outlined class="q-mb-xs"><template v-slot:append><q-icon name="schedule" class="cursor-pointer"><q-popup-proxy cover ref="fixTimeToProxy"><q-time v-model="fixForm.timeTo" mask="HH:mm" format24h @update:model-value="val => { if (val && val.length === 5) $refs.fixTimeToProxy.hide(); }"/></q-popup-proxy></q-icon></template></q-input>
+                <q-input v-model="fixForm.timeFrom" label="Od" dense outlined class="q-mb-xs"><template v-slot:append><q-icon name="schedule" class="cursor-pointer"><q-popup-proxy cover ref="fixTimeFromProxy" @show="resetTimeStep('fixFrom')"><q-time v-model="fixForm.timeFrom" mask="HH:mm" format24h @update:model-value="val => handleTimeStep('fixFrom', val, 'fixTimeFromProxy')"/></q-popup-proxy></q-icon></template></q-input>
+                <q-input v-model="fixForm.timeTo" label="Do" dense outlined class="q-mb-xs"><template v-slot:append><q-icon name="schedule" class="cursor-pointer"><q-popup-proxy cover ref="fixTimeToProxy" @show="resetTimeStep('fixTo')"><q-time v-model="fixForm.timeTo" mask="HH:mm" format24h @update:model-value="val => handleTimeStep('fixTo', val, 'fixTimeToProxy')"/></q-popup-proxy></q-icon></template></q-input>
                 <q-input v-model="fixForm.note" label="Poznámka" dense outlined type="textarea" rows="2"/>
               </div>
             </div>
@@ -749,7 +812,7 @@ window.app.component('kontrola-component', {
                 <div v-else class="text-caption text-grey-6 q-mb-sm">Žádný kolega ten den.</div>
                 <template v-if="selectedColleagueLongFix">
                   <q-input :model-value="selectedColleagueLongFix[6]" label="Pracovník" dense readonly filled class="q-mb-xs"/>
-                  <q-input :model-value="formatTimeRangeFix(selectedColleagueLongFix[4], selectedColleagueLongFix[5])" label="Čas" dense readonly filled class="q-mb-xs"/>
+                  <div class="row items-center no-wrap q-mb-xs"><q-input :model-value="formatTimeRangeFix(selectedColleagueLongFix[4], selectedColleagueLongFix[5])" label="Čas" dense readonly filled class="col"/><q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="longFixForm.timeFrom = timestampToTimeFix(selectedColleagueLongFix[4]); longFixForm.timeTo = timestampToTimeFix(selectedColleagueLongFix[5])"/></div>
                   <div class="row items-center no-wrap q-mb-xs"><q-input :model-value="selectedColleagueLongFix[0]" label="Zakázka" dense readonly filled class="col"/><q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="longFixForm.contractId = findContractIdByNameFix(selectedColleagueLongFix[0])"/></div>
                   <div class="row items-center no-wrap q-mb-xs"><q-input :model-value="selectedColleagueLongFix[3]" label="Práce" dense readonly filled class="col"/><q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="longFixForm.jobId = findJobIdByNameFix(selectedColleagueLongFix[3])"/></div>
                   <div class="row items-center no-wrap q-mb-sm"><q-input :model-value="selectedColleagueLongFix[14] || 'Nezadáno'" label="Místo" dense readonly filled class="col"/><q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="longFixForm.placeId = findPlaceIdByNameFix(selectedColleagueLongFix[14])"/></div>
@@ -764,8 +827,8 @@ window.app.component('kontrola-component', {
                 <q-select v-model="longFixForm.jobId" :options="jobOptions" label="Práce" emit-value map-options dense outlined class="q-mb-xs"/>
                 <q-select v-model="longFixForm.placeId" :options="placeOptions" label="Místo" emit-value map-options dense outlined class="q-mb-xs"/>
                 <q-input v-model="longFixForm.dateEdit" label="Datum" dense outlined readonly class="q-mb-xs"><template v-slot:append><q-icon name="event" class="cursor-pointer"><q-popup-proxy cover ref="longFixDateProxy"><q-date v-model="longFixForm.dateEdit" mask="DD. MM. YYYY" locale="cs" @update:model-value="$refs.longFixDateProxy.hide()"/></q-popup-proxy></q-icon></template></q-input>
-                <q-input v-model="longFixForm.timeFrom" label="Od" dense outlined class="q-mb-xs"><template v-slot:append><q-icon name="schedule" class="cursor-pointer"><q-popup-proxy cover ref="longFixTimeFromProxy"><q-time v-model="longFixForm.timeFrom" mask="HH:mm" format24h @update:model-value="val => { if (val && val.length === 5) $refs.longFixTimeFromProxy.hide(); }"/></q-popup-proxy></q-icon></template></q-input>
-                <q-input v-model="longFixForm.timeTo" label="Do" dense outlined class="q-mb-xs"><template v-slot:append><q-icon name="schedule" class="cursor-pointer"><q-popup-proxy cover ref="longFixTimeToProxy"><q-time v-model="longFixForm.timeTo" mask="HH:mm" format24h @update:model-value="val => { if (val && val.length === 5) $refs.longFixTimeToProxy.hide(); }"/></q-popup-proxy></q-icon></template></q-input>
+                <q-input v-model="longFixForm.timeFrom" label="Od" dense outlined class="q-mb-xs"><template v-slot:append><q-icon name="schedule" class="cursor-pointer"><q-popup-proxy cover ref="longFixTimeFromProxy" @show="resetTimeStep('longFrom')"><q-time v-model="longFixForm.timeFrom" mask="HH:mm" format24h @update:model-value="val => handleTimeStep('longFrom', val, 'longFixTimeFromProxy')"/></q-popup-proxy></q-icon></template></q-input>
+                <q-input v-model="longFixForm.timeTo" label="Do" dense outlined class="q-mb-xs"><template v-slot:append><q-icon name="schedule" class="cursor-pointer"><q-popup-proxy cover ref="longFixTimeToProxy" @show="resetTimeStep('longTo')"><q-time v-model="longFixForm.timeTo" mask="HH:mm" format24h @update:model-value="val => handleTimeStep('longTo', val, 'longFixTimeToProxy')"/></q-popup-proxy></q-icon></template></q-input>
                 <q-input v-model="longFixForm.note" label="Poznámka" dense outlined type="textarea" rows="2"/>
               </div>
             </div>
