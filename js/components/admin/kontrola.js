@@ -46,6 +46,19 @@
 //                a zavře se až po druhém - opraveno na VŠECH 4 místech výběru
 //                času v tomto souboru (Opravit záznam Od/Do, Opravit dlouhou
 //                směnu Od/Do).
+// v2026-09-29 - NOVÉ (vyžaduje aktualizovaný kod.gs!):
+//             1) U "Opravit dlouhou směnu" je vzor od kolegy rozdělený na
+//                Od/Do se dvěma šipkami (dřív jedna šipka na oboje najednou) -
+//                kluci občas začínají jindy, takže jde opsat jen jeden konec.
+//             2) Oprava dlouhé směny teď posílá do kod.gs "fix_reason":
+//                'Dlouhá směna', které se zapíše do sloupce Q spolu s tím,
+//                kolik hodin bylo PŮVODNĚ CELKEM (ne jen starý čas Od/Do).
+//             3) Potvrzení duplicitní směny (jak jednotlivě u dlouhých, tak
+//                hromadně u duplicit) zapisuje do sloupce Q DŮVOD potvrzení
+//                ("Duplicitní šichta, potvrzeno" / "Dlouhá směna, potvrzeno").
+//             4) Smazání jedné duplicitní směny/zálohy teď zapíše do TÉ
+//                ZBÝVAJÍCÍ poznámku "...jedna smazána" (u směn do sloupce Q,
+//                u záloh k poli Důvod, protože zálohy sloupec Q nemají).
 
 window.app.component('kontrola-component', {
   props: [],
@@ -442,18 +455,36 @@ window.app.component('kontrola-component', {
 
     // ── v2026-09-15 NOVÉ: CHYBY ──────────────────────────────
 
-    async deleteRecordSimple(r) {
+    // v2026-09-29 ZMĚNA: bere navíc celou "group" (ostatní duplicity), aby po
+    // smazání jednoho záznamu zapsal do TĚCH ZBÝVAJÍCÍCH poznámku, proč tam
+    // duplicita byla - "Duplicitní šichta, jedna smazána" do sloupce Q.
+    async deleteRecordSimple(r, group) {
       if (!confirm('Opravdu smazat tento záznam? (' + r[6] + ', ' + this.formatTimeRangeFix(r[4], r[5]) + ')')) return;
       try {
         const res = await apiCall('deleterecord', { row_index: r[17], source_sheet: r[18] || 'záznamy' });
-        if (res.code === '000') { this.$emit('message', '✓ Smazáno'); await this.loadData(); }
+        if (res.code === '000') {
+          if (group) {
+            const survivors = group.filter(other => other !== r);
+            for (const s of survivors) {
+              await apiCall('appendrecordnote', { row_index: s[17], source_sheet: s[18] || 'záznamy', note: 'Duplicitní šichta, jedna smazána' });
+            }
+          }
+          this.$emit('message', '✓ Smazáno');
+          await this.loadData();
+        }
         else this.$emit('message', 'Chyba: ' + (res.error || ''));
       } catch (e) { this.$emit('message', 'Chyba při mazání'); }
     },
 
-    async confirmRecordSimple(r) {
+    // v2026-09-29 ZMĚNA: volitelný parametr "note" - když je vyplněný, zapíše
+    // se při potvrzení i DŮVOD do sloupce Q (např. "Duplicitní šichta,
+    // potvrzeno" nebo "Dlouhá směna, potvrzeno"), ať je vidět proč se
+    // potvrzovalo, ne jen že se potvrdilo.
+    async confirmRecordSimple(r, note) {
       try {
-        const res = await apiCall('confirmrecord', { row_index: r[17], source_sheet: r[18] || 'záznamy' });
+        const params = { row_index: r[17], source_sheet: r[18] || 'záznamy' };
+        if (note) params.note = note;
+        const res = await apiCall('confirmrecord', params);
         if (res.code === '000') {
           this.confirmedKeys['rec_' + r[17] + '_' + r[18]] = true;
           this.$emit('message', '✓ Potvrzeno, příště se nevypíše');
@@ -462,14 +493,27 @@ window.app.component('kontrola-component', {
     },
 
     async confirmGroup(records) {
-      for (const r of records) await this.confirmRecordSimple(r);
+      for (const r of records) await this.confirmRecordSimple(r, 'Duplicitní šichta, potvrzeno');
     },
 
-    async deleteAdvanceSimple(a) {
+    // v2026-09-29b ZMĚNA: obdoba deleteRecordSimple - zapíše do zbývající
+    // zálohy "Duplicitní záloha, jedna smazána" (zálohy nemají sloupec Q,
+    // takže se to zapisuje do samostatného sloupce H - viz appendAdvanceNoteAPI
+    // v kod.gs, ne do pole Důvod).
+    async deleteAdvanceSimple(a, group) {
       if (!confirm('Opravdu smazat tuto zálohu? (' + a[2] + ', ' + a[4] + ' Kč, ' + a[5] + ')')) return;
       try {
         const res = await apiCall('deleterecord', { row_index: a[6], source_sheet: a[7] || 'zálohy' });
-        if (res.code === '000') { this.$emit('message', '✓ Smazáno'); await this.loadData(); }
+        if (res.code === '000') {
+          if (group) {
+            const survivors = group.filter(other => other !== a);
+            for (const s of survivors) {
+              await apiCall('appendadvancenote', { row_index: s[6], source_sheet: s[7] || 'zálohy', note: 'Duplicitní záloha, jedna smazána' });
+            }
+          }
+          this.$emit('message', '✓ Smazáno');
+          await this.loadData();
+        }
         else this.$emit('message', 'Chyba: ' + (res.error || ''));
       } catch (e) { this.$emit('message', 'Chyba při mazání'); }
     },
@@ -586,7 +630,8 @@ window.app.component('kontrola-component', {
           row_index: this.longFixRecord[17], source_sheet: this.longFixRecord[18] || 'záznamy',
           id_contract: this.longFixForm.contractId, id_worker: this.longFixForm.workerId,
           id_job: this.longFixForm.jobId, id_place: this.longFixForm.placeId,
-          time_fr: timeFr, time_to: timeTo, note: this.longFixForm.note
+          time_fr: timeFr, time_to: timeTo, note: this.longFixForm.note,
+          fix_reason: 'Dlouhá směna' // v2026-09-29 NOVÉ: kod.gs to zapíše do sloupce Q
         };
         // v2026-09-15: STEJNÝ endpoint jako Upravit v Adminu - kod.gs automaticky
         // porovná staré/nové hodnoty a zaloguje změny do sloupce Q
@@ -702,7 +747,7 @@ window.app.component('kontrola-component', {
           <div class="text-bold q-mb-xs">{{ group[0][6] }} — {{ formatTimeRangeFix(group[0][4], group[0][5]) }} ({{ group.length }}x)</div>
           <div v-for="(r, ri) in group" :key="ri" class="row items-center no-wrap q-mb-xs" style="background:white;border-radius:4px;padding:4px 8px">
             <div class="col text-caption">{{ r[0] }} • {{ r[3] }} • {{ r[18] }}</div>
-            <q-btn flat dense round icon="delete" color="red" size="sm" @click="deleteRecordSimple(r)"><q-tooltip>Smazat</q-tooltip></q-btn>
+            <q-btn flat dense round icon="delete" color="red" size="sm" @click="deleteRecordSimple(r, group)"><q-tooltip>Smazat</q-tooltip></q-btn>
           </div>
           <div class="text-caption text-grey-6 q-mt-xs">Kolegové ten den: {{ sameDayColleaguesLabel(group[0]) }}</div>
           <q-btn flat dense size="sm" color="grey-7" label="Potvrdit vše, není chyba" @click="confirmGroup(group)"/>
@@ -726,7 +771,7 @@ window.app.component('kontrola-component', {
             </div>
             <div class="column q-gutter-xs">
               <q-btn color="orange" icon="edit" label="Opravit" size="sm" unelevated @click="openLongFixDialog(r)"/>
-              <q-btn flat dense size="sm" color="grey-7" label="Potvrdit" @click="confirmRecordSimple(r)"/>
+              <q-btn flat dense size="sm" color="grey-7" label="Potvrdit" @click="confirmRecordSimple(r, 'Dlouhá směna, potvrzeno')"/>
             </div>
           </div>
         </div>
@@ -740,7 +785,7 @@ window.app.component('kontrola-component', {
           <div class="text-bold q-mb-xs">{{ group[0][2] }} — {{ formatShortDateTime(group[0][1]) }} ({{ group.length }}x)</div>
           <div v-for="(a, ai) in group" :key="ai" class="row items-center no-wrap q-mb-xs" style="background:white;border-radius:4px;padding:4px 8px">
             <div class="col text-caption">{{ formatShortDateTime(a[1]) }} • {{ a[4] }} Kč • {{ a[5] }} • {{ a[7] }}</div>
-            <q-btn flat dense round icon="delete" color="red" size="sm" @click="deleteAdvanceSimple(a)"><q-tooltip>Smazat</q-tooltip></q-btn>
+            <q-btn flat dense round icon="delete" color="red" size="sm" @click="deleteAdvanceSimple(a, group)"><q-tooltip>Smazat</q-tooltip></q-btn>
           </div>
           <q-btn flat dense size="sm" color="grey-7" label="Potvrdit vše, není chyba" @click="confirmAdvanceGroup(group)"/>
         </div>
@@ -812,7 +857,11 @@ window.app.component('kontrola-component', {
                 <div v-else class="text-caption text-grey-6 q-mb-sm">Žádný kolega ten den.</div>
                 <template v-if="selectedColleagueLongFix">
                   <q-input :model-value="selectedColleagueLongFix[6]" label="Pracovník" dense readonly filled class="q-mb-xs"/>
-                  <div class="row items-center no-wrap q-mb-xs"><q-input :model-value="formatTimeRangeFix(selectedColleagueLongFix[4], selectedColleagueLongFix[5])" label="Čas" dense readonly filled class="col"/><q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="longFixForm.timeFrom = timestampToTimeFix(selectedColleagueLongFix[4]); longFixForm.timeTo = timestampToTimeFix(selectedColleagueLongFix[5])"/></div>
+                  <!-- v2026-09-29 ZMĚNA: čas rozdělen na Od/Do samostatně (dřív
+                       jedno pole+šipka na oboje) - kluci občas začínají jindy,
+                       takže ať jde opsat jen příchod nebo jen odchod od kolegy -->
+                  <div class="row items-center no-wrap q-mb-xs"><q-input :model-value="timestampToTimeFix(selectedColleagueLongFix[4])" label="Od (kolega)" dense readonly filled class="col"/><q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="longFixForm.timeFrom = timestampToTimeFix(selectedColleagueLongFix[4])"/></div>
+                  <div class="row items-center no-wrap q-mb-xs"><q-input :model-value="timestampToTimeFix(selectedColleagueLongFix[5])" label="Do (kolega)" dense readonly filled class="col"/><q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="longFixForm.timeTo = timestampToTimeFix(selectedColleagueLongFix[5])"/></div>
                   <div class="row items-center no-wrap q-mb-xs"><q-input :model-value="selectedColleagueLongFix[0]" label="Zakázka" dense readonly filled class="col"/><q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="longFixForm.contractId = findContractIdByNameFix(selectedColleagueLongFix[0])"/></div>
                   <div class="row items-center no-wrap q-mb-xs"><q-input :model-value="selectedColleagueLongFix[3]" label="Práce" dense readonly filled class="col"/><q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="longFixForm.jobId = findJobIdByNameFix(selectedColleagueLongFix[3])"/></div>
                   <div class="row items-center no-wrap q-mb-sm"><q-input :model-value="selectedColleagueLongFix[14] || 'Nezadáno'" label="Místo" dense readonly filled class="col"/><q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="longFixForm.placeId = findPlaceIdByNameFix(selectedColleagueLongFix[14])"/></div>
