@@ -59,6 +59,13 @@
 //             4) Smazání jedné duplicitní směny/zálohy teď zapíše do TÉ
 //                ZBÝVAJÍCÍ poznámku "...jedna smazána" (u směn do sloupce Q,
 //                u záloh k poli Důvod, protože zálohy sloupec Q nemají).
+// v2026-09-30 - OPRAVA (kritická): body 4) výše měl chybu - po smazání řádku
+//             se všechny řádky POD ním posunou v tabulce o 1 nahoru, ale
+//             appka posílala poznámku zbývajícímu záznamu se STARÝM (před
+//             smazáním) číslem řádku, takže poznámka skončila o řádek níž,
+//             než měla (u opakovaného mazání duplicit se to i sčítalo).
+//             Teď se číslo řádku zbývajícího záznamu/zálohy přepočítá podle
+//             toho, jestli byl ve STEJNÉM listu PŮVODNĚ ZA smazaným řádkem.
 
 window.app.component('kontrola-component', {
   props: [],
@@ -455,18 +462,26 @@ window.app.component('kontrola-component', {
 
     // ── v2026-09-15 NOVÉ: CHYBY ──────────────────────────────
 
-    // v2026-09-29 ZMĚNA: bere navíc celou "group" (ostatní duplicity), aby po
-    // smazání jednoho záznamu zapsal do TĚCH ZBÝVAJÍCÍCH poznámku, proč tam
-    // duplicita byla - "Duplicitní šichta, jedna smazána" do sloupce Q.
+    // v2026-09-30 OPRAVA: dřív se poznámka posílala se STARÝM číslem řádku
+    // zbývajícího záznamu - jenže deleteRow() posune všechny řádky POD
+    // smazaným o 1 nahoru, takže poznámka skončila o řádek níž, než měla
+    // (a při opakovaném testování se to i sčítalo). Teď se číslo řádku
+    // zbývajícího záznamu přepočítá: pokud byl PŮVODNĚ ZA smazaným řádkem
+    // (ve STEJNÉM listu), odečte se 1.
     async deleteRecordSimple(r, group) {
       if (!confirm('Opravdu smazat tento záznam? (' + r[6] + ', ' + this.formatTimeRangeFix(r[4], r[5]) + ')')) return;
       try {
-        const res = await apiCall('deleterecord', { row_index: r[17], source_sheet: r[18] || 'záznamy' });
+        const deletedIdx = Number(r[17]);
+        const deletedSheet = r[18] || 'záznamy';
+        const res = await apiCall('deleterecord', { row_index: deletedIdx, source_sheet: deletedSheet });
         if (res.code === '000') {
           if (group) {
             const survivors = group.filter(other => other !== r);
             for (const s of survivors) {
-              await apiCall('appendrecordnote', { row_index: s[17], source_sheet: s[18] || 'záznamy', note: 'Duplicitní šichta, jedna smazána' });
+              const sSheet = s[18] || 'záznamy';
+              let sRowIndex = Number(s[17]);
+              if (sSheet === deletedSheet && sRowIndex > deletedIdx) sRowIndex -= 1;
+              await apiCall('appendrecordnote', { row_index: sRowIndex, source_sheet: sSheet, note: 'Duplicitní šichta, jedna smazána' });
             }
           }
           this.$emit('message', '✓ Smazáno');
@@ -500,15 +515,23 @@ window.app.component('kontrola-component', {
     // zálohy "Duplicitní záloha, jedna smazána" (zálohy nemají sloupec Q,
     // takže se to zapisuje do samostatného sloupce H - viz appendAdvanceNoteAPI
     // v kod.gs, ne do pole Důvod).
+    // v2026-09-30 OPRAVA: stejný přepočet čísla řádku po smazání jako u
+    // deleteRecordSimple výše (viz komentář tam) - jinak poznámka končila
+    // o řádek níž, než měla.
     async deleteAdvanceSimple(a, group) {
       if (!confirm('Opravdu smazat tuto zálohu? (' + a[2] + ', ' + a[4] + ' Kč, ' + a[5] + ')')) return;
       try {
-        const res = await apiCall('deleterecord', { row_index: a[6], source_sheet: a[7] || 'zálohy' });
+        const deletedIdx = Number(a[6]);
+        const deletedSheet = a[7] || 'zálohy';
+        const res = await apiCall('deleterecord', { row_index: deletedIdx, source_sheet: deletedSheet });
         if (res.code === '000') {
           if (group) {
             const survivors = group.filter(other => other !== a);
             for (const s of survivors) {
-              await apiCall('appendadvancenote', { row_index: s[6], source_sheet: s[7] || 'zálohy', note: 'Duplicitní záloha, jedna smazána' });
+              const sSheet = s[7] || 'zálohy';
+              let sRowIndex = Number(s[6]);
+              if (sSheet === deletedSheet && sRowIndex > deletedIdx) sRowIndex -= 1;
+              await apiCall('appendadvancenote', { row_index: sRowIndex, source_sheet: sSheet, note: 'Duplicitní záloha, jedna smazána' });
             }
           }
           this.$emit('message', '✓ Smazáno');
