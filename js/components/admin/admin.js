@@ -29,6 +29,11 @@ window.app.component('admin-component', {
       adminTab: 'workers',
       toolsLoading: false,
       toolsResult: null,
+      // v2026-09-30 NOVÉ: Oprava zobrazeného času (DST bug 27.3.-10.8.2026)
+      dstPreviewLoading: false,
+      dstPreview: null,
+      dstFixLoading: false,
+      dstFixResult: null,
       selectedWorkerData: null,
       summaryTab: 'records',
       dayRecords: [],
@@ -464,6 +469,38 @@ window.app.component('admin-component', {
       } catch (e) { this.toolsResult = { ok: false, msg: 'Chyba spojení' }; }
       this.toolsLoading = false;
     },
+
+    // v2026-09-30 NOVÉ: Oprava zobrazeného času (sloupce J/K u záznamy,
+    // D u zálohy) poškozeného GMT+1 bugem mezi 27.3.-10.8.2026. NEJDŘÍV
+    // náhled (nic nemění), teprve po potvrzení skutečná oprava.
+    async previewDstFix() {
+      this.dstPreviewLoading = true;
+      this.dstPreview = null;
+      this.dstFixResult = null;
+      try {
+        const res = await apiCall('previewfixdsttimes', {});
+        if (res.code === '000') this.dstPreview = res.data;
+        else this.$emit('message', 'Chyba náhledu: ' + (res.error || ''));
+      } catch (e) { this.$emit('message', 'Chyba při náhledu'); }
+      this.dstPreviewLoading = false;
+    },
+
+    async runDstFix() {
+      if (!this.dstPreview) return;
+      const total = this.dstPreview.recordsCount + this.dstPreview.advancesCount;
+      if (total === 0) { this.$emit('message', 'Není co opravovat'); return; }
+      if (!confirm('Opravdu přepsat zobrazený čas u ' + total + ' řádků (' + this.dstPreview.recordsCount + ' záznamů, ' + this.dstPreview.advancesCount + ' záloh)? Tohle nejde vrátit zpět.')) return;
+      this.dstFixLoading = true;
+      try {
+        const res = await apiCall('fixdsttimes', {});
+        if (res.code === '000') {
+          this.dstFixResult = res.data;
+          this.$emit('message', '✓ Opraveno');
+          this.dstPreview = null;
+        } else this.$emit('message', 'Chyba: ' + (res.error || ''));
+      } catch (e) { this.$emit('message', 'Chyba při opravě'); }
+      this.dstFixLoading = false;
+    },
     
     formatTimeRange(fr, to) {
       // v2026-09-02b: vlastní implementace přímo v komponentě, nezávisle na
@@ -665,6 +702,36 @@ window.app.component('admin-component', {
             <q-btn color="deep-orange" icon="build" label="Opravit sazby v historii" :loading="toolsLoading" @click="opravSazbyHistorie"/>
             <div v-if="toolsResult" class="q-mt-md q-pa-sm" :style="toolsResult.ok ? 'background:#e8f5e9;border-radius:4px' : 'background:#ffebee;border-radius:4px'">
               <span :class="toolsResult.ok ? 'text-green-8' : 'text-red-8'">{{ toolsResult.ok ? '✓' : '✗' }} {{ toolsResult.msg }}</span>
+            </div>
+          </q-card-section>
+        </q-card>
+
+        <!-- v2026-09-30 NOVÉ: Oprava zobrazeného času (DST bug) -->
+        <q-card flat bordered class="q-mb-md">
+          <q-card-section>
+            <div class="text-subtitle1 text-bold q-mb-xs">🕐 Oprava zobrazeného času (letní čas 27.3.–10.8.2026)</div>
+            <div class="text-body2 text-grey-7 q-mb-md">
+              Mezi 27.3.2026 a 10.8.2026 appka kvůli chybné časové zóně zapisovala
+              čitelný čas (sloupce J/K u <strong>záznamy</strong>, D u <strong>zálohy</strong>)
+              o hodinu méně, než ve skutečnosti bylo. Skutečný čas (milisekundy)
+              a odpracované hodiny jsou v pořádku - opravuje se jen ten čitelný
+              popisek, přepočtem ze správného zdroje.
+            </div>
+            <q-btn color="primary" icon="search" label="1. Zobrazit náhled" :loading="dstPreviewLoading" @click="previewDstFix" class="q-mb-sm"/>
+            <div v-if="dstPreview" class="q-mb-md q-pa-md" style="background:#e3f2fd;border-radius:8px">
+              <div class="text-subtitle2 text-bold q-mb-sm">Náhled:</div>
+              <div>Záznamy k opravě: <strong>{{ dstPreview.recordsCount }}</strong></div>
+              <div>Zálohy k opravě: <strong>{{ dstPreview.advancesCount }}</strong></div>
+              <div v-if="dstPreview.examples && dstPreview.examples.length" class="q-mt-sm">
+                <div class="text-caption text-grey-7">Ukázka:</div>
+                <div v-for="(ex, i) in dstPreview.examples" :key="i" class="text-caption">
+                  {{ ex.sheet }} • {{ ex.worker }}: <span class="text-red-8">{{ ex.old }}</span> → <span class="text-green-8">{{ ex.new }}</span>
+                </div>
+              </div>
+            </div>
+            <q-btn v-if="dstPreview && (dstPreview.recordsCount > 0 || dstPreview.advancesCount > 0)" color="deep-orange" icon="build" label="2. Provést opravu" :loading="dstFixLoading" @click="runDstFix"/>
+            <div v-if="dstFixResult" class="q-mt-md q-pa-sm" style="background:#e8f5e9;border-radius:4px">
+              <span class="text-green-8">✓ Opraveno: {{ dstFixResult.recordsFixed }} záznamů, {{ dstFixResult.advancesFixed }} záloh</span>
             </div>
           </q-card-section>
         </q-card>
