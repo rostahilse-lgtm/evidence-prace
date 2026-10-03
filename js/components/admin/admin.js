@@ -34,6 +34,10 @@ window.app.component('admin-component', {
       dstPreview: null,
       dstFixLoading: false,
       dstFixResult: null,
+      // v2026-10-02 NOVÉ: volitelné vlastní období (jinak default 27.3.-10.8.2026)
+      dstUseRange: false,
+      dstDateFrom: null,
+      dstDateTo: null,
       selectedWorkerData: null,
       summaryTab: 'records',
       dayRecords: [],
@@ -470,15 +474,37 @@ window.app.component('admin-component', {
       this.toolsLoading = false;
     },
 
-    // v2026-09-30 NOVÉ: Oprava zobrazeného času (sloupce J/K u záznamy,
-    // D u zálohy) poškozeného GMT+1 bugem mezi 27.3.-10.8.2026. NEJDŘÍV
-    // náhled (nic nemění), teprve po potvrzení skutečná oprava.
+    // v2026-10-02 NOVÉ: převod "DD. MM. YYYY" na timestamp (půlnoc / konec dne)
+    // - stejný vzorec jako dateStrToTs v kontrola.js (migrace)
+    dstDateStrToTs(dateStr, endOfDay) {
+      if (!dateStr) return null;
+      const parts = dateStr.split('. ');
+      const d = new Date(parts[2], parts[1] - 1, parts[0]);
+      if (endOfDay) d.setHours(23, 59, 59, 999);
+      return d.getTime();
+    },
+    dstRangeParams() {
+      if (!this.dstUseRange) return {};
+      const params = {};
+      if (this.dstDateFrom) params.date_from = this.dstDateStrToTs(this.dstDateFrom, false);
+      if (this.dstDateTo) params.date_to = this.dstDateStrToTs(this.dstDateTo, true);
+      return params;
+    },
+
+    // v2026-09-30 NOVÉ, v2026-10-02 OPRAVA: Oprava zobrazeného času (sloupce
+    // J/K u záznamy, D u zálohy) poškozeného GMT+1 bugem mezi 27.3.-10.8.2026.
+    // OPRAVA: Google Sheets si "27. 03. 2026 07:22" automaticky překlopí na
+    // skutečný datumový typ buňky, takže porovnání s obyčejným textem vždy
+    // vycházelo jako "liší se" - i hned po opravě (proto náhled pořád ukazoval
+    // stejná čísla). kod.gs teď porovnává přes stejné formátování na obou
+    // stranách, takže už jednou opravené řádky podruhé nenaskočí.
+    // Taky jde zadat VLASTNÍ období (jinak default 27.3.-10.8.2026).
     async previewDstFix() {
       this.dstPreviewLoading = true;
       this.dstPreview = null;
       this.dstFixResult = null;
       try {
-        const res = await apiCall('previewfixdsttimes', {});
+        const res = await apiCall('previewfixdsttimes', this.dstRangeParams());
         if (res.code === '000') this.dstPreview = res.data;
         else this.$emit('message', 'Chyba náhledu: ' + (res.error || ''));
       } catch (e) { this.$emit('message', 'Chyba při náhledu'); }
@@ -492,7 +518,7 @@ window.app.component('admin-component', {
       if (!confirm('Opravdu přepsat zobrazený čas u ' + total + ' řádků (' + this.dstPreview.recordsCount + ' záznamů, ' + this.dstPreview.advancesCount + ' záloh)? Tohle nejde vrátit zpět.')) return;
       this.dstFixLoading = true;
       try {
-        const res = await apiCall('fixdsttimes', {});
+        const res = await apiCall('fixdsttimes', this.dstRangeParams());
         if (res.code === '000') {
           this.dstFixResult = res.data;
           this.$emit('message', '✓ Opraveno');
@@ -716,6 +742,11 @@ window.app.component('admin-component', {
               o hodinu méně, než ve skutečnosti bylo. Skutečný čas (milisekundy)
               a odpracované hodiny jsou v pořádku - opravuje se jen ten čitelný
               popisek, přepočtem ze správného zdroje.
+            </div>
+            <q-checkbox v-model="dstUseRange" label="Vlastní období (jinak 27.3.-10.8.2026)" class="q-mb-sm"/>
+            <div v-if="dstUseRange" class="row q-gutter-sm q-mb-sm">
+              <div class="col"><q-input v-model="dstDateFrom" label="Od" outlined dense readonly><template v-slot:append><q-icon name="event" class="cursor-pointer"><q-popup-proxy cover ref="dstFromProxy"><q-date v-model="dstDateFrom" mask="DD. MM. YYYY" locale="cs" @update:model-value="$refs.dstFromProxy.hide()"/></q-popup-proxy></q-icon></template></q-input></div>
+              <div class="col"><q-input v-model="dstDateTo" label="Do" outlined dense readonly><template v-slot:append><q-icon name="event" class="cursor-pointer"><q-popup-proxy cover ref="dstToProxy"><q-date v-model="dstDateTo" mask="DD. MM. YYYY" locale="cs" @update:model-value="$refs.dstToProxy.hide()"/></q-popup-proxy></q-icon></template></q-input></div>
             </div>
             <q-btn color="primary" icon="search" label="1. Zobrazit náhled" :loading="dstPreviewLoading" @click="previewDstFix" class="q-mb-sm"/>
             <div v-if="dstPreview" class="q-mb-md q-pa-md" style="background:#e3f2fd;border-radius:8px">
