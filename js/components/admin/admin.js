@@ -753,10 +753,14 @@ window.app.component('admin-component', {
               <div class="text-subtitle2 text-bold q-mb-sm">Náhled:</div>
               <div>Záznamy k opravě: <strong>{{ dstPreview.recordsCount }}</strong></div>
               <div>Zálohy k opravě: <strong>{{ dstPreview.advancesCount }}</strong></div>
+              <!-- v2026-10-02b ZMĚNA: vypisuje se úplně VŠE (dřív jen 5 ukázek),
+                   ve scrollovatelném boxu, ať jde zkontrolovat celý seznam -->
               <div v-if="dstPreview.examples && dstPreview.examples.length" class="q-mt-sm">
-                <div class="text-caption text-grey-7">Ukázka:</div>
-                <div v-for="(ex, i) in dstPreview.examples" :key="i" class="text-caption">
-                  {{ ex.sheet }} • {{ ex.worker }}: <span class="text-red-8">{{ ex.old }}</span> → <span class="text-green-8">{{ ex.new }}</span>
+                <div class="text-caption text-grey-7 q-mb-xs">Všechny ({{ dstPreview.examples.length }}):</div>
+                <div style="max-height:300px; overflow-y:auto; background:white; border-radius:4px; padding:4px 8px">
+                  <div v-for="(ex, i) in dstPreview.examples" :key="i" class="text-caption q-py-xs" style="border-bottom:1px solid #eee">
+                    {{ ex.sheet }} • {{ ex.worker }}: <span class="text-red-8">{{ ex.old }}</span> → <span class="text-green-8">{{ ex.new }}</span>
+                  </div>
                 </div>
               </div>
             </div>
