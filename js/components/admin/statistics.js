@@ -1,4 +1,6 @@
 // statistics.js
+// v2026-10-11 - OPRAVA exportu do Excelu: Windows-1250 (háčky) + desetinná čárka
+//             u hodin (Excel bral "10.30" jako datum). Nic jiného se neměnilo.
 // v2026-03-04d - NOVÉ: vyhledávání v selectech Zakázky a Práce (use-input)
 //              - nic jsem nesmazal
 // v2026-09-01 - OPRAVA: 'isAdmin' chybělo v props, proto se filtry "Místa práce"
@@ -308,14 +310,38 @@ window.app.component('statistics-component', {
       this.showResults = false;
     },
     
+    // v2026-10-11 OPRAVA exportu (rozbité háčky + hodiny jako datum v Excelu):
+    // 1) Kódování zpět na Windows-1250 (UTF-8 s BOM tenhle Excel nepozná,
+    //    ukazoval "ZakÃ¡zka" místo "Zakázka") - stejně jako Stavební deník.
+    // 2) Hodiny s ČÁRKOU místo tečky (české Excely brály "10.30" jako 30. října
+    //    -> "říj.30", "9.40" jako "zář.40"). U záznamů, kde to náhodou nevyšlo
+    //    jako datum (13.30), to bylo jen textem - proto to vypadalo nahodile.
+    // Obojí tu už jednou bylo (v2026-03-01), ale commit z 4.3.2026 přepsal
+    // celý soubor starší verzí a oprava se ztratila.
+    // Sloupce a obsah exportu zůstávají stejné jako teď.
     exportToExcel() {
       if (this.filteredRecords.length === 0) {
         this.$emit('message', 'Nejdříve aplikujte filtry');
         return;
       }
-      
-      let csv = 'Zakázka;Pracovník;Kč/hod;Práce;Datum od;Datum do;Hodiny;Poznámka;Km;Místo práce\n';
-      
+
+      const win1250map = {
+        'Á':0xC1,'á':0xE1,'Č':0xC8,'č':0xE8,'Ď':0xCF,'ď':0xEF,
+        'É':0xC9,'é':0xE9,'Ě':0xCC,'ě':0xEC,'Í':0xCD,'í':0xED,
+        'Ň':0xD2,'ň':0xF2,'Ó':0xD3,'ó':0xF3,'Ř':0xD8,'ř':0xF8,
+        'Š':0x8A,'š':0x9A,'Ť':0x8D,'ť':0x9D,'Ú':0xDA,'ú':0xFA,
+        'Ů':0xD9,'ů':0xF9,'Ý':0xDD,'ý':0xFD,'Ž':0x8E,'ž':0x9E,
+        'Ä':0xC4,'ä':0xE4,'Ö':0xD6,'ö':0xF6,'Ü':0xDC,'ü':0xFC,'ß':0xDF,
+        'Ľ':0xBC,'ľ':0xBE,'Ĺ':0xC5,'ĺ':0xE5,'Ô':0xD4,'ô':0xF4,'Ŕ':0xC0,'ŕ':0xE0,
+        '–':0x96,'—':0x97,'„':0x84,'“':0x93,'”':0x94,'’':0x92,'°':0xB0
+      };
+
+      const q = (cell) => `"${String(cell).replace(/"/g, '""')}"`;
+      // desetinná ČÁRKA, ať to Excel nebere jako datum
+      const dec = (n) => String(n).replace('.', ',');
+
+      let csv = 'Zakázka;Pracovník;Kč/hod;Práce;Datum od;Datum do;Hodiny;Poznámka;Km;Místo práce\r\n';
+
       this.filteredRecords.forEach(r => {
         const row = [
           r[0],
@@ -324,30 +350,42 @@ window.app.component('statistics-component', {
           r[3],
           formatShortDateTime(r[4]),
           formatShortDateTime(r[5]),
-          r[7].toFixed(2),
+          dec((parseFloat(r[7]) || 0).toFixed(2)),
           r[8] || '',
           r[12] || 0,
           r[14] || ''
         ];
-        csv += row.map(cell => `"${cell}"`).join(';') + '\n';
+        csv += row.map(q).join(';') + '\r\n';
       });
-      
+
       // Přidat souhrn
-      csv += '\n';
-      csv += 'SOUHRN\n';
-      csv += `Celkem hodin;${this.totalHours}\n`;
-      csv += `Celkem cest;${this.totalTrips}\n`;
-      csv += `Celkem dělníků;${this.uniqueWorkers}\n`;
-      csv += `Celkem km;${this.totalKm}\n`;
-      csv += `Celkem náklady;${this.totalCost} Kč\n`;
-      csv += `Celkem vyplaceno;${this.totalPaid} Kč\n`;
+      csv += '\r\n';
+      csv += 'SOUHRN\r\n';
+      csv += `Celkem hodin;${dec(this.totalHours)}\r\n`;
+      csv += `Celkem cest;${this.totalTrips}\r\n`;
+      csv += `Celkem dělníků;${this.uniqueWorkers}\r\n`;
+      csv += `Celkem km;${dec(this.totalKm)}\r\n`;
+      csv += `Celkem náklady;${this.totalCost} Kč\r\n`;
+      csv += `Celkem vyplaceno;${this.totalPaid} Kč\r\n`;
       if (this.customCharge) {
-        csv += `Má se účtovat;${this.customCharge} Kč\n`;
-        csv += `Rozdíl (zisk);${this.profit} Kč\n`;
-        csv += `Marže;${this.profitMargin} %\n`;
+        csv += `Má se účtovat;${this.customCharge} Kč\r\n`;
+        csv += `Rozdíl (zisk);${this.profit} Kč\r\n`;
+        csv += `Marže;${dec(this.profitMargin)} %\r\n`;
       }
-      
-      const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+
+      // Převod na Windows-1250 bajty; neznámý znak (>127, není v mapě) -> '?'
+      // místo smetí
+      const bytes = new Uint8Array(csv.length);
+      for (let i = 0; i < csv.length; i++) {
+        const ch = csv[i];
+        if (win1250map[ch] !== undefined) bytes[i] = win1250map[ch];
+        else {
+          const code = csv.charCodeAt(i);
+          bytes[i] = code < 128 ? code : 0x3F;
+        }
+      }
+
+      const blob = new Blob([bytes], { type: 'text/csv;charset=windows-1250;' });
       const link = document.createElement('a');
       const url = URL.createObjectURL(blob);
       link.setAttribute('href', url);
@@ -356,7 +394,7 @@ window.app.component('statistics-component', {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      
+
       this.$emit('message', '✓ Export dokončen');
     }
   },
