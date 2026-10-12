@@ -67,6 +67,14 @@
 //             Teď se číslo řádku zbývajícího záznamu/zálohy přepočítá podle
 //             toho, jestli byl ve STEJNÉM listu PŮVODNĚ ZA smazaným řádkem.
 
+// v2026-10-11 - U "Oprava přiřazení" (Opravit záznam) stejné úpravy jako u Chyb:
+//             1) Vzor od kolegy má Od a Do zvlášť, každé se svou šipkou (dřív
+//                jedna šipka na oboje) - jde opsat jen příchod nebo jen odchod.
+//             2) saveFix posílá do kod.gs fix_reason 'Oprava přiřazení', které
+//                se zapíše do sloupce Q (spolu s původním časem a "Bylo celkem",
+//                to kod.gs u updaterecord dělá už teď). Vyžaduje kod.gs
+//                v2026-09-29 a novější (máš nahraný).
+
 window.app.component('kontrola-component', {
   props: [],
   emits: ['message'],
@@ -451,7 +459,8 @@ window.app.component('kontrola-component', {
           row_index: this.fixingRecord[17], source_sheet: this.fixingRecord[18] || 'záznamy',
           id_contract: this.fixForm.contractId, id_worker: worker ? worker[0] : null,
           id_job: this.fixForm.jobId, id_place: this.fixForm.placeId,
-          time_fr: timeFr, time_to: timeTo, note: this.fixForm.note
+          time_fr: timeFr, time_to: timeTo, note: this.fixForm.note,
+          fix_reason: 'Oprava přiřazení' // v2026-10-11 NOVÉ: kod.gs to zapíše do sloupce Q
         };
         const res = await apiCall('updaterecord', payload);
         if (res.code === '000') { this.$emit('message', '✓ Záznam opraven'); this.fixDialog = false; await this.loadData(); }
@@ -842,7 +851,8 @@ window.app.component('kontrola-component', {
                 <div v-else class="text-caption text-grey-6 q-mb-sm">Žádný kolega.</div>
                 <template v-if="selectedColleagueFix">
                   <q-input :model-value="selectedColleagueFix[6]" label="Pracovník" dense readonly filled class="q-mb-xs"/>
-                  <div class="row items-center no-wrap q-mb-xs"><q-input :model-value="formatTimeRangeFix(selectedColleagueFix[4], selectedColleagueFix[5])" label="Čas" dense readonly filled class="col"/><q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="fixForm.timeFrom = timestampToTimeFix(selectedColleagueFix[4]); fixForm.timeTo = timestampToTimeFix(selectedColleagueFix[5])"/></div>
+                  <div class="row items-center no-wrap q-mb-xs"><q-input :model-value="timestampToTimeFix(selectedColleagueFix[4])" label="Od (kolega)" dense readonly filled class="col"/><q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="fixForm.timeFrom = timestampToTimeFix(selectedColleagueFix[4])"/></div>
+                  <div class="row items-center no-wrap q-mb-xs"><q-input :model-value="timestampToTimeFix(selectedColleagueFix[5])" label="Do (kolega)" dense readonly filled class="col"/><q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="fixForm.timeTo = timestampToTimeFix(selectedColleagueFix[5])"/></div>
                   <div class="row items-center no-wrap q-mb-xs"><q-input :model-value="selectedColleagueFix[0]" label="Zakázka" dense readonly filled class="col"/><q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="fixForm.contractId = findContractIdByNameFix(selectedColleagueFix[0])"/></div>
                   <div class="row items-center no-wrap q-mb-xs"><q-input :model-value="selectedColleagueFix[3]" label="Práce" dense readonly filled class="col"/><q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="fixForm.jobId = findJobIdByNameFix(selectedColleagueFix[3])"/></div>
                   <div class="row items-center no-wrap q-mb-sm"><q-input :model-value="selectedColleagueFix[14] || 'Nezadáno'" label="Místo" dense readonly filled class="col"/><q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="fixForm.placeId = findPlaceIdByNameFix(selectedColleagueFix[14])"/></div>
