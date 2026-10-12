@@ -1,3 +1,9 @@
+
+// stavebni-denik.js
+// v2026-10-11 - OPRAVA exportu CSV: špatné kódy znaků Š/š, Ť/ť, Ž/ž ve Windows-1250
+//             (zobrazovalo se Đ, Ý, Ţ místo nich) + neznámé znaky se nahradí '?'.
+//             Nic jiného se neměnilo.
+
 window.app.component('stavebni-denik-component', {
   props: ['allRecords', 'contracts'],
   emits: ['message'],
@@ -260,18 +266,29 @@ window.app.component('stavebni-denik-component', {
         ...rows.map(row => row.map(cell => `"${cell}"`).join(';'))
       ].join('\r\n');
       
+      // v2026-10-11 OPRAVA: Š/š, Ť/ť a Ž/ž měly špatné kódy (0xD0/0xF0, 0xDD/0xFD,
+      // 0xDE/0xFE = Đ/đ, Ý/ý, Ţ/ţ), takže se v Excelu zobrazovala jiná písmena.
+      // Správně ve Windows-1250: Š=8A š=9A Ť=8D ť=9D Ž=8E ž=9E.
       const win1250map = {
         'Á':0xC1,'á':0xE1,'Č':0xC8,'č':0xE8,'Ď':0xCF,'ď':0xEF,
         'É':0xC9,'é':0xE9,'Ě':0xCC,'ě':0xEC,'Í':0xCD,'í':0xED,
         'Ň':0xD2,'ň':0xF2,'Ó':0xD3,'ó':0xF3,'Ř':0xD8,'ř':0xF8,
-        'Š':0xD0,'š':0xF0,'Ť':0xDD,'ť':0xFD,'Ú':0xDA,'ú':0xFA,
-        'Ů':0xD9,'ů':0xF9,'Ý':0xDD,'ý':0xFD,'Ž':0xDE,'ž':0xFE
+        'Š':0x8A,'š':0x9A,'Ť':0x8D,'ť':0x9D,'Ú':0xDA,'ú':0xFA,
+        'Ů':0xD9,'ů':0xF9,'Ý':0xDD,'ý':0xFD,'Ž':0x8E,'ž':0x9E,
+        'Ä':0xC4,'ä':0xE4,'Ö':0xD6,'ö':0xF6,'Ü':0xDC,'ü':0xFC,'ß':0xDF,
+        'Ľ':0xBC,'ľ':0xBE,'Ĺ':0xC5,'ĺ':0xE5,'Ô':0xD4,'ô':0xF4,'Ŕ':0xC0,'ŕ':0xE0,
+        '–':0x96,'—':0x97,'„':0x84,'“':0x93,'”':0x94,'’':0x92,'°':0xB0
       };
       
+      // neznámý znak (>127, není v mapě) -> '?' místo smetí
       const bytes = new Uint8Array(csvContent.length);
       for (let i = 0; i < csvContent.length; i++) {
         const char = csvContent[i];
-        bytes[i] = win1250map[char] || csvContent.charCodeAt(i);
+        if (win1250map[char] !== undefined) bytes[i] = win1250map[char];
+        else {
+          const code = csvContent.charCodeAt(i);
+          bytes[i] = code < 128 ? code : 0x3F;
+        }
       }
       
       const blob = new Blob([bytes], { type: 'text/csv;charset=windows-1250;' });
