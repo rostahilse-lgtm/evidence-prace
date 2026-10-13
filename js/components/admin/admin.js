@@ -19,6 +19,21 @@
 //              (klik = rovnou opsat) nebo hromadně tlačítkem "Opsat vše" (s
 //              potvrzením, bez poznámky). Funguje jen v Nedokončených, jinde
 //              se dialog chová jako dřív.
+// v2026-10-12 - NOVÉ: "Upravit záznam" v Přehledu dne má vlevo VZOR s výběrem
+//             (stejně jako u Chyb v Kontrole): 1) "Původní" = tato šichta před
+//             úpravou (první možnost, ať jde vrátit zpět), 2) kolegové stejného
+//             dne, 3) ostatní šichty téhož pracovníka ten den ("on sám").
+//             Vpravo zůstává upravovaná šichta. Jde opsat jednotlivě šipkou
+//             (Od, Do, Zakázka, Práce, Místo) nebo vše tlačítkem "Opsat vše"
+//             (zakázka, práce, místo + čas). Zobrazuje se i poznámka a km vzoru.
+//           - saveEdit: pojistka proti záporné/nulové délce (Do musí být po Od)
+//             a posílá fix_reason 'Oprava v Přehledu dne' -> kod.gs ho zapíše
+//             do sloupce Q spolu s původním časem a "Bylo celkem".
+//             (V režimu Nedokončené se chování nemění, jen pojistka délky.)
+//           - OPRAVA výběru času (q-time) na všech 5 místech v tomto souboru
+//             (Úprava Od/Do, Duplikace Od/Do, Oběd): po výběru HODINY se
+//             popup už nezavírá, přeskočí na minuty a zavře se až po výběru
+//             minuty (dřív se zavřel hned po hodině a minuty šly až napodruhé).
 
 window.app.component('admin-component', {
   props: ['allSummary', 'allRecords', 'allAdvances', 'contracts', 'jobs', 'places', 'loading'],
@@ -73,7 +88,9 @@ window.app.component('admin-component', {
       // v2026-09-02b: kolegové stejného dne pro porovnání
       colleagueRecords: [],
       colleagueOptions: [],
-      selectedColleagueIdx: null
+      selectedColleagueIdx: null,
+      // v2026-10-12 NOVÉ: sleduje krok (hodina/minuta) u výběru času (q-time)
+      timePickerStep: {}
     }
   },
   
@@ -262,7 +279,52 @@ window.app.component('admin-component', {
         kmManual: true,
         kmRoundTrip: kmJednosmer > 0 ? (kmCelkem === kmJednosmer * 2) : true
       };
+      // v2026-10-12 NOVÉ: vzor vlevo (Původní / kolegové / on sám)
+      this.loadPatternsForEdit(record);
       this.editDialog = true;
+    },
+
+    // v2026-10-12 NOVÉ: seznam vzorů pro běžnou Úpravu v Přehledu dne.
+    // 1. položka = "Původní" (tato šichta před úpravou, jde se k ní vrátit),
+    // pak ostatní dokončené šichty stejného dne (kolegové I ostatní šichty téhož
+    // pracovníka - ty jsou označené "(on sám)"), od nejpodobnějšího času příchodu.
+    // Používá stejná data jako Nedokončené (colleagueRecords/Options/selectedColleagueIdx).
+    loadPatternsForEdit(record) {
+      const ts = Number(record[4]);
+      const d = new Date(ts);
+      const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+      const dayEnd = dayStart + 86400000;
+      const sameRow = (r) => r === record ||
+        (String(r[17]) === String(record[17]) && (r[18] || 'záznamy') === (record[18] || 'záznamy'));
+      const others = this.allRecords.filter(r => {
+        const rts = Number(r[4]);
+        if (isNaN(rts) || rts < dayStart || rts >= dayEnd) return false;
+        if (sameRow(r)) return false;
+        if (String(r[15] || '').trim() === 'rozpracováno') return false;
+        if (!r[0]) return false;
+        return true;
+      }).sort((a, b) => Math.abs(Number(a[4]) - ts) - Math.abs(Number(b[4]) - ts));
+
+      this.colleagueRecords = [record].concat(others);
+      this.colleagueOptions = this.colleagueRecords.map((r, i) => {
+        const cas = this.timestampToTime(r[4]) + '-' + (r[5] ? this.timestampToTime(r[5]) : '?');
+        const prefix = i === 0 ? '↺ Původní • ' : (String(r[1]) === String(record[1]) ? '(on sám) ' : '');
+        return { label: prefix + r[6] + ' • ' + cas + ' • ' + (r[0] || '?') + ' - ' + (r[3] || '?'), value: i };
+      });
+      this.selectedColleagueIdx = 0;
+    },
+
+    // v2026-10-12 NOVÉ: výběr času (q-time) - zavřít popup až po výběru MINUTY.
+    // Dřív se zavřel hned po hodině (model už měl 5 znaků, staré minuty zůstaly).
+    resetTimeStep(key) { this.timePickerStep[key] = 'hour'; },
+    handleTimeStep(key, val, proxyRef) {
+      if (!val) return;
+      if (this.timePickerStep[key] !== 'minute') {
+        this.timePickerStep[key] = 'minute';
+      } else {
+        this.timePickerStep[key] = 'hour';
+        this.$refs[proxyRef].hide();
+      }
     },
 
     // v2026-09-02 NOVÉ: doplnění nedokončené směny (admin, napříč všemi pracovníky)
@@ -354,13 +416,21 @@ window.app.component('admin-component', {
 
     // v2026-09-02b NOVÉ: hromadné opsání zakázky+práce+místa od vybraného kolegy
     // (BEZ poznámky), s potvrzením
+    // v2026-10-12 ZMĚNA: v běžné Úpravě (Přehled dne) se opisuje i ČAS Od/Do;
+    // v režimu Nedokončených zůstává jako dřív (jen zakázka, práce, místo).
     copyAllFromColleague() {
       if (!this.selectedColleague) return;
       const r = this.selectedColleague;
-      if (!confirm('Opravdu opsat zakázku, práci a místo od pracovníka ' + r[6] + '?')) return;
+      const withTime = !this.dialogModeNedokoncene && !!r[5];
+      const co = withTime ? 'zakázku, práci, místo a čas' : 'zakázku, práci a místo';
+      if (!confirm('Opravdu opsat ' + co + ' od: ' + r[6] + '?')) return;
       this.editForm.contractId = this.findContractIdByName(r[0]);
       this.editForm.jobId = this.findJobIdByName(r[3]);
       this.editForm.placeId = this.findPlaceIdByName(r[14]);
+      if (withTime) {
+        this.editForm.timeFrom = this.timestampToTime(r[4]);
+        this.editForm.timeTo = this.timestampToTime(r[5]);
+      }
     },
     
     openDuplicateDialog(record) {
@@ -394,6 +464,12 @@ window.app.component('admin-component', {
       }
       const timeFr = this.dateTimeToTimestamp(this.editForm.dateEdit, this.editForm.timeFrom);
       const timeTo = this.dateTimeToTimestamp(this.editForm.dateEdit, this.editForm.timeTo);
+      // v2026-10-12 NOVÁ POJISTKA: formulář má jedno datum pro Od i Do, takže když
+      // by "Do" vyšlo dřív/stejně jako "Od", vznikl by záporný/nulový počet hodin.
+      if (timeTo <= timeFr) {
+        this.$emit('message', 'Čas "Do" musí být později než "Od" (formulář počítá s jedním dnem)');
+        return;
+      }
       try {
         const kmJednosmer = parseFloat(this.editForm.kmJednosmer) || 0;
         const kmCelkem = this.editForm.kmRoundTrip ? kmJednosmer * 2 : kmJednosmer;
@@ -407,6 +483,8 @@ window.app.component('admin-component', {
           km_celkem: kmCelkem,
           km_rucne: kmJednosmer > 0 ? 'Y' : 'N'
         };
+        // v2026-10-12 NOVÉ: důvod do logu (sloupec Q) - jen u běžné Úpravy
+        if (!this.dialogModeNedokoncene) payload.fix_reason = 'Oprava v Přehledu dne';
         const res = await apiCall('updaterecord', payload);
         if (res.code === '000') { this.$emit('message', '✓ Záznam upraven'); this.editDialog = false; this.$emit('reload'); this.loadDayRecords(); }
         else this.$emit('message', 'Chyba: ' + res.error);
@@ -816,18 +894,43 @@ window.app.component('admin-component', {
                 </template>
               </div>
 
-              <!-- Běžná Úprava (ne Nedokončené) - původní chování beze změny -->
+              <!-- v2026-10-12 ZMĚNA: běžná Úprava (Přehled dne) - vlevo VZOR s výběrem:
+                   "Původní" (tato šichta před úpravou), kolegové, "on sám".
+                   Dřív tu byl jen read-only blok "Původní" - ten je teď první možností výběru. -->
               <div class="col-6" v-else>
-                <div class="text-caption text-grey-7 q-mb-xs">Původní:</div>
-                <q-input v-model="originalRecord.worker" label="Pracovník" dense readonly filled class="q-mb-xs"/>
-                <q-input v-model="originalRecord.contract" label="Zakázka" dense readonly filled class="q-mb-xs"/>
-                <q-input v-model="originalRecord.job" label="Práce" dense readonly filled class="q-mb-xs"/>
-                <q-input v-model="originalRecord.place" label="Místo" dense readonly filled class="q-mb-xs"/>
-                <q-input v-model="originalRecord.date" label="Datum" dense readonly filled class="q-mb-xs"/>
-                <q-input v-model="originalRecord.timeFrom" label="Od" dense readonly filled class="q-mb-xs"/>
-                <q-input v-model="originalRecord.timeTo" label="Do" dense readonly filled class="q-mb-xs"/>
-                <q-input v-model="originalRecord.note" label="Poznámka" dense readonly filled type="textarea" rows="2" class="q-mb-xs"/>
-                <q-input :model-value="String(originalRecord.km) + ' km'" label="Km celkem" dense readonly filled/>
+                <div class="text-caption text-grey-7 q-mb-xs">Vzor (Původní / kolega / on sám):</div>
+                <q-select
+                  v-if="colleagueOptions.length > 0"
+                  v-model="selectedColleagueIdx" :options="colleagueOptions"
+                  emit-value map-options outlined dense class="q-mb-sm"/>
+
+                <template v-if="selectedColleague">
+                  <q-input :model-value="selectedColleague[6]" label="Pracovník" dense readonly filled class="q-mb-xs"/>
+                  <q-input :model-value="timestampToDate(selectedColleague[4])" label="Datum" dense readonly filled class="q-mb-xs"/>
+                  <div class="row items-center no-wrap q-mb-xs">
+                    <q-input :model-value="timestampToTime(selectedColleague[4])" label="Od" dense readonly filled class="col"/>
+                    <q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="editForm.timeFrom = timestampToTime(selectedColleague[4])"><q-tooltip>Použít u pravého sloupce</q-tooltip></q-btn>
+                  </div>
+                  <div class="row items-center no-wrap q-mb-xs">
+                    <q-input :model-value="selectedColleague[5] ? timestampToTime(selectedColleague[5]) : ''" label="Do" dense readonly filled class="col"/>
+                    <q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" :disable="!selectedColleague[5]" @click="editForm.timeTo = timestampToTime(selectedColleague[5])"><q-tooltip>Použít u pravého sloupce</q-tooltip></q-btn>
+                  </div>
+                  <div class="row items-center no-wrap q-mb-xs">
+                    <q-input :model-value="selectedColleague[0]" label="Zakázka" dense readonly filled class="col"/>
+                    <q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="editForm.contractId = findContractIdByName(selectedColleague[0])"><q-tooltip>Použít u pravého sloupce</q-tooltip></q-btn>
+                  </div>
+                  <div class="row items-center no-wrap q-mb-xs">
+                    <q-input :model-value="selectedColleague[3]" label="Práce" dense readonly filled class="col"/>
+                    <q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="editForm.jobId = findJobIdByName(selectedColleague[3])"><q-tooltip>Použít u pravého sloupce</q-tooltip></q-btn>
+                  </div>
+                  <div class="row items-center no-wrap q-mb-xs">
+                    <q-input :model-value="selectedColleague[14] || 'Nezadáno'" label="Místo" dense readonly filled class="col"/>
+                    <q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="editForm.placeId = findPlaceIdByName(selectedColleague[14])"><q-tooltip>Použít u pravého sloupce</q-tooltip></q-btn>
+                  </div>
+                  <q-input :model-value="selectedColleague[8] || ''" label="Poznámka vzoru" dense readonly filled type="textarea" rows="2" class="q-mb-xs"/>
+                  <q-input :model-value="String(selectedColleague[12] || 0) + ' km'" label="Km celkem" dense readonly filled class="q-mb-sm"/>
+                  <q-btn color="deep-orange" icon="content_copy" label="Opsat vše (bez poznámky)" size="sm" class="full-width" @click="copyAllFromColleague"/>
+                </template>
               </div>
 
               <div class="col-6">
@@ -842,9 +945,9 @@ window.app.component('admin-component', {
                 <q-input v-model="editForm.timeFrom" label="Od" dense outlined class="q-mb-xs">
                   <template v-slot:append>
                     <q-icon name="schedule" class="cursor-pointer">
-                      <q-popup-proxy cover ref="editTimeFromProxy">
+                      <q-popup-proxy cover ref="editTimeFromProxy" @show="resetTimeStep('editFrom')">
                         <q-time v-model="editForm.timeFrom" mask="HH:mm" format24h
-                          @update:model-value="val => { if (val && val.length === 5) $refs.editTimeFromProxy.hide(); }"/>
+                          @update:model-value="val => handleTimeStep('editFrom', val, 'editTimeFromProxy')"/>
                       </q-popup-proxy>
                     </q-icon>
                   </template>
@@ -852,9 +955,9 @@ window.app.component('admin-component', {
                 <q-input v-model="editForm.timeTo" label="Do" dense outlined class="q-mb-xs">
                   <template v-slot:append>
                     <q-icon name="schedule" class="cursor-pointer">
-                      <q-popup-proxy cover ref="editTimeToProxy">
+                      <q-popup-proxy cover ref="editTimeToProxy" @show="resetTimeStep('editTo')">
                         <q-time v-model="editForm.timeTo" mask="HH:mm" format24h
-                          @update:model-value="val => { if (val && val.length === 5) $refs.editTimeToProxy.hide(); }"/>
+                          @update:model-value="val => handleTimeStep('editTo', val, 'editTimeToProxy')"/>
                       </q-popup-proxy>
                     </q-icon>
                   </template>
@@ -886,10 +989,10 @@ window.app.component('admin-component', {
               <template v-slot:append><q-icon name="event" class="cursor-pointer"><q-popup-proxy cover ref="dupDateProxy"><q-date v-model="editForm.dateEdit" mask="DD. MM. YYYY" locale="cs" @update:model-value="$refs.dupDateProxy.hide()"/></q-popup-proxy></q-icon></template>
             </q-input>
             <q-input v-model="editForm.timeFrom" label="Od" outlined dense class="q-mb-sm">
-              <template v-slot:append><q-icon name="schedule" class="cursor-pointer"><q-popup-proxy cover ref="dupTimeFromProxy"><q-time v-model="editForm.timeFrom" mask="HH:mm" format24h @update:model-value="val => { if(val && val.length===5) $refs.dupTimeFromProxy.hide() }"/></q-popup-proxy></q-icon></template>
+              <template v-slot:append><q-icon name="schedule" class="cursor-pointer"><q-popup-proxy cover ref="dupTimeFromProxy" @show="resetTimeStep('dupFrom')"><q-time v-model="editForm.timeFrom" mask="HH:mm" format24h @update:model-value="val => handleTimeStep('dupFrom', val, 'dupTimeFromProxy')"/></q-popup-proxy></q-icon></template>
             </q-input>
             <q-input v-model="editForm.timeTo" label="Do" outlined dense class="q-mb-sm">
-              <template v-slot:append><q-icon name="schedule" class="cursor-pointer"><q-popup-proxy cover ref="dupTimeToProxy"><q-time v-model="editForm.timeTo" mask="HH:mm" format24h @update:model-value="val => { if(val && val.length===5) $refs.dupTimeToProxy.hide() }"/></q-popup-proxy></q-icon></template>
+              <template v-slot:append><q-icon name="schedule" class="cursor-pointer"><q-popup-proxy cover ref="dupTimeToProxy" @show="resetTimeStep('dupTo')"><q-time v-model="editForm.timeTo" mask="HH:mm" format24h @update:model-value="val => handleTimeStep('dupTo', val, 'dupTimeToProxy')"/></q-popup-proxy></q-icon></template>
             </q-input>
             <q-input v-model="editForm.note" label="Poznámka" outlined dense/>
           </q-card-section>
@@ -910,7 +1013,7 @@ window.app.component('admin-component', {
               <template v-slot:append><q-icon name="event" class="cursor-pointer"><q-popup-proxy cover ref="lunchDateProxy"><q-date v-model="newLunch.date" mask="DD. MM. YYYY" locale="cs" @update:model-value="$refs.lunchDateProxy.hide()"/></q-popup-proxy></q-icon></template>
             </q-input>
             <q-input v-model="newLunch.time" label="Čas" outlined dense>
-              <template v-slot:append><q-icon name="schedule" class="cursor-pointer"><q-popup-proxy cover ref="lunchTimeProxy"><q-time v-model="newLunch.time" mask="HH:mm" format24h @update:model-value="val => { if(val && val.length===5) $refs.lunchTimeProxy.hide() }"/></q-popup-proxy></q-icon></template>
+              <template v-slot:append><q-icon name="schedule" class="cursor-pointer"><q-popup-proxy cover ref="lunchTimeProxy" @show="resetTimeStep('lunch')"><q-time v-model="newLunch.time" mask="HH:mm" format24h @update:model-value="val => handleTimeStep('lunch', val, 'lunchTimeProxy')"/></q-popup-proxy></q-icon></template>
             </q-input>
           </q-card-section>
           <q-card-actions align="right">
