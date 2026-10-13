@@ -5,6 +5,11 @@
 //             a teprve POTOM r.push(i) přidá skutečné číslo řádku jako index 17.
 //             Proto se posílal NaN na server -> "Počáteční řádek rozsahu je příliš malý"
 //             OPRAVENO: rowIndex: r[16] -> rowIndex: r[17]
+// v2026-10-12 - OPRAVA výběru času odchodu (q-time): po výběru HODINY se popup už
+//             nezavírá, přeskočí na minuty a zavře se až po výběru minuty (dřív se
+//             zavřel hned po hodině a minuty šly nastavit až napodruhé). Čas odchodu
+//             (doplnForm.timeEnd) se přepočítá při každé změně, takže sedí i kdyby
+//             se okno zavřelo kliknutím mimo.
 
 window.app.component('nedokoncene-component', {
   props: ['currentUser', 'contracts', 'jobs', 'places'],
@@ -16,6 +21,7 @@ window.app.component('nedokoncene-component', {
       nedokonceneLoading: false,
       doplnForm: null,
       doplnSaving: false,
+      timePickerStep: {}, // v2026-10-12: krok výběru času (hodina/minuta)
       contractOptionsFiltered: [],
       jobOptionsFiltered: [],
       placeOptionsFiltered: []
@@ -35,6 +41,18 @@ window.app.component('nedokoncene-component', {
   },
 
   methods: {
+    // v2026-10-12 NOVÉ: zavřít výběr času až po výběru MINUTY (viz hlavička)
+    resetTimeStep(key) { this.timePickerStep[key] = 'hour'; },
+    handleTimeStep(key, val, proxyRef) {
+      if (!val) return;
+      if (this.timePickerStep[key] !== 'minute') {
+        this.timePickerStep[key] = 'minute';
+      } else {
+        this.timePickerStep[key] = 'hour';
+        this.$refs[proxyRef].hide();
+      }
+    },
+
     async loadNedokoncene() {
       this.nedokonceneLoading = true;
       try {
@@ -171,15 +189,15 @@ window.app.component('nedokoncene-component', {
             <template v-slot:prepend><q-icon name="logout" color="orange"/></template>
             <template v-slot:append>
               <q-icon name="schedule" class="cursor-pointer" color="primary">
-                <q-popup-proxy cover ref="doplnTimeProxy">
+                <q-popup-proxy cover ref="doplnTimeProxy" @show="resetTimeStep('dopln')">
                   <q-time v-model="doplnForm.timeEndStr" mask="HH:mm" format24h
                     @update:model-value="val => {
                       if (val && val.length === 5) {
-                        $refs.doplnTimeProxy.hide();
                         const d = new Date(doplnForm.timeStart);
                         const [h, m] = val.split(':');
                         d.setHours(parseInt(h), parseInt(m), 0);
                         doplnForm.timeEnd = d.getTime();
+                        handleTimeStep('dopln', val, 'doplnTimeProxy');
                       }
                     }"
                   />
