@@ -30,6 +30,9 @@
 //             a posílá fix_reason 'Oprava v Přehledu dne' -> kod.gs ho zapíše
 //             do sloupce Q spolu s původním časem a "Bylo celkem".
 //             (V režimu Nedokončené se chování nemění, jen pojistka délky.)
+// v2026-10-13 - NOVÉ: v panelu Nedokončených (admin) jde čas kolegy opsat po jednom -
+//             Od a Do mají každé svou šipku (dřív byl čas jen zobrazený). Tlačítko
+//             "Opsat vše" se tam chová beze změny (čas neopisuje).
 //           - OPRAVA výběru času (q-time) na všech 5 místech v tomto souboru
 //             (Úprava Od/Do, Duplikace Od/Do, Oběd): po výběru HODINY se
 //             popup už nezavírá, přeskočí na minuty a zavře se až po výběru
@@ -889,7 +892,16 @@ window.app.component('admin-component', {
                     <q-input :model-value="selectedColleague[14] || 'Nezadáno'" label="Místo" dense readonly filled class="col"/>
                     <q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="editForm.placeId = findPlaceIdByName(selectedColleague[14])"><q-tooltip>Použít u pravého sloupce</q-tooltip></q-btn>
                   </div>
-                  <q-input :model-value="formatTimeRange(selectedColleague[4], selectedColleague[5])" label="Čas kolegy" dense readonly filled class="q-mb-sm"/>
+                  <!-- v2026-10-13 ZMĚNA: čas kolegy rozdělen na Od/Do, každé se svou šipkou
+                       (dřív jedno read-only pole bez možnosti opsat) -->
+                  <div class="row items-center no-wrap q-mb-xs">
+                    <q-input :model-value="timestampToTime(selectedColleague[4])" label="Od (kolega)" dense readonly filled class="col"/>
+                    <q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="editForm.timeFrom = timestampToTime(selectedColleague[4])"><q-tooltip>Použít u pravého sloupce</q-tooltip></q-btn>
+                  </div>
+                  <div class="row items-center no-wrap q-mb-sm">
+                    <q-input :model-value="selectedColleague[5] ? timestampToTime(selectedColleague[5]) : ''" label="Do (kolega)" dense readonly filled class="col"/>
+                    <q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" :disable="!selectedColleague[5]" @click="editForm.timeTo = timestampToTime(selectedColleague[5])"><q-tooltip>Použít u pravého sloupce</q-tooltip></q-btn>
+                  </div>
                   <q-btn color="deep-orange" icon="content_copy" label="Opsat vše (bez poznámky)" size="sm" class="full-width" @click="copyAllFromColleague"/>
                 </template>
               </div>
