@@ -1,4 +1,6 @@
 // Evidence práce 2026 - main.js
+// v2026-10-15 - NOVÉ: v modrém pruhu vedle ADMIN se adminovi ukazuje verze (web = main.js,
+//             server = kod.gs zjištěné z API), ať je vidět, co je nasazené.
 // v2026-10-13 - NOVÉ: reloadAllSilent - po uložení v Adminu a v Rozpracovaných se data
 //             obnoví BEZ zničení obrazovky (zůstane zvolené menu, datum, záložka,
 //             vybraný pracovník). Dřív reloadAll zobrazil loading a komponenty se
@@ -25,6 +27,11 @@ window.app = Vue.createApp({
       currentView: 'home',
       loading: false,
       refreshing: false, // v2026-10-13: tiché obnovení dat (komponenty se neodmontují)
+      // v2026-10-15 NOVÉ: verze zobrazená adminovi v modrém pruhu vedle ADMIN.
+      // appVersion = verze tohoto souboru (main.js) - PŘI KAŽDÉ ÚPRAVĚ main.js PŘEPSAT na dnešní datum.
+      // serverVersion = verze kod.gs, zjistí se z API (viz loadServerVersion).
+      appVersion: 'v2026-10-15',
+      serverVersion: '',
       message: '',
       showMessageDialog: false,
       contracts: [],
@@ -160,7 +167,16 @@ window.app = Vue.createApp({
       if (summary.data) this.allSummary = summary.data;
       if (records.data) this.allRecords = records.data;
       if (advances.data) this.allAdvances = advances.data;
+      // v2026-10-15: verzi serveru stačí zjistit jednou, nečeká se na ni (neblokuje načtení)
+      if (!this.serverVersion || this.serverVersion === '?') this.loadServerVersion();
       if (!silent) this.loading = false;
+    },
+
+    // v2026-10-15 NOVÉ: zjistí verzi kod.gs (výchozí odpověď API obsahuje 'version').
+    // Když se nepodaří, ukáže se '?'. Slouží k ověření, že je nasazená nová verze serveru.
+    async loadServerVersion() {
+      const res = await apiCall('version', {});
+      this.serverVersion = (res && res.data && res.data.version) ? res.data.version : '?';
     },
 
     async reloadAll() {
@@ -261,6 +277,8 @@ window.app = Vue.createApp({
             <span v-if="impersonating" class="text-caption q-ml-sm text-yellow">· NÁHLED</span>
             <span v-else class="text-caption q-ml-sm">{{ dataSourceLabel }}</span>
           </q-toolbar-title>
+          <!-- v2026-10-15: verze appky (web) a serveru (kod.gs), jen pro admina -->
+          <span v-if="isAdmin" class="q-ml-sm" style="font-size:9px;line-height:1.25;opacity:0.85;text-align:right;white-space:nowrap">web {{ appVersion }}<br>server {{ serverVersion || '…' }}</span>
           <span v-if="isAdmin" class="admin-badge q-ml-sm">ADMIN</span>
         </q-toolbar>
       </q-header>
