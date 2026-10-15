@@ -33,6 +33,11 @@
 // v2026-10-13 - NOVÉ: v panelu Nedokončených (admin) jde čas kolegy opsat po jednom -
 //             Od a Do mají každé svou šipku (dřív byl čas jen zobrazený). Tlačítko
 //             "Opsat vše" se tam chová beze změny (čas neopisuje).
+// v2026-10-13 - ZMĚNA: "Opsat vše" opisuje čas Od/Do VŽDY, i v Nedokončených.
+//           - Po uložení/smazání/kopii/záloze/obědu zůstane zvolené menu a datum
+//             (Přehled dne, Nedokončené, vybraný pracovník...) - main.js teď
+//             obnovuje data tiše (reloadAllSilent), komponenta se nezničí.
+//             Detail vybraného pracovníka se po obnově dat sám aktualizuje.
 //           - OPRAVA výběru času (q-time) na všech 5 místech v tomto souboru
 //             (Úprava Od/Do, Duplikace Od/Do, Oběd): po výběru HODINY se
 //             popup už nezavírá, přeskočí na minuty a zavře se až po výběru
@@ -219,6 +224,21 @@ window.app.component('admin-component', {
       this.adminTab = 'detail';
     },
     
+    // v2026-10-13 NOVÉ: detail pracovníka je "snímek" vytvořený při kliknutí. Po tichém
+    // reloadu (main.js reloadAllSilent) komponenta zůstane, takže snímek musí
+    // dostat čerstvá data, jinak by po opravě ukazoval staré hodnoty.
+    refreshSelectedWorker() {
+      if (!this.selectedWorkerData) return;
+      const id = this.selectedWorkerData.info.id;
+      const w = this.activeSummary.find(x => String(x.id) === String(id));
+      if (!w) return;
+      this.selectedWorkerData = {
+        info: w,
+        records: this.activeRecords.filter(r => String(r[1]) === String(id)),
+        advances: this.activeAdvances.filter(a => String(a[0]) === String(id))
+      };
+    },
+
     backToWorkers() {
       this.selectedWorkerData = null;
       this.adminTab = 'workers';
@@ -419,12 +439,13 @@ window.app.component('admin-component', {
 
     // v2026-09-02b NOVÉ: hromadné opsání zakázky+práce+místa od vybraného kolegy
     // (BEZ poznámky), s potvrzením
-    // v2026-10-12 ZMĚNA: v běžné Úpravě (Přehled dne) se opisuje i ČAS Od/Do;
-    // v režimu Nedokončených zůstává jako dřív (jen zakázka, práce, místo).
+    // v2026-10-12 ZMĚNA: v běžné Úpravě (Přehled dne) se opisuje i ČAS Od/Do.
+    // v2026-10-13 ZMĚNA: stejně i v Nedokončených (čas se opisuje všude, pokud
+    // má vzor vyplněný odchod).
     copyAllFromColleague() {
       if (!this.selectedColleague) return;
       const r = this.selectedColleague;
-      const withTime = !this.dialogModeNedokoncene && !!r[5];
+      const withTime = !!r[5];
       const co = withTime ? 'zakázku, práci, místo a čas' : 'zakázku, práci a místo';
       if (!confirm('Opravdu opsat ' + co + ' od: ' + r[6] + '?')) return;
       this.editForm.contractId = this.findContractIdByName(r[0]);
@@ -624,7 +645,9 @@ window.app.component('admin-component', {
   
   watch: {
     selectedDate() { if (this.adminTab === 'day') this.loadDayRecords(); },
-    allRecords() { if (this.adminTab === 'day') this.loadDayRecords(); },
+    allRecords() { if (this.adminTab === 'day') this.loadDayRecords(); this.refreshSelectedWorker(); },
+    allAdvances() { this.refreshSelectedWorker(); },
+    allSummary() { this.refreshSelectedWorker(); },
     'editForm.contractId'() { if (!this.editForm.kmManual) this.editForm.kmJednosmer = this.selectedContractKm; }
   },
   
