@@ -629,6 +629,7 @@ window.app.component('home-component', {
     }
     this.lunchDate = this.getTodayFormatted();
     this.loadLunchPrices(this.lunchDate);
+    this.loadNedokoncene();
   },
 
   // v2026-08-31: úklid "online" listenerů při opuštění stránky, ať se nehromadí
@@ -645,6 +646,7 @@ window.app.component('home-component', {
         <q-tab name="lunch" label="Oběd"/>
         <q-tab name="advance" label="Záloha"/>
         <q-tab name="objednat" label="Objednat"/>
+        <q-tab name="nedokoncene" label="Rozpracované"/>
       </q-tabs>
       
       <!-- SMĚNA -->
