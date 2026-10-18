@@ -3,26 +3,45 @@
 // v2026-02-25b - přidána záložka Nástroje s opravou sazeb v historii
 // v2026-02-27 - odstraněna záložka Statistiky (přesunuta do Nástroje v main)
 //             - seznam pracovníků: přidáno ID, zálohy, tlačítko přihlásit jako
-//             - nic jsem nesmazal, pouze přidal nové funkce
 // v2026-04-06 - OPRAVA: saveEdit volá updaterecord místo saverecord
 //             - přidán row_index z editingRecord.data[17]
-//             - díky tomu se opravený záznam přepíše na stejném řádku (ne na konec)
-//             - do sloupce P se zapíše 'opraveno', do Q co bylo před změnou
 // v2026-04-06c - NOVÉ: dialog úpravy zobrazuje a umožňuje editovat KM
-//              - vlevo původní KM celkem (readonly), vpravo km jednosměr + checkbox tam a zpět
-//              - OPRAVA: při uložení se KM vždy posílají (zachovají hodnotu pokud nezměněny)
-//              - OPRAVA: výběr času - po dokončení (HH:MM) se popup automaticky zavře
 // v2026-04-09 - ROZCESTNÍK: saveEdit přidává source_sheet z editingRecord.data[18]
-//             - díky tomu updaterecord v kod.gs zapíše do správného listu
-//             - záznamy_historie → editace jde zpět do záznamy_historie
-//             - záznamy → editace jde do záznamy
-//             - nic jsem nesmazal
 // v2026-08-08 - OPRAVA: saveDuplicate (tlačítko "Kopírovat" v Přehledu dne) přidává
 //             insert_after_date do payloadu → backend (addRecord v kod.gs) tak vloží
 //             nový řádek chronologicky za poslední záznam daného dne, místo appendRow
-//             na konec listu. Bez tohoto parametru se duplikát řadil na konec tabulky
-//             a rozbíjel chronologické pořadí záznamů.
-//             - změněn POUZE payload v saveDuplicate(), nic jiného nedotčeno
+//             na konec listu.
+// v2026-09-02 - NOVÉ: záložka "Nedokončené" - přehled nedokončených směn napříč
+//             VŠEMI pracovníky (ne jen za dnešek), s doplněním přes stávající dialog.
+// v2026-09-02b - NOVÉ: v dialogu doplnění nedokončené směny lze vybrat kolegu,
+//              který ten den pracoval (seřazeno od nejpodobnějšího podle času
+//              příchodu), a opsat od něj zakázku/práci/místo - buď jednotlivě
+//              (klik = rovnou opsat) nebo hromadně tlačítkem "Opsat vše" (s
+//              potvrzením, bez poznámky). Funguje jen v Nedokončených, jinde
+//              se dialog chová jako dřív.
+// v2026-10-12 - NOVÉ: "Upravit záznam" v Přehledu dne má vlevo VZOR s výběrem
+//             (stejně jako u Chyb v Kontrole): 1) "Původní" = tato šichta před
+//             úpravou (první možnost, ať jde vrátit zpět), 2) kolegové stejného
+//             dne, 3) ostatní šichty téhož pracovníka ten den ("on sám").
+//             Vpravo zůstává upravovaná šichta. Jde opsat jednotlivě šipkou
+//             (Od, Do, Zakázka, Práce, Místo) nebo vše tlačítkem "Opsat vše"
+//             (zakázka, práce, místo + čas). Zobrazuje se i poznámka a km vzoru.
+//           - saveEdit: pojistka proti záporné/nulové délce (Do musí být po Od)
+//             a posílá fix_reason 'Oprava v Přehledu dne' -> kod.gs ho zapíše
+//             do sloupce Q spolu s původním časem a "Bylo celkem".
+//             (V režimu Nedokončené se chování nemění, jen pojistka délky.)
+// v2026-10-13 - NOVÉ: v panelu Nedokončených (admin) jde čas kolegy opsat po jednom -
+//             Od a Do mají každé svou šipku (dřív byl čas jen zobrazený). Tlačítko
+//             "Opsat vše" se tam chová beze změny (čas neopisuje).
+// v2026-10-13 - ZMĚNA: "Opsat vše" opisuje čas Od/Do VŽDY, i v Nedokončených.
+//           - Po uložení/smazání/kopii/záloze/obědu zůstane zvolené menu a datum
+//             (Přehled dne, Nedokončené, vybraný pracovník...) - main.js teď
+//             obnovuje data tiše (reloadAllSilent), komponenta se nezničí.
+//             Detail vybraného pracovníka se po obnově dat sám aktualizuje.
+//           - OPRAVA výběru času (q-time) na všech 5 místech v tomto souboru
+//             (Úprava Od/Do, Duplikace Od/Do, Oběd): po výběru HODINY se
+//             popup už nezavírá, přeskočí na minuty a zavře se až po výběru
+//             minuty (dřív se zavřel hned po hodině a minuty šly až napodruhé).
 
 window.app.component('admin-component', {
   props: ['allSummary', 'allRecords', 'allAdvances', 'contracts', 'jobs', 'places', 'loading'],
@@ -33,6 +52,15 @@ window.app.component('admin-component', {
       adminTab: 'workers',
       toolsLoading: false,
       toolsResult: null,
+      // v2026-09-30 NOVÉ: Oprava zobrazeného času (DST bug 27.3.-10.8.2026)
+      dstPreviewLoading: false,
+      dstPreview: null,
+      dstFixLoading: false,
+      dstFixResult: null,
+      // v2026-10-02 NOVÉ: volitelné vlastní období (jinak default 27.3.-10.8.2026)
+      dstUseRange: false,
+      dstDateFrom: null,
+      dstDateTo: null,
       selectedWorkerData: null,
       summaryTab: 'records',
       dayRecords: [],
@@ -62,24 +90,30 @@ window.app.component('admin-component', {
       localAdvances: null,
       filterLoading: false,
       newLunch: { workerId: null, date: null, time: null },
-      newAdvance: { workerId: null, amount: null, reason: '', date: null }
+      newAdvance: { workerId: null, amount: null, reason: '', date: null },
+      // v2026-09-02: příznak, jestli je dialog otevřený z Nedokončených (zapíná porovnání s kolegou)
+      dialogModeNedokoncene: false,
+      // v2026-09-02b: kolegové stejného dne pro porovnání
+      colleagueRecords: [],
+      colleagueOptions: [],
+      selectedColleagueIdx: null,
+      // v2026-10-12 NOVÉ: sleduje krok (hodina/minuta) u výběru času (q-time)
+      timePickerStep: {}
     }
   },
   
   computed: {
     activeSummary() { return this.localSummary !== null ? this.localSummary : this.allSummary; },
-    // NOVÉ v2026-03-04e: aktivní pracovníci první, neaktivní na konci
     sortedSummary() {
       const s = [...this.activeSummary];
       return s.sort((a, b) => {
-        const aActive = a.active !== false; // pokud active není v datech, považuj za aktivní
+        const aActive = a.active !== false;
         const bActive = b.active !== false;
         if (aActive && !bActive) return -1;
         if (!aActive && bActive) return 1;
         return (a.name || '').localeCompare(b.name || '', 'cs');
       });
     },
-    // NOVÉ v2026-03-04e: zálohy seskupené po pracovnících, max 3 zálohy na pracovníka
     recentAdvancesByWorker() {
       const all = [...this.activeAdvances]
         .filter(a => a[5] !== 'oběd')
@@ -93,13 +127,22 @@ window.app.component('admin-component', {
           map[id].advances.push(adv);
         }
       }
-      // Seřadit pracovníky podle data nejnovější zálohy
       return Object.values(map).sort((a, b) =>
         Number(b.advances[0][1]) - Number(a.advances[0][1])
       );
     },
     activeRecords() { return this.localRecords !== null ? this.localRecords : this.allRecords; },
     activeAdvances() { return this.localAdvances !== null ? this.localAdvances : this.allAdvances; },
+    // v2026-09-02 NOVÉ: nedokončené směny napříč VŠEMI pracovníky
+    allNedokoncene() {
+      return this.activeRecords
+        .filter(r => String(r[15] || '').trim() === 'rozpracováno')
+        .sort((a, b) => Number(b[4]) - Number(a[4]));
+    },
+    // v2026-09-02b NOVÉ: aktuálně vybraný kolega v porovnávacím výběru
+    selectedColleague() {
+      return this.selectedColleagueIdx !== null ? this.colleagueRecords[this.selectedColleagueIdx] : null;
+    },
     contractOptions() { return this.contracts.map(c => ({ label: c[0] + ' - ' + c[1], value: c[0] })); },
     jobOptions() { return this.jobs.map(j => ({ label: j[1], value: j[0] })); },
     placeOptions() { return this.places ? this.places.map(p => ({ label: p[1], value: p[0] })) : []; },
@@ -181,6 +224,21 @@ window.app.component('admin-component', {
       this.adminTab = 'detail';
     },
     
+    // v2026-10-13 NOVÉ: detail pracovníka je "snímek" vytvořený při kliknutí. Po tichém
+    // reloadu (main.js reloadAllSilent) komponenta zůstane, takže snímek musí
+    // dostat čerstvá data, jinak by po opravě ukazoval staré hodnoty.
+    refreshSelectedWorker() {
+      if (!this.selectedWorkerData) return;
+      const id = this.selectedWorkerData.info.id;
+      const w = this.activeSummary.find(x => String(x.id) === String(id));
+      if (!w) return;
+      this.selectedWorkerData = {
+        info: w,
+        records: this.activeRecords.filter(r => String(r[1]) === String(id)),
+        advances: this.activeAdvances.filter(a => String(a[0]) === String(id))
+      };
+    },
+
     backToWorkers() {
       this.selectedWorkerData = null;
       this.adminTab = 'workers';
@@ -200,8 +258,26 @@ window.app.component('admin-component', {
     },
     
     setToday() { this.selectedDate = this.getTodayDate(); this.loadDayRecords(); },
+
+    // v2026-09-13 NOVÉ: smazání záznamu přímo z Přehledu dne
+    async deleteRecordFromDay(record) {
+      if (!confirm('Opravdu smazat tento záznam? (' + record[6] + ', ' + this.timestampToTime(record[4]) + '-' + this.timestampToTime(record[5]) + ')')) return;
+      try {
+        const res = await apiCall('deleterecord', { row_index: record[17], source_sheet: record[18] || 'záznamy' });
+        if (res.code === '000') {
+          this.$emit('message', '✓ Záznam smazán');
+          this.$emit('reload');
+          this.loadDayRecords();
+        } else {
+          this.$emit('message', 'Chyba: ' + (res.error || ''));
+        }
+      } catch (e) {
+        this.$emit('message', 'Chyba při mazání');
+      }
+    },
     
     openEditDialog(record, index) {
+      this.dialogModeNedokoncene = false; // v2026-09-02: standardní editace, bez porovnání s kolegou
       this.editingRecord = { data: record, index: index };
       this.originalRecord = {
         worker: record[6], contract: record[0], job: record[3],
@@ -209,10 +285,9 @@ window.app.component('admin-component', {
         timeTo: this.timestampToTime(record[5]), date: this.timestampToDate(record[4]),
         note: record[8] || '',
         km: record[12] || 0,
-        // v2026-04-09: zobrazíme z kterého listu záznam pochází
         sourceSheet: record[18] || 'záznamy'
       };
-      const worker = this.workers.find(w => w[1] === record[6]);
+      const worker = this.workers.find(w => String(w[0]) === String(record[1])) || this.workers.find(w => w[1] === record[6]);
       const contract = this.contracts.find(c => c[1] === record[0]);
       const job = this.jobs.find(j => j[1] === record[3]);
       const place = this.places ? this.places.find(p => p[1] === record[14]) : null;
@@ -227,11 +302,163 @@ window.app.component('admin-component', {
         kmManual: true,
         kmRoundTrip: kmJednosmer > 0 ? (kmCelkem === kmJednosmer * 2) : true
       };
+      // v2026-10-12 NOVÉ: vzor vlevo (Původní / kolegové / on sám)
+      this.loadPatternsForEdit(record);
       this.editDialog = true;
+    },
+
+    // v2026-10-12 NOVÉ: seznam vzorů pro běžnou Úpravu v Přehledu dne.
+    // 1. položka = "Původní" (tato šichta před úpravou, jde se k ní vrátit),
+    // pak ostatní dokončené šichty stejného dne (kolegové I ostatní šichty téhož
+    // pracovníka - ty jsou označené "(on sám)"), od nejpodobnějšího času příchodu.
+    // Používá stejná data jako Nedokončené (colleagueRecords/Options/selectedColleagueIdx).
+    loadPatternsForEdit(record) {
+      const ts = Number(record[4]);
+      const d = new Date(ts);
+      const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+      const dayEnd = dayStart + 86400000;
+      const sameRow = (r) => r === record ||
+        (String(r[17]) === String(record[17]) && (r[18] || 'záznamy') === (record[18] || 'záznamy'));
+      const others = this.allRecords.filter(r => {
+        const rts = Number(r[4]);
+        if (isNaN(rts) || rts < dayStart || rts >= dayEnd) return false;
+        if (sameRow(r)) return false;
+        if (String(r[15] || '').trim() === 'rozpracováno') return false;
+        if (!r[0]) return false;
+        return true;
+      }).sort((a, b) => Math.abs(Number(a[4]) - ts) - Math.abs(Number(b[4]) - ts));
+
+      this.colleagueRecords = [record].concat(others);
+      this.colleagueOptions = this.colleagueRecords.map((r, i) => {
+        const cas = this.timestampToTime(r[4]) + '-' + (r[5] ? this.timestampToTime(r[5]) : '?');
+        const prefix = i === 0 ? '↺ Původní • ' : (String(r[1]) === String(record[1]) ? '(on sám) ' : '');
+        return { label: prefix + r[6] + ' • ' + cas + ' • ' + (r[0] || '?') + ' - ' + (r[3] || '?'), value: i };
+      });
+      this.selectedColleagueIdx = 0;
+    },
+
+    // v2026-10-12 NOVÉ: výběr času (q-time) - zavřít popup až po výběru MINUTY.
+    // Dřív se zavřel hned po hodině (model už měl 5 znaků, staré minuty zůstaly).
+    resetTimeStep(key) { this.timePickerStep[key] = 'hour'; },
+    handleTimeStep(key, val, proxyRef) {
+      if (!val) return;
+      if (this.timePickerStep[key] !== 'minute') {
+        this.timePickerStep[key] = 'minute';
+      } else {
+        this.timePickerStep[key] = 'hour';
+        this.$refs[proxyRef].hide();
+      }
+    },
+
+    // v2026-09-02 NOVÉ: doplnění nedokončené směny (admin, napříč všemi pracovníky)
+    // Používá stejný dialog jako Upravit/Duplikovat - jen bezpečně ošetřuje
+    // chybějící čas odchodu (record[5] je u rozpracováno prázdné).
+    openNedokonceneEditDialog(record, index) {
+      this.dialogModeNedokoncene = true; // v2026-09-02b: zapne porovnání s kolegou
+      this.editingRecord = { data: record, index: index };
+      const worker = this.workers.find(w => String(w[0]) === String(record[1])) || this.workers.find(w => w[1] === record[6]);
+      const contract = this.contracts.find(c => c[1] === record[0]);
+      const job = this.jobs.find(j => j[1] === record[3]);
+      const place = this.places ? this.places.find(p => p[1] === record[14]) : null;
+      const timeFrom = this.timestampToTime(record[4]);
+      const dateEdit = this.timestampToDate(record[4]);
+      const hasTimeTo = record[5] !== undefined && record[5] !== null && record[5] !== '';
+      const timeTo = hasTimeTo ? this.timestampToTime(record[5]) : this.getCurrentTime();
+
+      this.originalRecord = {
+        worker: record[6] || 'Nezadáno',
+        contract: record[0] || 'Nezadáno',
+        job: record[3] || 'Nezadáno',
+        place: record[14] || 'Nezadáno',
+        timeFrom: timeFrom,
+        timeTo: hasTimeTo ? timeTo : 'Nezadáno (chybí odchod)',
+        date: dateEdit,
+        note: record[8] || '',
+        km: record[12] || 0,
+        sourceSheet: record[18] || 'záznamy'
+      };
+
+      this.editForm = {
+        workerId: worker ? worker[0] : null,
+        contractId: contract ? contract[0] : null,
+        jobId: job ? job[0] : null,
+        placeId: place ? place[0] : null,
+        dateEdit: dateEdit,
+        timeFrom: timeFrom,
+        timeTo: timeTo,
+        note: record[8] || '',
+        kmJednosmer: parseFloat(record[11]) || 0,
+        kmManual: true,
+        kmRoundTrip: (parseFloat(record[11]) || 0) > 0 ? (parseFloat(record[12]) === parseFloat(record[11]) * 2) : true
+      };
+
+      // v2026-09-02b: najít kolegy stejného dne, seřadit od nejpodobnějšího
+      this.loadColleaguesForDay(record);
+
+      this.editDialog = true;
+    },
+
+    // v2026-09-02b NOVÉ: najde dokončené záznamy ostatních pracovníků stejného dne,
+    // seřazené podle blízkosti času příchodu (nejpodobnější první)
+    loadColleaguesForDay(record) {
+      const ts = Number(record[4]);
+      const d = new Date(ts);
+      const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+      const dayEnd = dayStart + 86400000;
+
+      this.colleagueRecords = this.activeRecords.filter(r => {
+        const rts = Number(r[4]);
+        if (isNaN(rts) || rts < dayStart || rts >= dayEnd) return false;
+        if (String(r[1]) === String(record[1])) return false; // vynechat stejného pracovníka
+        if (String(r[15] || '').trim() === 'rozpracováno') return false; // jen dokončené
+        if (!r[0]) return false; // musí mít vyplněnou zakázku
+        return true;
+      }).sort((a, b) => Math.abs(Number(a[4]) - ts) - Math.abs(Number(b[4]) - ts));
+
+      this.colleagueOptions = this.colleagueRecords.map((r, i) => ({
+        label: r[6] + ' • ' + this.formatTimeRange(r[4], r[5]) + ' • ' + r[0] + ' - ' + r[3],
+        value: i
+      }));
+      this.selectedColleagueIdx = this.colleagueRecords.length > 0 ? 0 : null;
+    },
+
+    // v2026-09-02b NOVÉ: pomocné vyhledání ID podle názvu (pro opsání od kolegy)
+    findContractIdByName(name) {
+      const c = this.contracts.find(x => x[1] === name);
+      return c ? c[0] : null;
+    },
+    findJobIdByName(name) {
+      const j = this.jobs.find(x => x[1] === name);
+      return j ? j[0] : null;
+    },
+    findPlaceIdByName(name) {
+      if (!this.places) return null;
+      const p = this.places.find(x => x[1] === name);
+      return p ? p[0] : null;
+    },
+
+    // v2026-09-02b NOVÉ: hromadné opsání zakázky+práce+místa od vybraného kolegy
+    // (BEZ poznámky), s potvrzením
+    // v2026-10-12 ZMĚNA: v běžné Úpravě (Přehled dne) se opisuje i ČAS Od/Do.
+    // v2026-10-13 ZMĚNA: stejně i v Nedokončených (čas se opisuje všude, pokud
+    // má vzor vyplněný odchod).
+    copyAllFromColleague() {
+      if (!this.selectedColleague) return;
+      const r = this.selectedColleague;
+      const withTime = !!r[5];
+      const co = withTime ? 'zakázku, práci, místo a čas' : 'zakázku, práci a místo';
+      if (!confirm('Opravdu opsat ' + co + ' od: ' + r[6] + '?')) return;
+      this.editForm.contractId = this.findContractIdByName(r[0]);
+      this.editForm.jobId = this.findJobIdByName(r[3]);
+      this.editForm.placeId = this.findPlaceIdByName(r[14]);
+      if (withTime) {
+        this.editForm.timeFrom = this.timestampToTime(r[4]);
+        this.editForm.timeTo = this.timestampToTime(r[5]);
+      }
     },
     
     openDuplicateDialog(record) {
-      const worker = this.workers.find(w => w[1] === record[6]);
+      const worker = this.workers.find(w => String(w[0]) === String(record[1])) || this.workers.find(w => w[1] === record[6]);
       const contract = this.contracts.find(c => c[1] === record[0]);
       const job = this.jobs.find(j => j[1] === record[3]);
       const place = this.places ? this.places.find(p => p[1] === record[14]) : null;
@@ -255,14 +482,18 @@ window.app.component('admin-component', {
       this.advanceDialog = true;
     },
     
-    // v2026-04-09: ROZCESTNÍK - přidán source_sheet z record[18]
-    // kod.gs updateRecord zapíše do správného listu (záznamy nebo záznamy_historie)
     async saveEdit() {
       if (!this.editForm.workerId || !this.editForm.contractId || !this.editForm.jobId || !this.editForm.placeId || !this.editForm.timeFrom || !this.editForm.timeTo) {
         this.$emit('message', 'Vyplňte všechna pole'); return;
       }
       const timeFr = this.dateTimeToTimestamp(this.editForm.dateEdit, this.editForm.timeFrom);
       const timeTo = this.dateTimeToTimestamp(this.editForm.dateEdit, this.editForm.timeTo);
+      // v2026-10-12 NOVÁ POJISTKA: formulář má jedno datum pro Od i Do, takže když
+      // by "Do" vyšlo dřív/stejně jako "Od", vznikl by záporný/nulový počet hodin.
+      if (timeTo <= timeFr) {
+        this.$emit('message', 'Čas "Do" musí být později než "Od" (formulář počítá s jedním dnem)');
+        return;
+      }
       try {
         const kmJednosmer = parseFloat(this.editForm.kmJednosmer) || 0;
         const kmCelkem = this.editForm.kmRoundTrip ? kmJednosmer * 2 : kmJednosmer;
@@ -276,6 +507,8 @@ window.app.component('admin-component', {
           km_celkem: kmCelkem,
           km_rucne: kmJednosmer > 0 ? 'Y' : 'N'
         };
+        // v2026-10-12 NOVÉ: důvod do logu (sloupec Q) - jen u běžné Úpravy
+        if (!this.dialogModeNedokoncene) payload.fix_reason = 'Oprava v Přehledu dne';
         const res = await apiCall('updaterecord', payload);
         if (res.code === '000') { this.$emit('message', '✓ Záznam upraven'); this.editDialog = false; this.$emit('reload'); this.loadDayRecords(); }
         else this.$emit('message', 'Chyba: ' + res.error);
@@ -283,8 +516,7 @@ window.app.component('admin-component', {
     },
     
     // v2026-08-08 OPRAVA: přidán insert_after_date do payloadu, aby se duplikát
-    // vložil chronologicky za poslední záznam daného dne (viz addRecord v kod.gs),
-    // místo aby se appendoval na konec celé tabulky.
+    // vložil chronologicky za poslední záznam daného dne.
     async saveDuplicate() {
       if (!this.editForm.workerId || !this.editForm.contractId || !this.editForm.jobId || !this.editForm.placeId || !this.editForm.timeFrom || !this.editForm.timeTo) {
         this.$emit('message', 'Vyplňte všechna pole'); return;
@@ -300,7 +532,6 @@ window.app.component('admin-component', {
           time_fr: timeFr,
           time_to: timeTo,
           note: this.editForm.note,
-          // v2026-08-08: zajistí chronologické zařazení duplikátu do dne
           insert_after_date: this.editForm.dateEdit
         };
         if (this.editForm.kmManual && this.editForm.kmJednosmer) { payload.km_jednosmer = this.editForm.kmJednosmer; payload.km_celkem = this.calculatedKmEdit; payload.km_rucne = 'Y'; }
@@ -344,13 +575,79 @@ window.app.component('admin-component', {
       } catch (e) { this.toolsResult = { ok: false, msg: 'Chyba spojení' }; }
       this.toolsLoading = false;
     },
+
+    // v2026-10-02 NOVÉ: převod "DD. MM. YYYY" na timestamp (půlnoc / konec dne)
+    // - stejný vzorec jako dateStrToTs v kontrola.js (migrace)
+    dstDateStrToTs(dateStr, endOfDay) {
+      if (!dateStr) return null;
+      const parts = dateStr.split('. ');
+      const d = new Date(parts[2], parts[1] - 1, parts[0]);
+      if (endOfDay) d.setHours(23, 59, 59, 999);
+      return d.getTime();
+    },
+    dstRangeParams() {
+      if (!this.dstUseRange) return {};
+      const params = {};
+      if (this.dstDateFrom) params.date_from = this.dstDateStrToTs(this.dstDateFrom, false);
+      if (this.dstDateTo) params.date_to = this.dstDateStrToTs(this.dstDateTo, true);
+      return params;
+    },
+
+    // v2026-09-30 NOVÉ, v2026-10-02 OPRAVA: Oprava zobrazeného času (sloupce
+    // J/K u záznamy, D u zálohy) poškozeného GMT+1 bugem mezi 27.3.-10.8.2026.
+    // OPRAVA: Google Sheets si "27. 03. 2026 07:22" automaticky překlopí na
+    // skutečný datumový typ buňky, takže porovnání s obyčejným textem vždy
+    // vycházelo jako "liší se" - i hned po opravě (proto náhled pořád ukazoval
+    // stejná čísla). kod.gs teď porovnává přes stejné formátování na obou
+    // stranách, takže už jednou opravené řádky podruhé nenaskočí.
+    // Taky jde zadat VLASTNÍ období (jinak default 27.3.-10.8.2026).
+    async previewDstFix() {
+      this.dstPreviewLoading = true;
+      this.dstPreview = null;
+      this.dstFixResult = null;
+      try {
+        const res = await apiCall('previewfixdsttimes', this.dstRangeParams());
+        if (res.code === '000') this.dstPreview = res.data;
+        else this.$emit('message', 'Chyba náhledu: ' + (res.error || ''));
+      } catch (e) { this.$emit('message', 'Chyba při náhledu'); }
+      this.dstPreviewLoading = false;
+    },
+
+    async runDstFix() {
+      if (!this.dstPreview) return;
+      const total = this.dstPreview.recordsCount + this.dstPreview.advancesCount;
+      if (total === 0) { this.$emit('message', 'Není co opravovat'); return; }
+      if (!confirm('Opravdu přepsat zobrazený čas u ' + total + ' řádků (' + this.dstPreview.recordsCount + ' záznamů, ' + this.dstPreview.advancesCount + ' záloh)? Tohle nejde vrátit zpět.')) return;
+      this.dstFixLoading = true;
+      try {
+        const res = await apiCall('fixdsttimes', this.dstRangeParams());
+        if (res.code === '000') {
+          this.dstFixResult = res.data;
+          this.$emit('message', '✓ Opraveno');
+          this.dstPreview = null;
+        } else this.$emit('message', 'Chyba: ' + (res.error || ''));
+      } catch (e) { this.$emit('message', 'Chyba při opravě'); }
+      this.dstFixLoading = false;
+    },
     
-    formatTimeRange(fr, to) { return formatTimeRange(fr, to); }
+    formatTimeRange(fr, to) {
+      // v2026-09-02b: vlastní implementace přímo v komponentě, nezávisle na
+      // globální funkci (obdoba opravy ze statistics.js)
+      const fmt = (ts) => {
+        const d = new Date(Number(ts));
+        return String(d.getDate()).padStart(2, '0') + '. ' + String(d.getMonth() + 1).padStart(2, '0') + '. ' +
+          String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+      };
+      if (!fr) return '';
+      return to ? (fmt(fr) + ' - ' + fmt(to)) : fmt(fr);
+    }
   },
   
   watch: {
     selectedDate() { if (this.adminTab === 'day') this.loadDayRecords(); },
-    allRecords() { if (this.adminTab === 'day') this.loadDayRecords(); },
+    allRecords() { if (this.adminTab === 'day') this.loadDayRecords(); this.refreshSelectedWorker(); },
+    allAdvances() { this.refreshSelectedWorker(); },
+    allSummary() { this.refreshSelectedWorker(); },
     'editForm.contractId'() { if (!this.editForm.kmManual) this.editForm.kmJednosmer = this.selectedContractKm; }
   },
   
@@ -365,6 +662,7 @@ window.app.component('admin-component', {
       <q-tabs v-model="adminTab" dense align="justify" class="text-primary">
         <q-tab name="workers" label="Pracovníci"/>
         <q-tab name="day" label="Přehled dne"/>
+        <q-tab name="nedokoncene" label="Nedokončené"/>
         <q-tab name="zalohy" label="Zálohy"/>
         <q-tab name="tools" label="Nástroje"/>
       </q-tabs>
@@ -429,8 +727,8 @@ window.app.component('admin-component', {
               </div>
             </div>
             <div class="text-caption text-grey-7 q-mt-sm">{{ formatTimeRange(record[4], record[5]) }}</div>
-            <div v-if="record[12] > 0" class="text-caption text-orange q-mt-xs">?? {{ record[12] }} km</div>
-            <div v-if="record[8]" class="note-display">?? {{ record[8] }}</div>
+            <div v-if="record[12] > 0" class="text-caption text-orange q-mt-xs">🚗 {{ record[12] }} km</div>
+            <div v-if="record[8]" class="note-display">💬 {{ record[8] }}</div>
           </div>
         </div>
         <div v-if="summaryTab==='advances'" class="q-mt-md">
@@ -475,13 +773,31 @@ window.app.component('admin-component', {
           </div>
           <div class="row items-center q-mt-xs" style="min-height:28px">
             <div class="col text-caption text-grey-7">
-              <span v-if="record[8]">?? {{ record[8] }}</span>
-              <span v-if="record[12] > 0" class="text-orange q-ml-xs">?? {{ record[12] }} km</span>
+              <span v-if="record[8]">💬 {{ record[8] }}</span>
+              <span v-if="record[12] > 0" class="text-orange q-ml-xs">🚗 {{ record[12] }} km</span>
             </div>
             <div class="row" style="gap:5px; padding-right:5px; flex-shrink:0">
               <q-btn flat dense round color="blue-7" icon="content_copy" size="sm" @click="openDuplicateDialog(record)"><q-tooltip>Kopírovat</q-tooltip></q-btn>
               <q-btn flat dense round color="orange-8" icon="edit" size="sm" @click="openEditDialog(record,idx)"><q-tooltip>Upravit</q-tooltip></q-btn>
+              <q-btn flat dense round color="red-8" icon="delete" size="sm" @click="deleteRecordFromDay(record)"><q-tooltip>Smazat</q-tooltip></q-btn>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- NEDOKONČENÉ - v2026-09-02 NOVÉ: napříč všemi pracovníky -->
+      <div v-if="adminTab==='nedokoncene'" class="q-pt-md">
+        <div class="q-mb-sm q-pa-xs text-caption text-orange-8" style="background:#fff3e0;border-radius:4px">
+          ⚠ Nedokončené směny od všech pracovníků. Klikni na "Doplnit" a v dialogu můžeš porovnat s kolegou, který ten den pracoval.
+        </div>
+        <div v-if="allNedokoncene.length===0" class="text-center text-grey-7 q-mt-lg">✓ Žádné nedokončené směny</div>
+        <div v-for="(r, idx) in allNedokoncene" :key="idx" class="record-card">
+          <div class="row items-center">
+            <div class="col">
+              <div class="text-bold">{{ r[6] || 'Neznámý pracovník' }}</div>
+              <div class="text-caption text-grey-7">Příchod: {{ formatShortDateTime(r[4]) }}</div>
+            </div>
+            <q-btn color="orange" icon="edit" label="Doplnit" size="sm" unelevated @click="openNedokonceneEditDialog(r, idx)"/>
           </div>
         </div>
       </div>
@@ -490,11 +806,9 @@ window.app.component('admin-component', {
       <div v-if="adminTab==='zalohy'" class="q-pt-md">
         <div v-if="recentAdvancesByWorker.length === 0" class="text-center text-grey-7 q-mt-lg">Žádné zálohy</div>
         <div v-for="row in recentAdvancesByWorker" :key="row.id" class="row items-start no-wrap q-mb-xs" style="border-bottom:1px solid #f0f0f0; padding:6px 4px">
-          <!-- Jméno pracovníka -->
           <div style="min-width:90px; max-width:90px; padding-top:2px">
             <div class="text-bold" style="font-size:0.82rem; line-height:1.2">{{ row.name }}</div>
           </div>
-          <!-- Zálohy vedle sebe -->
           <div class="row col q-gutter-xs">
             <div v-for="(adv, i) in row.advances" :key="i"
               style="min-width:85px; background:#f5f5f5; border-radius:4px; padding:3px 6px">
@@ -506,11 +820,11 @@ window.app.component('admin-component', {
         </div>
       </div>
 
-            <!-- NÁSTROJE -->
+      <!-- NÁSTROJE -->
       <div v-if="adminTab==='tools'" class="q-pt-md">
         <q-card flat bordered class="q-mb-md">
           <q-card-section>
-            <div class="text-subtitle1 text-bold q-mb-xs">?? Oprava sazeb v historii</div>
+            <div class="text-subtitle1 text-bold q-mb-xs">🔧 Oprava sazeb v historii</div>
             <div class="text-body2 text-grey-7 q-mb-md">
               Projde všechny záznamy v listu <strong>záznamy_historie</strong> a přepíše sazbu (sloupec C)
               podle sazebníku platného pro datum záznamu.
@@ -521,32 +835,139 @@ window.app.component('admin-component', {
             </div>
           </q-card-section>
         </q-card>
+
+        <!-- v2026-09-30 NOVÉ: Oprava zobrazeného času (DST bug) -->
+        <q-card flat bordered class="q-mb-md">
+          <q-card-section>
+            <div class="text-subtitle1 text-bold q-mb-xs">🕐 Oprava zobrazeného času (letní čas 27.3.–10.8.2026)</div>
+            <div class="text-body2 text-grey-7 q-mb-md">
+              Mezi 27.3.2026 a 10.8.2026 appka kvůli chybné časové zóně zapisovala
+              čitelný čas (sloupce J/K u <strong>záznamy</strong>, D u <strong>zálohy</strong>)
+              o hodinu méně, než ve skutečnosti bylo. Skutečný čas (milisekundy)
+              a odpracované hodiny jsou v pořádku - opravuje se jen ten čitelný
+              popisek, přepočtem ze správného zdroje.
+            </div>
+            <q-checkbox v-model="dstUseRange" label="Vlastní období (jinak 27.3.-10.8.2026)" class="q-mb-sm"/>
+            <div v-if="dstUseRange" class="row q-gutter-sm q-mb-sm">
+              <div class="col"><q-input v-model="dstDateFrom" label="Od" outlined dense readonly><template v-slot:append><q-icon name="event" class="cursor-pointer"><q-popup-proxy cover ref="dstFromProxy"><q-date v-model="dstDateFrom" mask="DD. MM. YYYY" locale="cs" @update:model-value="$refs.dstFromProxy.hide()"/></q-popup-proxy></q-icon></template></q-input></div>
+              <div class="col"><q-input v-model="dstDateTo" label="Do" outlined dense readonly><template v-slot:append><q-icon name="event" class="cursor-pointer"><q-popup-proxy cover ref="dstToProxy"><q-date v-model="dstDateTo" mask="DD. MM. YYYY" locale="cs" @update:model-value="$refs.dstToProxy.hide()"/></q-popup-proxy></q-icon></template></q-input></div>
+            </div>
+            <q-btn color="primary" icon="search" label="1. Zobrazit náhled" :loading="dstPreviewLoading" @click="previewDstFix" class="q-mb-sm"/>
+            <div v-if="dstPreview" class="q-mb-md q-pa-md" style="background:#e3f2fd;border-radius:8px">
+              <div class="text-subtitle2 text-bold q-mb-sm">Náhled:</div>
+              <div>Záznamy k opravě: <strong>{{ dstPreview.recordsCount }}</strong></div>
+              <div>Zálohy k opravě: <strong>{{ dstPreview.advancesCount }}</strong></div>
+              <!-- v2026-10-02b ZMĚNA: vypisuje se úplně VŠE (dřív jen 5 ukázek),
+                   ve scrollovatelném boxu, ať jde zkontrolovat celý seznam -->
+              <div v-if="dstPreview.examples && dstPreview.examples.length" class="q-mt-sm">
+                <div class="text-caption text-grey-7 q-mb-xs">Všechny ({{ dstPreview.examples.length }}):</div>
+                <div style="max-height:300px; overflow-y:auto; background:white; border-radius:4px; padding:4px 8px">
+                  <div v-for="(ex, i) in dstPreview.examples" :key="i" class="text-caption q-py-xs" style="border-bottom:1px solid #eee">
+                    {{ ex.sheet }} • {{ ex.worker }}: <span class="text-red-8">{{ ex.old }}</span> → <span class="text-green-8">{{ ex.new }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <q-btn v-if="dstPreview && (dstPreview.recordsCount > 0 || dstPreview.advancesCount > 0)" color="deep-orange" icon="build" label="2. Provést opravu" :loading="dstFixLoading" @click="runDstFix"/>
+            <div v-if="dstFixResult" class="q-mt-md q-pa-sm" style="background:#e8f5e9;border-radius:4px">
+              <span class="text-green-8">✓ Opraveno: {{ dstFixResult.recordsFixed }} záznamů, {{ dstFixResult.advancesFixed }} záloh</span>
+            </div>
+          </q-card-section>
+        </q-card>
       </div>
 
-      <!-- DIALOG - ÚPRAVA -->
+      <!-- DIALOG - ÚPRAVA (a doplnění Nedokončených) -->
       <q-dialog v-model="editDialog">
         <q-card style="width:95%; max-width:500px">
           <q-card-section>
             <div class="text-h6">Upravit záznam</div>
-            <!-- v2026-04-09: zobrazíme zdroj záznamu -->
             <div v-if="originalRecord && originalRecord.sourceSheet === 'záznamy_historie'" class="text-caption text-orange-8">📁 Historický záznam — uloží se zpět do záznamy_historie</div>
           </q-card-section>
           <q-card-section class="q-pt-none" style="max-height:65vh; overflow-y:auto">
+
+            <!-- v2026-09-02c: kdo se doplňuje, jen v režimu Nedokončených -->
+            <div v-if="dialogModeNedokoncene" class="text-caption text-grey-7 q-mb-sm">
+              Doplňuješ: <strong>{{ originalRecord.worker }}</strong> — příchod {{ originalRecord.date }} {{ originalRecord.timeFrom }}
+            </div>
+
             <div class="row q-col-gutter-sm">
-              <!-- LEVÝ SLOUPEC - původní -->
-              <div class="col-6">
-                <div class="text-caption text-grey-7 q-mb-xs">Původní:</div>
-                <q-input v-model="originalRecord.worker" label="Pracovník" dense readonly filled class="q-mb-xs"/>
-                <q-input v-model="originalRecord.contract" label="Zakázka" dense readonly filled class="q-mb-xs"/>
-                <q-input v-model="originalRecord.job" label="Práce" dense readonly filled class="q-mb-xs"/>
-                <q-input v-model="originalRecord.place" label="Místo" dense readonly filled class="q-mb-xs"/>
-                <q-input v-model="originalRecord.date" label="Datum" dense readonly filled class="q-mb-xs"/>
-                <q-input v-model="originalRecord.timeFrom" label="Od" dense readonly filled class="q-mb-xs"/>
-                <q-input v-model="originalRecord.timeTo" label="Do" dense readonly filled class="q-mb-xs"/>
-                <q-input v-model="originalRecord.note" label="Poznámka" dense readonly filled type="textarea" rows="2" class="q-mb-xs"/>
-                <q-input :model-value="String(originalRecord.km) + ' km'" label="Km celkem" dense readonly filled/>
+              <!-- v2026-09-02c: LEVÝ SLOUPEC - v režimu Nedokončených ukazuje VZOR od kolegy
+                   (přepínatelný nahoře výběrem), jinak (běžná Úprava) původní hodnoty jako dřív -->
+              <div class="col-6" v-if="dialogModeNedokoncene">
+                <div class="text-caption text-grey-7 q-mb-xs">Vzor od kolegy (nejpodobnější první):</div>
+                <q-select
+                  v-if="colleagueOptions.length > 0"
+                  v-model="selectedColleagueIdx" :options="colleagueOptions"
+                  emit-value map-options outlined dense class="q-mb-sm"/>
+                <div v-else class="text-caption text-grey-6 q-mb-sm">Žádný kolega ten den nepracoval.</div>
+
+                <template v-if="selectedColleague">
+                  <q-input :model-value="selectedColleague[6]" label="Pracovník" dense readonly filled class="q-mb-xs"/>
+                  <div class="row items-center no-wrap q-mb-xs">
+                    <q-input :model-value="selectedColleague[0]" label="Zakázka" dense readonly filled class="col"/>
+                    <q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="editForm.contractId = findContractIdByName(selectedColleague[0])"><q-tooltip>Použít u pravého sloupce</q-tooltip></q-btn>
+                  </div>
+                  <div class="row items-center no-wrap q-mb-xs">
+                    <q-input :model-value="selectedColleague[3]" label="Práce" dense readonly filled class="col"/>
+                    <q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="editForm.jobId = findJobIdByName(selectedColleague[3])"><q-tooltip>Použít u pravého sloupce</q-tooltip></q-btn>
+                  </div>
+                  <div class="row items-center no-wrap q-mb-sm">
+                    <q-input :model-value="selectedColleague[14] || 'Nezadáno'" label="Místo" dense readonly filled class="col"/>
+                    <q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="editForm.placeId = findPlaceIdByName(selectedColleague[14])"><q-tooltip>Použít u pravého sloupce</q-tooltip></q-btn>
+                  </div>
+                  <!-- v2026-10-13 ZMĚNA: čas kolegy rozdělen na Od/Do, každé se svou šipkou
+                       (dřív jedno read-only pole bez možnosti opsat) -->
+                  <div class="row items-center no-wrap q-mb-xs">
+                    <q-input :model-value="timestampToTime(selectedColleague[4])" label="Od (kolega)" dense readonly filled class="col"/>
+                    <q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="editForm.timeFrom = timestampToTime(selectedColleague[4])"><q-tooltip>Použít u pravého sloupce</q-tooltip></q-btn>
+                  </div>
+                  <div class="row items-center no-wrap q-mb-sm">
+                    <q-input :model-value="selectedColleague[5] ? timestampToTime(selectedColleague[5]) : ''" label="Do (kolega)" dense readonly filled class="col"/>
+                    <q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" :disable="!selectedColleague[5]" @click="editForm.timeTo = timestampToTime(selectedColleague[5])"><q-tooltip>Použít u pravého sloupce</q-tooltip></q-btn>
+                  </div>
+                  <q-btn color="deep-orange" icon="content_copy" label="Opsat vše (bez poznámky)" size="sm" class="full-width" @click="copyAllFromColleague"/>
+                </template>
               </div>
-              <!-- PRAVÝ SLOUPEC - nové -->
+
+              <!-- v2026-10-12 ZMĚNA: běžná Úprava (Přehled dne) - vlevo VZOR s výběrem:
+                   "Původní" (tato šichta před úpravou), kolegové, "on sám".
+                   Dřív tu byl jen read-only blok "Původní" - ten je teď první možností výběru. -->
+              <div class="col-6" v-else>
+                <div class="text-caption text-grey-7 q-mb-xs">Vzor (Původní / kolega / on sám):</div>
+                <q-select
+                  v-if="colleagueOptions.length > 0"
+                  v-model="selectedColleagueIdx" :options="colleagueOptions"
+                  emit-value map-options outlined dense class="q-mb-sm"/>
+
+                <template v-if="selectedColleague">
+                  <q-input :model-value="selectedColleague[6]" label="Pracovník" dense readonly filled class="q-mb-xs"/>
+                  <q-input :model-value="timestampToDate(selectedColleague[4])" label="Datum" dense readonly filled class="q-mb-xs"/>
+                  <div class="row items-center no-wrap q-mb-xs">
+                    <q-input :model-value="timestampToTime(selectedColleague[4])" label="Od" dense readonly filled class="col"/>
+                    <q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="editForm.timeFrom = timestampToTime(selectedColleague[4])"><q-tooltip>Použít u pravého sloupce</q-tooltip></q-btn>
+                  </div>
+                  <div class="row items-center no-wrap q-mb-xs">
+                    <q-input :model-value="selectedColleague[5] ? timestampToTime(selectedColleague[5]) : ''" label="Do" dense readonly filled class="col"/>
+                    <q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" :disable="!selectedColleague[5]" @click="editForm.timeTo = timestampToTime(selectedColleague[5])"><q-tooltip>Použít u pravého sloupce</q-tooltip></q-btn>
+                  </div>
+                  <div class="row items-center no-wrap q-mb-xs">
+                    <q-input :model-value="selectedColleague[0]" label="Zakázka" dense readonly filled class="col"/>
+                    <q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="editForm.contractId = findContractIdByName(selectedColleague[0])"><q-tooltip>Použít u pravého sloupce</q-tooltip></q-btn>
+                  </div>
+                  <div class="row items-center no-wrap q-mb-xs">
+                    <q-input :model-value="selectedColleague[3]" label="Práce" dense readonly filled class="col"/>
+                    <q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="editForm.jobId = findJobIdByName(selectedColleague[3])"><q-tooltip>Použít u pravého sloupce</q-tooltip></q-btn>
+                  </div>
+                  <div class="row items-center no-wrap q-mb-xs">
+                    <q-input :model-value="selectedColleague[14] || 'Nezadáno'" label="Místo" dense readonly filled class="col"/>
+                    <q-btn flat dense round icon="arrow_forward" color="primary" class="q-ml-xs" @click="editForm.placeId = findPlaceIdByName(selectedColleague[14])"><q-tooltip>Použít u pravého sloupce</q-tooltip></q-btn>
+                  </div>
+                  <q-input :model-value="selectedColleague[8] || ''" label="Poznámka vzoru" dense readonly filled type="textarea" rows="2" class="q-mb-xs"/>
+                  <q-input :model-value="String(selectedColleague[12] || 0) + ' km'" label="Km celkem" dense readonly filled class="q-mb-sm"/>
+                  <q-btn color="deep-orange" icon="content_copy" label="Opsat vše (bez poznámky)" size="sm" class="full-width" @click="copyAllFromColleague"/>
+                </template>
+              </div>
+
               <div class="col-6">
                 <div class="text-caption text-grey-7 q-mb-xs">Nové:</div>
                 <q-select v-model="editForm.workerId" :options="workerOptions" label="Pracovník" emit-value map-options dense outlined class="q-mb-xs"/>
@@ -559,9 +980,9 @@ window.app.component('admin-component', {
                 <q-input v-model="editForm.timeFrom" label="Od" dense outlined class="q-mb-xs">
                   <template v-slot:append>
                     <q-icon name="schedule" class="cursor-pointer">
-                      <q-popup-proxy cover ref="editTimeFromProxy">
+                      <q-popup-proxy cover ref="editTimeFromProxy" @show="resetTimeStep('editFrom')">
                         <q-time v-model="editForm.timeFrom" mask="HH:mm" format24h
-                          @update:model-value="val => { if (val && val.length === 5) $refs.editTimeFromProxy.hide(); }"/>
+                          @update:model-value="val => handleTimeStep('editFrom', val, 'editTimeFromProxy')"/>
                       </q-popup-proxy>
                     </q-icon>
                   </template>
@@ -569,9 +990,9 @@ window.app.component('admin-component', {
                 <q-input v-model="editForm.timeTo" label="Do" dense outlined class="q-mb-xs">
                   <template v-slot:append>
                     <q-icon name="schedule" class="cursor-pointer">
-                      <q-popup-proxy cover ref="editTimeToProxy">
+                      <q-popup-proxy cover ref="editTimeToProxy" @show="resetTimeStep('editTo')">
                         <q-time v-model="editForm.timeTo" mask="HH:mm" format24h
-                          @update:model-value="val => { if (val && val.length === 5) $refs.editTimeToProxy.hide(); }"/>
+                          @update:model-value="val => handleTimeStep('editTo', val, 'editTimeToProxy')"/>
                       </q-popup-proxy>
                     </q-icon>
                   </template>
@@ -603,10 +1024,10 @@ window.app.component('admin-component', {
               <template v-slot:append><q-icon name="event" class="cursor-pointer"><q-popup-proxy cover ref="dupDateProxy"><q-date v-model="editForm.dateEdit" mask="DD. MM. YYYY" locale="cs" @update:model-value="$refs.dupDateProxy.hide()"/></q-popup-proxy></q-icon></template>
             </q-input>
             <q-input v-model="editForm.timeFrom" label="Od" outlined dense class="q-mb-sm">
-              <template v-slot:append><q-icon name="schedule" class="cursor-pointer"><q-popup-proxy cover ref="dupTimeFromProxy"><q-time v-model="editForm.timeFrom" mask="HH:mm" format24h @update:model-value="val => { if(val && val.length===5) $refs.dupTimeFromProxy.hide() }"/></q-popup-proxy></q-icon></template>
+              <template v-slot:append><q-icon name="schedule" class="cursor-pointer"><q-popup-proxy cover ref="dupTimeFromProxy" @show="resetTimeStep('dupFrom')"><q-time v-model="editForm.timeFrom" mask="HH:mm" format24h @update:model-value="val => handleTimeStep('dupFrom', val, 'dupTimeFromProxy')"/></q-popup-proxy></q-icon></template>
             </q-input>
             <q-input v-model="editForm.timeTo" label="Do" outlined dense class="q-mb-sm">
-              <template v-slot:append><q-icon name="schedule" class="cursor-pointer"><q-popup-proxy cover ref="dupTimeToProxy"><q-time v-model="editForm.timeTo" mask="HH:mm" format24h @update:model-value="val => { if(val && val.length===5) $refs.dupTimeToProxy.hide() }"/></q-popup-proxy></q-icon></template>
+              <template v-slot:append><q-icon name="schedule" class="cursor-pointer"><q-popup-proxy cover ref="dupTimeToProxy" @show="resetTimeStep('dupTo')"><q-time v-model="editForm.timeTo" mask="HH:mm" format24h @update:model-value="val => handleTimeStep('dupTo', val, 'dupTimeToProxy')"/></q-popup-proxy></q-icon></template>
             </q-input>
             <q-input v-model="editForm.note" label="Poznámka" outlined dense/>
           </q-card-section>
@@ -627,7 +1048,7 @@ window.app.component('admin-component', {
               <template v-slot:append><q-icon name="event" class="cursor-pointer"><q-popup-proxy cover ref="lunchDateProxy"><q-date v-model="newLunch.date" mask="DD. MM. YYYY" locale="cs" @update:model-value="$refs.lunchDateProxy.hide()"/></q-popup-proxy></q-icon></template>
             </q-input>
             <q-input v-model="newLunch.time" label="Čas" outlined dense>
-              <template v-slot:append><q-icon name="schedule" class="cursor-pointer"><q-popup-proxy cover ref="lunchTimeProxy"><q-time v-model="newLunch.time" mask="HH:mm" format24h @update:model-value="val => { if(val && val.length===5) $refs.lunchTimeProxy.hide() }"/></q-popup-proxy></q-icon></template>
+              <template v-slot:append><q-icon name="schedule" class="cursor-pointer"><q-popup-proxy cover ref="lunchTimeProxy" @show="resetTimeStep('lunch')"><q-time v-model="newLunch.time" mask="HH:mm" format24h @update:model-value="val => handleTimeStep('lunch', val, 'lunchTimeProxy')"/></q-popup-proxy></q-icon></template>
             </q-input>
           </q-card-section>
           <q-card-actions align="right">

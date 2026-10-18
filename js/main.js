@@ -1,4 +1,10 @@
 // Evidence práce 2026 - main.js
+// v2026-10-15 - NOVÉ: v modrém pruhu vedle ADMIN se adminovi ukazuje verze (web = main.js,
+//             server = kod.gs zjištěné z API), ať je vidět, co je nasazené.
+// v2026-10-13 - NOVÉ: reloadAllSilent - po uložení v Adminu a v Rozpracovaných se data
+//             obnoví BEZ zničení obrazovky (zůstane zvolené menu, datum, záložka,
+//             vybraný pracovník). Dřív reloadAll zobrazil loading a komponenty se
+//             znovu vytvořily od začátku. Home a Nastavení zůstávají na reloadAll.
 // v2026-02-27 - přesun Admin mezi Přehledy a Nástroje, Nástroje obsahují Statistiky+Deník
 //             - přidána funkce přihlásit jako pracovník (impersonace) s tlačítkem Zpět
 //             - nic jsem nesmazal, pouze přidal nové funkce
@@ -20,6 +26,12 @@ window.app = Vue.createApp({
       isAdmin: false,
       currentView: 'home',
       loading: false,
+      refreshing: false, // v2026-10-13: tiché obnovení dat (komponenty se neodmontují)
+      // v2026-10-15 NOVÉ: verze zobrazená adminovi v modrém pruhu vedle ADMIN.
+      // appVersion = verze tohoto souboru (main.js) - PŘI KAŽDÉ ÚPRAVĚ main.js PŘEPSAT na dnešní datum.
+      // serverVersion = verze kod.gs, zjistí se z API (viz loadServerVersion).
+      appVersion: 'v2026-10-15',
+      serverVersion: '',
       message: '',
       showMessageDialog: false,
       contracts: [],
@@ -119,8 +131,9 @@ window.app = Vue.createApp({
       this.showMessage('Zpět jako: ' + this.currentUser.name);
     },
 
-    async loadUserData() {
-      this.loading = true;
+    // v2026-10-13: parametr silent = bez this.loading (komponenty se nezničí a nezmizí zvolená záložka/datum)
+    async loadUserData(silent = false) {
+      if (!silent) this.loading = true;
       const source = localStorage.getItem('dataSource') || 'new';
       this.dataSource = source;
       const [c, j, s, r, a, p] = await Promise.all([
@@ -140,11 +153,11 @@ window.app = Vue.createApp({
         this.lunches = a.data.filter(adv => adv[5] === 'oběd');
       }
       if (p.data) this.places = p.data;
-      this.loading = false;
+      if (!silent) this.loading = false;
     },
 
-    async loadAdminData() {
-      this.loading = true;
+    async loadAdminData(silent = false) {
+      if (!silent) this.loading = true;
       const source = localStorage.getItem('dataSource') || 'new';
       const [summary, records, advances] = await Promise.all([
         apiCall('getallsummary', { source }),
@@ -154,12 +167,42 @@ window.app = Vue.createApp({
       if (summary.data) this.allSummary = summary.data;
       if (records.data) this.allRecords = records.data;
       if (advances.data) this.allAdvances = advances.data;
-      this.loading = false;
+      // v2026-10-15: verzi serveru stačí zjistit jednou, nečeká se na ni (neblokuje načtení)
+      if (!this.serverVersion || this.serverVersion === '?') this.loadServerVersion();
+      if (!silent) this.loading = false;
+    },
+
+    // v2026-10-15 NOVÉ: zjistí verzi kod.gs (výchozí odpověď API obsahuje 'version').
+    // Když se nepodaří, ukáže se '?'. Slouží k ověření, že je nasazená nová verze serveru.
+    async loadServerVersion() {
+      const res = await apiCall('version', {});
+      this.serverVersion = (res && res.data && res.data.version) ? res.data.version : '?';
     },
 
     async reloadAll() {
       await this.loadUserData();
       if (this.isAdmin) await this.loadAdminData();
+    },
+
+    // v2026-10-13 NOVÉ: reload BEZ zničení obrazovky. reloadAll nastavuje loading=true
+    // a komponenty mají v-if="!loading", takže po každém uložení admin/nástroje zmizely
+    // a po návratu byly zase na výchozí záložce a dnešním datu (zvolené menu, datum,
+    // vybraný pracovník... se ztratily). Tady zůstanou komponenty vykreslené, jen se
+    // vymění data (komponenty na změnu dat reagují samy). Po dobu obnovy (obvykle
+    // 1-2 s) je přes obrazovku průhledná vrstva - zabrání kliknutí na ještě
+    // neobnovená data (po smazání řádku se mění čísla řádků, takže druhý rychlý
+    // klik na staré hodnoty by mohl zasáhnout jiný záznam).
+    async reloadAllSilent() {
+      if (this.refreshing) return;
+      this.refreshing = true;
+      try {
+        await this.loadUserData(true);
+        if (this.isAdmin) await this.loadAdminData(true);
+      } catch (e) {
+        this.showMessage('Chyba při obnovení dat - zkuste to znovu');
+      } finally {
+        this.refreshing = false;
+      }
     },
 
     // NOVÉ v2026-03-10: naplánovat kontrolu objednávek v 18:00
@@ -234,6 +277,8 @@ window.app = Vue.createApp({
             <span v-if="impersonating" class="text-caption q-ml-sm text-yellow">· NÁHLED</span>
             <span v-else class="text-caption q-ml-sm">{{ dataSourceLabel }}</span>
           </q-toolbar-title>
+          <!-- v2026-10-15: verze appky (web) a serveru (kod.gs), jen pro admina -->
+          <span v-if="isAdmin" class="q-ml-sm" style="font-size:9px;line-height:1.25;opacity:0.85;text-align:right;white-space:nowrap">web {{ appVersion }}<br>server {{ serverVersion || '…' }}</span>
           <span v-if="isAdmin" class="admin-badge q-ml-sm">ADMIN</span>
         </q-toolbar>
       </q-header>
@@ -242,6 +287,10 @@ window.app = Vue.createApp({
         <q-page padding>
           <div v-if="loading" class="flex flex-center q-pa-xl">
             <q-spinner color="primary" size="3em" />
+          </div>
+          <!-- v2026-10-13: tiché obnovení dat - nic se neodmontuje, jen krátce blokuje klikání -->
+          <div v-if="refreshing" style="position:fixed;top:0;left:0;right:0;bottom:0;z-index:7000;background:rgba(255,255,255,0.35);display:flex;align-items:center;justify-content:center">
+            <q-spinner color="primary" size="2.5em" />
           </div>
 
           <login-component
@@ -286,7 +335,7 @@ window.app = Vue.createApp({
             :places="places"
             :loading="loading"
             @message="showMessage"
-            @reload="reloadAll"
+            @reload="reloadAllSilent"
             @login-as="loginAs"
           />
 
@@ -296,6 +345,7 @@ window.app = Vue.createApp({
               <q-tab name="nedokoncene" icon="build" label="Rozpracované"/>
               <q-tab v-if="currentUser && currentUser.canStats" name="stats" icon="bar_chart" label="Statistiky"/>
               <q-tab v-if="currentUser && currentUser.canDenik" name="denik" icon="menu_book" label="Deník"/>
+              <q-tab v-if="isAdmin" name="kontrola" icon="compare_arrows" label="Kontrola dat"/>             
             </q-tabs>
             <nedokoncene-component
               v-if="toolsView === 'nedokoncene'"
@@ -304,7 +354,7 @@ window.app = Vue.createApp({
               :jobs="jobs"
               :places="places"
               @message="showMessage"
-              @reload="reloadAll"
+              @reload="reloadAllSilent"
             />
             <statistics-component
               v-if="toolsView === 'stats' && currentUser && currentUser.canStats"
@@ -321,6 +371,10 @@ window.app = Vue.createApp({
               :all-records="statsRecords"
               :is-admin="isAdmin"
               :contracts="contracts"
+              @message="showMessage"
+            />
+            <kontrola-component
+              v-if="toolsView === 'kontrola' && isAdmin"
               @message="showMessage"
             />
           </div>

@@ -1,8 +1,21 @@
 // statistics.js
+// v2026-10-11 - OPRAVA exportu do Excelu: Windows-1250 (háčky) + desetinná čárka
+//             u hodin (Excel bral "10.30" jako datum). Nic jiného se neměnilo.
 // v2026-03-04d - NOVÉ: vyhledávání v selectech Zakázky a Práce (use-input)
 //              - nic jsem nesmazal
+// v2026-09-01 - OPRAVA: 'isAdmin' chybělo v props, proto se filtry "Místa práce"
+//             a "Pracovníci" nikdy nezobrazily (ani adminovi) - v-if="isAdmin"
+//             vždy vyhodnotil undefined. Doplněno do props.
+//             NOVÉ: Statistiky si teď načítají vlastní data se source:'all'
+//             (nová appka + historie dohromady), nezávisle na globálním přepínači
+//             Nastavení → nová/historie/vše. Díky tomu admin při kontrole vidí
+//             vždy kompletní čísla. Props allRecords/allAdvances se už nepoužívají
+//             pro výpočty (nahrazeno vlastním načtením ownRecords/ownAdvances),
+//             ale ponechány v props kvůli zpětné kompatibilitě s main.js.
+//             - nic jiného se neměnilo
+
 window.app.component('statistics-component', {
-  props: ['allRecords', 'contracts', 'jobs', 'places', 'allAdvances'],
+  props: ['allRecords', 'contracts', 'jobs', 'places', 'allAdvances', 'isAdmin'],
   emits: ['message'],
   
   data() {
@@ -19,7 +32,17 @@ window.app.component('statistics-component', {
       workers: [],
       filteredRecords: [],
       customCharge: null,
-      showResults: false
+      showResults: false,
+      // v2026-09-01: vlastní data, vždy source:'all'
+      ownRecords: [],
+      ownAdvances: [],
+      dataLoading: false,
+      // v2026-09-01b OPRAVA: byly nedefinované, selecty proto byly prázdné
+      // dokud na ně uživatel neklikl (spoléhalo se jen na @focus)
+      contractOptionsFiltered: [],
+      jobOptionsFiltered: [],
+      placeOptionsFiltered: [],
+      workerOptionsFiltered: []
     }
   },
   
@@ -78,7 +101,8 @@ window.app.component('statistics-component', {
     },
     
     totalPaid() {
-      if (!this.allAdvances) return 0;
+      // v2026-09-01: čte z ownAdvances (vždy 'all'), ne z allAdvances prop
+      if (!this.ownAdvances) return 0;
       
       const workerIds = new Set(this.filteredRecords.map(r => String(r[1])));
       
@@ -94,7 +118,7 @@ window.app.component('statistics-component', {
         dateTo = new Date(parts[2], parts[1] - 1, parts[0], 23, 59, 59);
       }
       
-      return Math.round(this.allAdvances.reduce((sum, adv) => {
+      return Math.round(this.ownAdvances.reduce((sum, adv) => {
         if (!workerIds.has(String(adv[0]))) return sum;
         
         if (dateFrom || dateTo) {
@@ -119,6 +143,22 @@ window.app.component('statistics-component', {
   },
   
   methods: {
+    // v2026-09-01 NOVÉ: vlastní načtení dat, vždy source:'all'
+    async loadAllData() {
+      this.dataLoading = true;
+      try {
+        const [r, a] = await Promise.all([
+          apiCall('getallrecords', { source: 'all' }),
+          apiCall('getalladvances', { source: 'all' })
+        ]);
+        if (r.code === '000' && r.data) this.ownRecords = r.data;
+        if (a.code === '000' && a.data) this.ownAdvances = a.data;
+      } catch (e) {
+        this.$emit('message', 'Chyba při načítání dat pro statistiky');
+      }
+      this.dataLoading = false;
+    },
+
     filterContracts(val, update) {
       update(() => {
         const needle = val.toLowerCase();
@@ -157,9 +197,24 @@ window.app.component('statistics-component', {
         this.workers = res.data;
       }
     },
+
+    // v2026-09-02 NOVÉ: vlastní formatTimeRange přímo v komponentě, nezávisle
+    // na globální funkci z utils.js (ta buď neexistuje pod tímhle jménem, nebo
+    // se jmenuje jinak - způsobovalo to "formatTimeMessage is not a function"
+    // a shodilo celou sekci výsledků)
+    formatTimeRange(fr, to) {
+      const fmt = (ts) => {
+        const d = new Date(Number(ts));
+        return String(d.getDate()).padStart(2, '0') + '. ' + String(d.getMonth() + 1).padStart(2, '0') + '. ' +
+          String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+      };
+      if (!fr) return '';
+      return to ? (fmt(fr) + ' - ' + fmt(to)) : fmt(fr);
+    },
     
     applyFilters() {
-      let filtered = [...this.allRecords];
+      // v2026-09-01: filtruje z ownRecords (vždy 'all'), ne z allRecords prop
+      let filtered = [...this.ownRecords];
       
       // Filtr zakázek
       if (this.filters.contracts.length > 0) {
@@ -255,14 +310,38 @@ window.app.component('statistics-component', {
       this.showResults = false;
     },
     
+    // v2026-10-11 OPRAVA exportu (rozbité háčky + hodiny jako datum v Excelu):
+    // 1) Kódování zpět na Windows-1250 (UTF-8 s BOM tenhle Excel nepozná,
+    //    ukazoval "ZakÃ¡zka" místo "Zakázka") - stejně jako Stavební deník.
+    // 2) Hodiny s ČÁRKOU místo tečky (české Excely brály "10.30" jako 30. října
+    //    -> "říj.30", "9.40" jako "zář.40"). U záznamů, kde to náhodou nevyšlo
+    //    jako datum (13.30), to bylo jen textem - proto to vypadalo nahodile.
+    // Obojí tu už jednou bylo (v2026-03-01), ale commit z 4.3.2026 přepsal
+    // celý soubor starší verzí a oprava se ztratila.
+    // Sloupce a obsah exportu zůstávají stejné jako teď.
     exportToExcel() {
       if (this.filteredRecords.length === 0) {
         this.$emit('message', 'Nejdříve aplikujte filtry');
         return;
       }
-      
-      let csv = 'Zakázka;Pracovník;Kč/hod;Práce;Datum od;Datum do;Hodiny;Poznámka;Km;Místo práce\n';
-      
+
+      const win1250map = {
+        'Á':0xC1,'á':0xE1,'Č':0xC8,'č':0xE8,'Ď':0xCF,'ď':0xEF,
+        'É':0xC9,'é':0xE9,'Ě':0xCC,'ě':0xEC,'Í':0xCD,'í':0xED,
+        'Ň':0xD2,'ň':0xF2,'Ó':0xD3,'ó':0xF3,'Ř':0xD8,'ř':0xF8,
+        'Š':0x8A,'š':0x9A,'Ť':0x8D,'ť':0x9D,'Ú':0xDA,'ú':0xFA,
+        'Ů':0xD9,'ů':0xF9,'Ý':0xDD,'ý':0xFD,'Ž':0x8E,'ž':0x9E,
+        'Ä':0xC4,'ä':0xE4,'Ö':0xD6,'ö':0xF6,'Ü':0xDC,'ü':0xFC,'ß':0xDF,
+        'Ľ':0xBC,'ľ':0xBE,'Ĺ':0xC5,'ĺ':0xE5,'Ô':0xD4,'ô':0xF4,'Ŕ':0xC0,'ŕ':0xE0,
+        '–':0x96,'—':0x97,'„':0x84,'“':0x93,'”':0x94,'’':0x92,'°':0xB0
+      };
+
+      const q = (cell) => `"${String(cell).replace(/"/g, '""')}"`;
+      // desetinná ČÁRKA, ať to Excel nebere jako datum
+      const dec = (n) => String(n).replace('.', ',');
+
+      let csv = 'Zakázka;Pracovník;Kč/hod;Práce;Datum od;Datum do;Hodiny;Poznámka;Km;Místo práce\r\n';
+
       this.filteredRecords.forEach(r => {
         const row = [
           r[0],
@@ -271,30 +350,42 @@ window.app.component('statistics-component', {
           r[3],
           formatShortDateTime(r[4]),
           formatShortDateTime(r[5]),
-          r[7].toFixed(2),
+          dec((parseFloat(r[7]) || 0).toFixed(2)),
           r[8] || '',
           r[12] || 0,
           r[14] || ''
         ];
-        csv += row.map(cell => `"${cell}"`).join(';') + '\n';
+        csv += row.map(q).join(';') + '\r\n';
       });
-      
+
       // Přidat souhrn
-      csv += '\n';
-      csv += 'SOUHRN\n';
-      csv += `Celkem hodin;${this.totalHours}\n`;
-      csv += `Celkem cest;${this.totalTrips}\n`;
-      csv += `Celkem dělníků;${this.uniqueWorkers}\n`;
-      csv += `Celkem km;${this.totalKm}\n`;
-      csv += `Celkem náklady;${this.totalCost} Kč\n`;
-      csv += `Celkem vyplaceno;${this.totalPaid} Kč\n`;
+      csv += '\r\n';
+      csv += 'SOUHRN\r\n';
+      csv += `Celkem hodin;${dec(this.totalHours)}\r\n`;
+      csv += `Celkem cest;${this.totalTrips}\r\n`;
+      csv += `Celkem dělníků;${this.uniqueWorkers}\r\n`;
+      csv += `Celkem km;${dec(this.totalKm)}\r\n`;
+      csv += `Celkem náklady;${this.totalCost} Kč\r\n`;
+      csv += `Celkem vyplaceno;${this.totalPaid} Kč\r\n`;
       if (this.customCharge) {
-        csv += `Má se účtovat;${this.customCharge} Kč\n`;
-        csv += `Rozdíl (zisk);${this.profit} Kč\n`;
-        csv += `Marže;${this.profitMargin} %\n`;
+        csv += `Má se účtovat;${this.customCharge} Kč\r\n`;
+        csv += `Rozdíl (zisk);${this.profit} Kč\r\n`;
+        csv += `Marže;${dec(this.profitMargin)} %\r\n`;
       }
-      
-      const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+
+      // Převod na Windows-1250 bajty; neznámý znak (>127, není v mapě) -> '?'
+      // místo smetí
+      const bytes = new Uint8Array(csv.length);
+      for (let i = 0; i < csv.length; i++) {
+        const ch = csv[i];
+        if (win1250map[ch] !== undefined) bytes[i] = win1250map[ch];
+        else {
+          const code = csv.charCodeAt(i);
+          bytes[i] = code < 128 ? code : 0x3F;
+        }
+      }
+
+      const blob = new Blob([bytes], { type: 'text/csv;charset=windows-1250;' });
       const link = document.createElement('a');
       const url = URL.createObjectURL(blob);
       link.setAttribute('href', url);
@@ -303,21 +394,35 @@ window.app.component('statistics-component', {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      
+
       this.$emit('message', '✓ Export dokončen');
     }
   },
   
   async mounted() {
     await this.loadWorkers();
+    await this.loadAllData();
+    // v2026-09-01b OPRAVA: naplnit selecty rovnou, ne až po @focus
+    this.contractOptionsFiltered = this.contractOptions;
+    this.jobOptionsFiltered = this.jobOptions;
+    this.placeOptionsFiltered = this.placeOptions;
+    this.workerOptionsFiltered = this.workerOptions;
   },
   
   template: `
     <div class="q-pa-md">
       <div class="text-h6 q-mb-md">📊 Statistiky a filtry</div>
+      <div class="q-mb-md q-pa-xs text-caption text-blue-8" style="background:#e3f2fd;border-radius:4px">
+        ℹ Statistiky vždy počítají ze všech dat (nová appka + historie), bez ohledu na nastavení zdroje dat v Nastavení.
+      </div>
+      
+      <div v-if="dataLoading" class="text-center q-pa-md">
+        <q-spinner color="primary" size="2em"/>
+        <div class="q-mt-sm text-grey-7">Načítám data...</div>
+      </div>
       
       <!-- FILTRY -->
-      <q-card class="q-mb-md">
+      <q-card v-if="!dataLoading" class="q-mb-md">
         <q-card-section>
           <div class="text-subtitle2 q-mb-sm">Filtry</div>
           
@@ -516,8 +621,8 @@ window.app.component('statistics-component', {
               </div>
             </div>
             <div class="text-right">
-              <div class="text-bold text-primary">{{ record[7].toFixed(2) }} hod</div>
-              <div class="text-caption">{{ record[2] }} Kč/hod = {{ Math.round(record[2] * record[7]) }} Kč</div>
+              <div class="text-bold text-primary">{{ (parseFloat(record[7]) || 0).toFixed(2) }} hod</div>
+              <div class="text-caption">{{ record[2] }} Kč/hod = {{ Math.round((parseFloat(record[2]) || 0) * (parseFloat(record[7]) || 0)) }} Kč</div>
             </div>
           </div>
           <div class="text-caption text-grey-7 q-mt-sm">

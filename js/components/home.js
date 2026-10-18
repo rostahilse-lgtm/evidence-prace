@@ -1,13 +1,24 @@
 // home.js
 // v2026-02-25b - Oprava: česká lokalizace datumů (csLocale objekt), oprava UNDEFINED ceny oběda
 // v2026-02-27 - přidána funkce checkCloudShift
-// v2026-03-01 - přidána záložka Rozpracované: kluci mohou kdykoli doplnit nedokončený záznam
-//             - prodlouženo uchování lokálního stavu ze 1 dne na 7 dní
-//             - NIC JSEM NESMAZAL, pouze přidal nové funkce
 // v2026-03-04 - OPRAVA: výběr času odchodu v Rozpracovaných nahrazen Quasar time pickerem
-//             - NOVÉ: při uložení doplnění se posílá opraveno:'Y' → v tabulce se zapíše 'opraveno' do sloupce P
 // v2026-03-04c - NOVÉ: vyhledávání v selectech Zakázka, Práce, Místo práce
 // v2026-08-07 - OPRAVA: odstraněny zbytky kódu po merge konfliktu (způsobovaly prázdnou stránku)
+// v2026-08-30 - OPRAVA: loadShiftState() vrácena kontrola zpět na "jen dnešek" (dřív 7 dní)
+// v2026-08-30b - PŘESUN: záložka "Rozpracované" přesunuta do nedokoncene.js
+// v2026-08-31 - NOVÉ: automatický retry při výpadku připojení pro PŘÍCHOD, ODCHOD
+//             a Uložit směnu.
+//             - Fáze 1: rychlé opakování po 3s, 8s, 15s (odchytí krátký výpadek)
+//             - Fáze 2: pokud furt nejde, appka počká na signál prohlížeče
+//               "window online" (telefon zase má internet) a zkusí to hned znovu,
+//               opakovaně dokud se neuloží
+//             - NOVÉ: trvalá chybová hláška PŘÍMO V KARTĚ (arrivalError,
+//               departureError, shiftSaveError) - nezmizí sama, zůstane viditelná
+//               dokud se neuloží, aby uživatel věděl že má problém a může
+//               zkontrolovat/zapnout internet
+//             - Duplicitě nehrozí: kontrola v saveArrival (kod.gs) už brání
+//               vzniku dvou řádků při opakovaných pokusech ve stejný den
+//             - nic jiného se neměnilo
 
 window.app.component('home-component', {
   props: ['currentUser', 'isAdmin', 'contracts', 'jobs', 'places', 'loading'],
@@ -41,10 +52,6 @@ window.app.component('home-component', {
       lunchPrice: null,
       lunchPrices: null,
       lunchPricesLoading: false,
-      nedokoncene: [],
-      nedokonceneLoading: false,
-      doplnForm: null,
-      doplnSaving: false,
       contractOptionsFiltered: [],
       jobOptionsFiltered: [],
       placeOptionsFiltered: [],
@@ -55,7 +62,15 @@ window.app.component('home-component', {
       objednavkaUlozena: false,
       objednavkaUlozenaJidlo: null,
       objednavkyOstatnich: [],
-      objednavkyOstatniLoading: false
+      objednavkyOstatniLoading: false,
+      // v2026-08-31: trvalé chybové stavy zobrazené přímo v kartě
+      arrivalError: null,
+      departureError: null,
+      shiftSaveError: null,
+      // v2026-08-31: interní - aby šlo při úspěchu zrušit čekající "online" listener
+      _arrivalOnlineHandler: null,
+      _departureOnlineHandler: null,
+      _shiftSaveOnlineHandler: null
     }
   },
   
@@ -141,29 +156,97 @@ window.app.component('home-component', {
       this.lunchPricesLoading = false;
     },
 
+    // v2026-08-31 NOVÉ: obecná retry logika
+    // Fáze 1: zkusí fn() znovu po 3s, 8s, 15s
+    // Fáze 2: pokud furt nejde, počká na window 'online' událost a zkouší dokola,
+    // dokud fn() nevrátí true (úspěch)
+    scheduleRetry(fn, onlineHandlerKey) {
+      const delays = [3000, 8000, 15000];
+      let attempt = 0;
+
+      const tryNext = () => {
+        if (attempt < delays.length) {
+          setTimeout(async () => {
+            const ok = await fn();
+            if (!ok) {
+              attempt++;
+              tryNext();
+            }
+          }, delays[attempt]);
+        } else {
+          // Fáze 2: čekání na návrat internetu
+          const handler = async () => {
+            const ok = await fn();
+            if (ok) {
+              window.removeEventListener('online', handler);
+              this[onlineHandlerKey] = null;
+            }
+          };
+          // pokud už na tohle čeká starší handler, nejdřív ho odstranit
+          if (this[onlineHandlerKey]) {
+            window.removeEventListener('online', this[onlineHandlerKey]);
+          }
+          this[onlineHandlerKey] = handler;
+          window.addEventListener('online', handler);
+        }
+      };
+      tryNext();
+    },
+
+    // v2026-08-31: samotný pokus o uložení příchodu, vrací true/false
+    async trySaveArrival() {
+      try {
+        const res = await apiCall('savearrival', {
+          id_worker: this.currentUser.id,
+          time_fr: this.shiftForm.timeStart
+        });
+        if (res.code === '000' && res.data && res.data.rowIndex !== undefined) {
+          this.cloudRowIndex = res.data.rowIndex;
+          this.saveShiftState();
+          this.arrivalError = null;
+          this.$emit('message', '✓ Příchod uložen do tabulky: ' + formatTime(this.shiftForm.timeStart));
+          return true;
+        }
+        return false;
+      } catch (e) {
+        return false;
+      }
+    },
+
     async setArrival() {
       this.shiftForm.timeStart = Date.now();
       this.saveShiftState();
+      this.arrivalError = null;
       if (this.cloudShiftEnabled) {
         this.cloudSaving = true;
-        try {
-          const res = await apiCall('savearrival', {
-            id_worker: this.currentUser.id,
-            time_fr: this.shiftForm.timeStart
-          });
-          if (res.code === '000' && res.data && res.data.rowIndex !== undefined) {
-            this.cloudRowIndex = res.data.rowIndex;
-            this.saveShiftState();
-            this.$emit('message', '✓ Příchod uložen do tabulky: ' + formatTime(this.shiftForm.timeStart));
-          } else {
-            this.$emit('message', '⚠️ Příchod lokálně (chyba cloudu): ' + (res.error || ''));
-          }
-        } catch (e) {
-          this.$emit('message', '⚠️ Příchod lokálně (offline)');
-        }
+        const success = await this.trySaveArrival();
         this.cloudSaving = false;
+        if (!success) {
+          this.arrivalError = 'Nepodařilo se uložit do tabulky. Zkontrolujte připojení - appka to zkouší na pozadí znovu.';
+          this.$emit('message', '⚠️ Příchod se nepodařilo uložit, zkouším znovu na pozadí');
+          this.scheduleRetry(() => this.trySaveArrival(), '_arrivalOnlineHandler');
+        }
       } else {
         this.$emit('message', 'Příchod: ' + formatTime(this.shiftForm.timeStart));
+      }
+    },
+
+    // v2026-08-31: samotný pokus o uložení odchodu, vrací true/false
+    async tryDeparture() {
+      if (this.cloudRowIndex === null) return false;
+      try {
+        const res = await apiCall('updatedeparture', {
+          row_index: this.cloudRowIndex,
+          time_to: this.shiftForm.timeEnd
+        });
+        if (res.code === '000') {
+          this.departureError = null;
+          this.$emit('message', '✓ Odchod uložen do tabulky: ' + formatTime(this.shiftForm.timeEnd));
+          return true;
+        }
+        return false;
+      } catch (e) {
+        return false;
       }
     },
     
@@ -174,26 +257,16 @@ window.app.component('home-component', {
       }
       this.shiftForm.timeEnd = Date.now();
       this.saveShiftState();
+      this.departureError = null;
       if (this.cloudShiftEnabled) {
         this.cloudSaving = true;
-        try {
-          if (this.cloudRowIndex !== null) {
-            const res = await apiCall('updatedeparture', {
-              row_index: this.cloudRowIndex,
-              time_to: this.shiftForm.timeEnd
-            });
-            if (res.code === '000') {
-              this.$emit('message', '✓ Odchod uložen do tabulky: ' + formatTime(this.shiftForm.timeEnd));
-            } else {
-              this.$emit('message', '⚠️ Odchod lokálně (chyba cloudu): ' + (res.error || ''));
-            }
-          } else {
-            this.$emit('message', '⚠️ Odchod lokálně (chybí rowIndex)');
-          }
-        } catch (e) {
-          this.$emit('message', '⚠️ Odchod lokálně (offline)');
-        }
+        const success = await this.tryDeparture();
         this.cloudSaving = false;
+        if (!success) {
+          this.departureError = 'Nepodařilo se uložit do tabulky. Zkontrolujte připojení - appka to zkouší na pozadí znovu.';
+          this.$emit('message', '⚠️ Odchod se nepodařilo uložit, zkouším znovu na pozadí');
+          this.scheduleRetry(() => this.tryDeparture(), '_departureOnlineHandler');
+        }
       } else {
         this.$emit('message', 'Odchod: ' + formatTime(this.shiftForm.timeEnd));
       }
@@ -222,6 +295,60 @@ window.app.component('home-component', {
       }
     },
     
+    // v2026-08-31: rozděleno na sestavení payloadu + samotný pokus (kvůli retry)
+    buildShiftPayload() {
+      const payload = {
+        id_contract: this.shiftForm.contractId,
+        id_worker: this.currentUser.id,
+        id_job: this.shiftForm.jobId,
+        id_place: this.shiftForm.placeId,
+        time_fr: this.shiftForm.timeStart,
+        time_to: this.shiftForm.timeEnd,
+        note: this.shiftForm.note
+      };
+      if (this.isAdmin && this.calculatedKm > 0) {
+        payload.km_jednosmer = this.kmManual ? (this.kmManualValue || 0) : this.contractKm;
+        payload.km_celkem = this.calculatedKm;
+        payload.km_rucne = this.kmManual ? 'Y' : 'N';
+      }
+      if (this.cloudShiftEnabled && this.cloudRowIndex !== null) {
+        payload.row_index = this.cloudRowIndex;
+      }
+      return payload;
+    },
+
+    // v2026-08-31: samotný pokus o uložení směny, vrací true/false.
+    // Duplikát (101) se počítá jako "úspěch" - stav se má vyčistit, ne opakovat.
+    async trySaveShift() {
+      try {
+        const payload = this.buildShiftPayload();
+        let res;
+        if (this.cloudShiftEnabled && this.cloudRowIndex !== null) {
+          res = await apiCall('completerecord', payload);
+        } else {
+          res = await apiCall('saverecord', payload);
+        }
+        if (res.code === '000') {
+          const kmText = this.calculatedKm > 0 ? ` (${this.calculatedKm} km)` : '';
+          this.$emit('message', `✓ Směna uložena${kmText}`);
+          this.shiftSaveError = null;
+          this.clearShiftState();
+          this.$emit('reload');
+          return true;
+        } else if (res.code === '101') {
+          this.$emit('message', '⚠️ Tato směna je již uložena. Pokud je problém, jděte do Nastavení → Smazat směnu.');
+          this.shiftSaveError = null;
+          return true; // netřeba opakovat, směna už existuje
+        } else {
+          this.shiftSaveError = 'Chyba při ukládání: ' + (res.error || 'Neznámá chyba');
+          return false;
+        }
+      } catch (error) {
+        console.error('Save shift error:', error);
+        return false;
+      }
+    },
+
     async saveShift() {
       if (!this.shiftForm.contractId || !this.shiftForm.jobId || !this.shiftForm.timeStart || !this.shiftForm.timeEnd) {
         this.$emit('message', 'Vyplňte všechna pole');
@@ -235,41 +362,12 @@ window.app.component('home-component', {
         this.$emit('message', 'Vyberte místo práce');
         return;
       }
-      try {
-        const payload = {
-          id_contract: this.shiftForm.contractId,
-          id_worker: this.currentUser.id,
-          id_job: this.shiftForm.jobId,
-          id_place: this.shiftForm.placeId,
-          time_fr: this.shiftForm.timeStart,
-          time_to: this.shiftForm.timeEnd,
-          note: this.shiftForm.note
-        };
-        if (this.isAdmin && this.calculatedKm > 0) {
-          payload.km_jednosmer = this.kmManual ? (this.kmManualValue || 0) : this.contractKm;
-          payload.km_celkem = this.calculatedKm;
-          payload.km_rucne = this.kmManual ? 'Y' : 'N';
-        }
-        let res;
-        if (this.cloudShiftEnabled && this.cloudRowIndex !== null) {
-          payload.row_index = this.cloudRowIndex;
-          res = await apiCall('completerecord', payload);
-        } else {
-          res = await apiCall('saverecord', payload);
-        }
-        if (res.code === '000') {
-          const kmText = this.calculatedKm > 0 ? ` (${this.calculatedKm} km)` : '';
-          this.$emit('message', `✓ Směna uložena${kmText}`);
-          this.clearShiftState();
-          this.$emit('reload');
-        } else if (res.code === '101') {
-          this.$emit('message', '⚠️ Tato směna je již uložena. Pokud je problém, jděte do Nastavení → Smazat směnu.');
-        } else {
-          this.$emit('message', '❌ Chyba při ukládání: ' + (res.error || 'Neznámá chyba'));
-        }
-      } catch (error) {
-        console.error('Save shift error:', error);
-        this.$emit('message', '❌ Chyba připojení. Zkuste znovu nebo jděte do Nastavení → Smazat směnu.');
+      this.shiftSaveError = null;
+      const success = await this.trySaveShift();
+      if (!success) {
+        this.shiftSaveError = 'Nepodařilo se uložit směnu. Zkontrolujte připojení - appka to zkouší na pozadí znovu.';
+        this.$emit('message', '❌ Chyba připojení, zkouším znovu na pozadí');
+        this.scheduleRetry(() => this.trySaveShift(), '_shiftSaveOnlineHandler');
       }
     },
     
@@ -324,9 +422,7 @@ window.app.component('home-component', {
       const saved = localStorage.getItem('shiftState_' + this.currentUser.id);
       if (saved) {
         const state = JSON.parse(saved);
-        const stateDate = new Date(state.date.split(". ").reverse().join("-"));
-        const daysAgo = (Date.now() - stateDate.getTime()) / 86400000;
-        if (daysAgo < 7) {
+        if (state.date === getTodayDate()) {
           this.shiftForm.timeStart = state.timeStart;
           this.shiftForm.timeEnd = state.timeEnd;
           this.shiftForm.contractId = state.contractId;
@@ -358,75 +454,6 @@ window.app.component('home-component', {
       } catch (e) {}
     },
     
-    async loadNedokoncene() {
-      this.nedokonceneLoading = true;
-      try {
-        const res = await apiCall('getrecords', { id_worker: this.currentUser.id, source: 'new' });
-        if (res.code === '000' && res.data) {
-          this.nedokoncene = res.data.filter(r => String(r[15] || '').trim() === 'rozpracováno');
-        }
-      } catch(e) {}
-      this.nedokonceneLoading = false;
-    },
-
-    zacitDoplnovat(r) {
-      this.doplnForm = {
-        rowIndex: r[16],
-        timeStart: Number(r[4]),
-        timeEnd: null,
-        timeEndStr: '',
-        contractId: null,
-        jobId: null,
-        placeId: null,
-        note: ''
-      };
-    },
-
-    zrusitDoplneni() {
-      this.doplnForm = null;
-    },
-
-    async ulozitDoplneni() {
-      if (!this.doplnForm.contractId || !this.doplnForm.jobId || !this.doplnForm.placeId) {
-        this.$emit('message', 'Vyplňte zakázku, práci a místo práce');
-        return;
-      }
-      if (!this.doplnForm.note || this.doplnForm.note.trim() === '') {
-        this.$emit('message', 'Poznámka je povinná');
-        return;
-      }
-      if (!this.doplnForm.timeEnd) {
-        this.$emit('message', 'Zadejte čas odchodu');
-        return;
-      }
-      this.doplnSaving = true;
-      try {
-        const payload = {
-          row_index: this.doplnForm.rowIndex,
-          id_contract: this.doplnForm.contractId,
-          id_worker: this.currentUser.id,
-          id_job: this.doplnForm.jobId,
-          id_place: this.doplnForm.placeId,
-          time_fr: this.doplnForm.timeStart,
-          time_to: this.doplnForm.timeEnd,
-          note: this.doplnForm.note,
-          opraveno: 'Y'
-        };
-        const res = await apiCall('completerecord', payload);
-        if (res.code === '000') {
-          this.$emit('message', '✓ Záznam doplněn a uložen');
-          this.doplnForm = null;
-          await this.loadNedokoncene();
-          this.$emit('reload');
-        } else {
-          this.$emit('message', 'Chyba: ' + (res.error || ''));
-        }
-      } catch(e) {
-        this.$emit('message', 'Chyba při ukládání');
-      }
-      this.doplnSaving = false;
-    },
-
     clearShiftState() {
       localStorage.removeItem('shiftState_' + this.currentUser.id);
       this.shiftForm = {
@@ -444,6 +471,13 @@ window.app.component('home-component', {
       this.todayTripExists = false;
       this.todayTripInfo = null;
       this.cloudRowIndex = null;
+      // v2026-08-31: vyčistit i chybové stavy a případné čekající "online" listenery
+      this.arrivalError = null;
+      this.departureError = null;
+      this.shiftSaveError = null;
+      if (this._arrivalOnlineHandler) { window.removeEventListener('online', this._arrivalOnlineHandler); this._arrivalOnlineHandler = null; }
+      if (this._departureOnlineHandler) { window.removeEventListener('online', this._departureOnlineHandler); this._departureOnlineHandler = null; }
+      if (this._shiftSaveOnlineHandler) { window.removeEventListener('online', this._shiftSaveOnlineHandler); this._shiftSaveOnlineHandler = null; }
     },
     
     async loadObjednavkuPrices() {
@@ -597,6 +631,13 @@ window.app.component('home-component', {
     this.loadLunchPrices(this.lunchDate);
     this.loadNedokoncene();
   },
+
+  // v2026-08-31: úklid "online" listenerů při opuštění stránky, ať se nehromadí
+  beforeUnmount() {
+    if (this._arrivalOnlineHandler) window.removeEventListener('online', this._arrivalOnlineHandler);
+    if (this._departureOnlineHandler) window.removeEventListener('online', this._departureOnlineHandler);
+    if (this._shiftSaveOnlineHandler) window.removeEventListener('online', this._shiftSaveOnlineHandler);
+  },
   
   template: `
     <div>
@@ -621,7 +662,8 @@ window.app.component('home-component', {
           <div class="text-bold text-green-8">✓ Příchod zaznamenán</div>
           <div>{{formattedStartTime}}</div>
           <div v-if="cloudShiftEnabled && cloudRowIndex !== null" class="text-caption text-blue-7">☁ Uloženo v tabulce (řádek {{cloudRowIndex}})</div>
-          <div v-if="cloudShiftEnabled && cloudRowIndex === null" class="text-caption text-orange-7">⚠ Uloženo jen lokálně</div>
+          <div v-if="cloudShiftEnabled && cloudRowIndex === null && !arrivalError" class="text-caption text-orange-7">⚠ Uloženo jen lokálně</div>
+          <div v-if="arrivalError" class="text-caption text-red-8 q-mt-xs">❌ {{ arrivalError }}</div>
         </div>
         
         <q-btn @click="setDeparture" color="orange" icon="logout" label="ODCHOD"
@@ -631,6 +673,7 @@ window.app.component('home-component', {
           <div class="text-bold text-orange-8">✓ Odchod zaznamenán</div>
           <div>{{formattedEndTime}}</div>
           <div class="text-primary text-bold q-mt-sm">Odpracováno: {{workedHours}} hod</div>
+          <div v-if="departureError" class="text-caption text-red-8 q-mt-xs">❌ {{ departureError }}</div>
         </div>
         
         <q-select v-model="shiftForm.contractId" :options="contractOptionsFiltered"
@@ -672,6 +715,9 @@ window.app.component('home-component', {
         
         <q-btn @click="saveShift" label="Uložit směnu" color="primary"
           :loading="loading" class="full-width" size="lg"/>
+        <div v-if="shiftSaveError" class="q-mt-sm q-pa-sm text-caption text-red-8" style="background:#ffebee;border-radius:4px">
+          ❌ {{ shiftSaveError }}
+        </div>
       </div>
       
       <!-- OBĚD -->
@@ -783,72 +829,6 @@ window.app.component('home-component', {
               <span class="col"/>
               <span class="text-grey-6" style="font-size:0.78rem">{{ r[5] }} Kč</span>
             </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ROZPRACOVANÉ -->
-      <div v-if="currentTab==='nedokoncene'" class="q-pt-sm">
-        <div class="q-mb-sm q-pa-xs text-caption text-orange-8" style="background:#fff3e0;border-radius:4px">
-          ⚠ Záznamy kde chybí zakázka, práce nebo odchod. Doplňte je kdykoli.
-        </div>
-        <div v-if="nedokonceneLoading" class="text-center q-pa-md"><q-spinner color="orange" size="2em"/></div>
-        <div v-else-if="nedokoncene.length === 0" class="text-center text-grey-7 q-mt-lg">✓ Žádné rozpracované záznamy</div>
-        <div v-else-if="!doplnForm">
-          <div v-for="(r, idx) in nedokoncene" :key="idx" class="record-card q-mb-sm">
-            <div class="row items-center">
-              <div class="col">
-                <div class="text-bold text-orange-8">Příchod: {{ new Date(Number(r[4])).toLocaleString("cs-CZ", {day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}) }}</div>
-                <div class="text-caption text-grey-7">{{ r[0] || "Zakázka nevyplněna" }} • {{ r[3] || "Práce nevyplněna" }}</div>
-              </div>
-              <q-btn color="orange" icon="edit" label="Doplnit" size="sm" unelevated @click="zacitDoplnovat(r)"/>
-            </div>
-          </div>
-        </div>
-        <div v-else>
-          <div class="q-mb-md q-pa-sm text-center" style="background:#fff3e0;border-radius:4px">
-            <div class="text-bold text-orange-8">Příchod: {{ new Date(doplnForm.timeStart).toLocaleString("cs-CZ", {day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}) }}</div>
-            <div class="text-caption text-grey-6">Čas příchodu nelze měnit</div>
-          </div>
-          <div class="q-mb-md">
-            <q-input v-model="doplnForm.timeEndStr" label="Čas odchodu *" outlined dense readonly
-              hint="Datum příchodu se použije automaticky">
-              <template v-slot:prepend><q-icon name="logout" color="orange"/></template>
-              <template v-slot:append>
-                <q-icon name="schedule" class="cursor-pointer" color="primary">
-                  <q-popup-proxy cover ref="doplnTimeProxy">
-                    <q-time v-model="doplnForm.timeEndStr" mask="HH:mm" format24h
-                      @update:model-value="val => {
-                        if (val && val.length === 5) {
-                          $refs.doplnTimeProxy.hide();
-                          const d = new Date(doplnForm.timeStart);
-                          const [h, m] = val.split(':');
-                          d.setHours(parseInt(h), parseInt(m), 0);
-                          doplnForm.timeEnd = d.getTime();
-                        }
-                      }"
-                    />
-                  </q-popup-proxy>
-                </q-icon>
-              </template>
-            </q-input>
-          </div>
-          <q-select v-model="doplnForm.contractId" :options="contractOptionsFiltered"
-            label="Zakázka *" emit-value map-options outlined class="q-mb-md"
-            use-input hide-selected fill-input input-debounce="0"
-            @filter="filterContracts" @focus="filterContracts('', v => contractOptionsFiltered = contractOptions)"/>
-          <q-select v-model="doplnForm.jobId" :options="jobOptionsFiltered"
-            label="Práce *" emit-value map-options outlined class="q-mb-md"
-            use-input hide-selected fill-input input-debounce="0"
-            @filter="filterJobs" @focus="filterJobs('', v => jobOptionsFiltered = jobOptions)"/>
-          <q-select v-model="doplnForm.placeId" :options="placeOptionsFiltered"
-            label="Místo práce *" emit-value map-options outlined class="q-mb-md"
-            use-input hide-selected fill-input input-debounce="0"
-            @filter="filterPlaces" @focus="filterPlaces('', v => placeOptionsFiltered = placeOptions)"/>
-          <q-input v-model="doplnForm.note" label="Poznámka *" outlined class="q-mb-md" type="textarea" rows="3"/>
-          <div class="row q-gutter-sm">
-            <q-btn @click="ulozitDoplneni" label="Uložit záznam" color="primary" :loading="doplnSaving" class="col" size="lg" unelevated/>
-            <q-btn @click="zrusitDoplneni" label="Zpět" color="grey" outline size="lg"/>
           </div>
         </div>
       </div>
