@@ -1,4 +1,6 @@
 // Evidence práce 2026 - main.js
+// v2026-10-22 - NOVÉ: verze webu se bere z /version.json (commit + čas nasazení z Vercelu) → mění se
+//             automaticky při každém nasazení; bez něj zůstane appVersion.
 // v2026-10-15 - NOVÉ: v modrém pruhu vedle ADMIN se adminovi ukazuje verze (web = main.js,
 //             server = kod.gs zjištěné z API), ať je vidět, co je nasazené.
 // v2026-10-13 - NOVÉ: reloadAllSilent - po uložení v Adminu a v Rozpracovaných se data
@@ -30,7 +32,8 @@ window.app = Vue.createApp({
       // v2026-10-15 NOVÉ: verze zobrazená adminovi v modrém pruhu vedle ADMIN.
       // appVersion = verze tohoto souboru (main.js) - PŘI KAŽDÉ ÚPRAVĚ main.js PŘEPSAT na dnešní datum.
       // serverVersion = verze kod.gs, zjistí se z API (viz loadServerVersion).
-      appVersion: 'v2026-10-15',
+      appVersion: 'v2026-10-22',
+      buildVersion: '',
       serverVersion: '',
       message: '',
       showMessageDialog: false,
@@ -168,12 +171,22 @@ window.app = Vue.createApp({
       if (records.data) this.allRecords = records.data;
       if (advances.data) this.allAdvances = advances.data;
       // v2026-10-15: verzi serveru stačí zjistit jednou, nečeká se na ni (neblokuje načtení)
+      if (!this.buildVersion) this.loadBuildVersion();
       if (!this.serverVersion || this.serverVersion === '?') this.loadServerVersion();
       if (!silent) this.loading = false;
     },
 
     // v2026-10-15 NOVÉ: zjistí verzi kod.gs (výchozí odpověď API obsahuje 'version').
     // Když se nepodaří, ukáže se '?'. Slouží k ověření, že je nasazená nová verze serveru.
+    // v2026-10-22 NOVÉ: číslo nasazení webu (commit + čas) z /version.json, které vytvoří Vercel při každém nasazení.
+    async loadBuildVersion() {
+      try {
+        const r = await fetch('/version.json?t=' + Date.now(), { cache: 'no-store' });
+        const j = await r.json();
+        if (j && j.commit) this.buildVersion = j.commit + ' ' + (j.date || '');
+      } catch (e) { /* bez version.json se ukáže appVersion */ }
+    },
+
     async loadServerVersion() {
       const res = await apiCall('version', {});
       this.serverVersion = (res && res.data && res.data.version) ? res.data.version : '?';
@@ -278,7 +291,7 @@ window.app = Vue.createApp({
             <span v-else class="text-caption q-ml-sm">{{ dataSourceLabel }}</span>
           </q-toolbar-title>
           <!-- v2026-10-15: verze appky (web) a serveru (kod.gs), jen pro admina -->
-          <span v-if="isAdmin" class="q-ml-sm" style="font-size:9px;line-height:1.25;opacity:0.85;text-align:right;white-space:nowrap">web {{ appVersion }}<br>server {{ serverVersion || '…' }}</span>
+          <span v-if="isAdmin" class="q-ml-sm" style="font-size:9px;line-height:1.25;opacity:0.85;text-align:right;white-space:nowrap">web {{ buildVersion || appVersion }}<br>server {{ serverVersion || '…' }}</span>
           <span v-if="isAdmin" class="admin-badge q-ml-sm">ADMIN</span>
         </q-toolbar>
       </q-header>
