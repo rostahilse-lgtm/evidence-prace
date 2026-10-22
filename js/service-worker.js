@@ -1,4 +1,7 @@
-const CACHE_NAME = 'evidence-prace-v2';
+const CACHE_NAME = 'evidence-prace-v3';
+// v2026-10-22 - ZMĚNA: soubory aplikace se berou NEJDŘÍV ZE SÍTĚ (a ukládají do cache), z cache jen když
+//             není internet. Dřív se brala vždy stará cache, takže se po nasazení změny
+//             v apce dlouho ukazovala stará verze. Teď se nová verze projeví při dalším otevření.
 // v2026-03-10 - NOVÉ: handler pro SHOW_NOTIF zprávy z main.js (upozornění na obědy v 18:00)
 const urlsToCache = [
   '/',
@@ -37,24 +40,19 @@ self.addEventListener('install', event => {
   self.skipWaiting();
 });
 
-// Fetch - vracet z cache nebo načíst ze sítě
+// Fetch - nejdřív síť (vždy čerstvé), při výpadku cache
 self.addEventListener('fetch', event => {
+  if (event.request.method !== 'GET') return;
   event.respondWith(
-    caches.match(event.request)
+    fetch(event.request)
       .then(response => {
-        if (response) return response;
-        return fetch(event.request).then(response => {
-          if (event.request.url.includes('action=')) return response;
-          if (response && response.status === 200) {
-            const responseToCache = response.clone();
-            caches.open(CACHE_NAME).then(cache => {
-              cache.put(event.request, responseToCache);
-            });
-          }
-          return response;
-        });
+        if (!event.request.url.includes('action=') && response && response.status === 200) {
+          const responseToCache = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, responseToCache));
+        }
+        return response;
       })
-      .catch(() => caches.match('/index.html'))
+      .catch(() => caches.match(event.request).then(r => r || caches.match('/index.html')))
   );
 });
 
