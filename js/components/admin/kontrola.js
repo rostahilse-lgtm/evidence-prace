@@ -1,4 +1,6 @@
 // KONTROLA.JS - Kontrola migrace dat + hledání chyb
+// v2026-10-22 - NOVÉ: výběry Zakázka/Práce/Místo/Pracovník v dialozích oprav se dají psát a filtrují
+//             (bez ohledu na diakritiku: "karlo" najde "Karlovy Vary"), jako ve Statistikách
 // v2026-08-08 - NOVÝ SOUBOR
 // v2026-08-08b - NOVÉ: záložka Migrace
 // v2026-09-03 - NOVÉ: záložka "Oprava přiřazení"
@@ -81,6 +83,8 @@ window.app.component('kontrola-component', {
 
   data() {
     return {
+      // v2026-10-22 vyhledávání v selectech (use-input)
+      optSearch: { contract: '', job: '', place: '', worker: '' },
       mainTab: 'prehled',
 
       loading: false,
@@ -133,6 +137,11 @@ window.app.component('kontrola-component', {
   },
 
   computed: {
+    // v2026-10-22 vyhledávání: filtrované seznamy (celý seznam, dokud se nic nepíše)
+    contractOptionsFiltered() { return this.filterList(this.contractOptions, this.optSearch.contract); },
+    jobOptionsFiltered() { return this.filterList(this.jobOptions, this.optSearch.job); },
+    placeOptionsFiltered() { return this.filterList(this.placeOptions, this.optSearch.place); },
+    workerOptionsFiltered() { return this.filterList(this.workerOptions, this.optSearch.worker); },
     filteredRows() {
       return this.filterOnlyConflicts
         ? this.rows.filter(r => r.newHours > 0 && r.histHours > 0)
@@ -227,6 +236,15 @@ window.app.component('kontrola-component', {
   },
 
   methods: {
+    // v2026-10-22 NOVÉ: vyhledávání v selectech Zakázka/Práce/Místo/Pracovník (bez ohledu na diakritiku)
+    filterList(all, val) { const n = this.normSearch(val); return n === '' ? all : all.filter(o => this.normSearch(o.label).includes(n)); },
+    normSearch(t) { return String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); },
+    filterBy(val, update, key) { update(() => { this.optSearch[key] = val || ''; }); },
+    filterContracts(val, update) { this.filterBy(val, update, 'contract'); },
+    filterJobs(val, update) { this.filterBy(val, update, 'job'); },
+    filterPlaces(val, update) { this.filterBy(val, update, 'place'); },
+    filterWorkers(val, update) { this.filterBy(val, update, 'worker'); },
+
     async loadData() {
       this.loading = true;
       try {
@@ -862,9 +880,9 @@ window.app.component('kontrola-component', {
               </div>
               <div class="col-6">
                 <div class="text-caption text-grey-7 q-mb-xs">Nové:</div>
-                <q-select v-model="fixForm.contractId" :options="contractOptions" label="Zakázka" emit-value map-options dense outlined class="q-mb-xs"/>
-                <q-select v-model="fixForm.jobId" :options="jobOptions" label="Práce" emit-value map-options dense outlined class="q-mb-xs"/>
-                <q-select v-model="fixForm.placeId" :options="placeOptions" label="Místo" emit-value map-options dense outlined class="q-mb-xs"/>
+                <q-select v-model="fixForm.contractId" :options="contractOptionsFiltered" label="Zakázka" emit-value map-options dense outlined class="q-mb-xs" use-input hide-selected fill-input input-debounce="0" @filter="filterContracts" @focus="filterContracts('', u => u())"/>
+                <q-select v-model="fixForm.jobId" :options="jobOptionsFiltered" label="Práce" emit-value map-options dense outlined class="q-mb-xs" use-input hide-selected fill-input input-debounce="0" @filter="filterJobs" @focus="filterJobs('', u => u())"/>
+                <q-select v-model="fixForm.placeId" :options="placeOptionsFiltered" label="Místo" emit-value map-options dense outlined class="q-mb-xs" use-input hide-selected fill-input input-debounce="0" @filter="filterPlaces" @focus="filterPlaces('', u => u())"/>
                 <q-input v-model="fixForm.timeFrom" label="Od" dense outlined class="q-mb-xs"><template v-slot:append><q-icon name="schedule" class="cursor-pointer"><q-popup-proxy cover ref="fixTimeFromProxy" @show="resetTimeStep('fixFrom')"><q-time v-model="fixForm.timeFrom" mask="HH:mm" format24h @update:model-value="val => handleTimeStep('fixFrom', val, 'fixTimeFromProxy')"/></q-popup-proxy></q-icon></template></q-input>
                 <q-input v-model="fixForm.timeTo" label="Do" dense outlined class="q-mb-xs"><template v-slot:append><q-icon name="schedule" class="cursor-pointer"><q-popup-proxy cover ref="fixTimeToProxy" @show="resetTimeStep('fixTo')"><q-time v-model="fixForm.timeTo" mask="HH:mm" format24h @update:model-value="val => handleTimeStep('fixTo', val, 'fixTimeToProxy')"/></q-popup-proxy></q-icon></template></q-input>
                 <q-input v-model="fixForm.note" label="Poznámka" dense outlined type="textarea" rows="2"/>
@@ -904,10 +922,10 @@ window.app.component('kontrola-component', {
               </div>
               <div class="col-6">
                 <div class="text-caption text-grey-7 q-mb-xs">Nové:</div>
-                <q-select v-model="longFixForm.workerId" :options="workerOptions" label="Pracovník" emit-value map-options dense outlined class="q-mb-xs"/>
-                <q-select v-model="longFixForm.contractId" :options="contractOptions" label="Zakázka" emit-value map-options dense outlined class="q-mb-xs"/>
-                <q-select v-model="longFixForm.jobId" :options="jobOptions" label="Práce" emit-value map-options dense outlined class="q-mb-xs"/>
-                <q-select v-model="longFixForm.placeId" :options="placeOptions" label="Místo" emit-value map-options dense outlined class="q-mb-xs"/>
+                <q-select v-model="longFixForm.workerId" :options="workerOptionsFiltered" label="Pracovník" emit-value map-options dense outlined class="q-mb-xs" use-input hide-selected fill-input input-debounce="0" @filter="filterWorkers" @focus="filterWorkers('', u => u())"/>
+                <q-select v-model="longFixForm.contractId" :options="contractOptionsFiltered" label="Zakázka" emit-value map-options dense outlined class="q-mb-xs" use-input hide-selected fill-input input-debounce="0" @filter="filterContracts" @focus="filterContracts('', u => u())"/>
+                <q-select v-model="longFixForm.jobId" :options="jobOptionsFiltered" label="Práce" emit-value map-options dense outlined class="q-mb-xs" use-input hide-selected fill-input input-debounce="0" @filter="filterJobs" @focus="filterJobs('', u => u())"/>
+                <q-select v-model="longFixForm.placeId" :options="placeOptionsFiltered" label="Místo" emit-value map-options dense outlined class="q-mb-xs" use-input hide-selected fill-input input-debounce="0" @filter="filterPlaces" @focus="filterPlaces('', u => u())"/>
                 <q-input v-model="longFixForm.dateEdit" label="Datum" dense outlined readonly class="q-mb-xs"><template v-slot:append><q-icon name="event" class="cursor-pointer"><q-popup-proxy cover ref="longFixDateProxy"><q-date v-model="longFixForm.dateEdit" mask="DD. MM. YYYY" locale="cs" @update:model-value="$refs.longFixDateProxy.hide()"/></q-popup-proxy></q-icon></template></q-input>
                 <q-input v-model="longFixForm.timeFrom" label="Od" dense outlined class="q-mb-xs"><template v-slot:append><q-icon name="schedule" class="cursor-pointer"><q-popup-proxy cover ref="longFixTimeFromProxy" @show="resetTimeStep('longFrom')"><q-time v-model="longFixForm.timeFrom" mask="HH:mm" format24h @update:model-value="val => handleTimeStep('longFrom', val, 'longFixTimeFromProxy')"/></q-popup-proxy></q-icon></template></q-input>
                 <q-input v-model="longFixForm.timeTo" label="Do" dense outlined class="q-mb-xs"><template v-slot:append><q-icon name="schedule" class="cursor-pointer"><q-popup-proxy cover ref="longFixTimeToProxy" @show="resetTimeStep('longTo')"><q-time v-model="longFixForm.timeTo" mask="HH:mm" format24h @update:model-value="val => handleTimeStep('longTo', val, 'longFixTimeToProxy')"/></q-popup-proxy></q-icon></template></q-input>
