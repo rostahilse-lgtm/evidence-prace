@@ -5,6 +5,7 @@
 //             a teprve POTOM r.push(i) přidá skutečné číslo řádku jako index 17.
 //             Proto se posílal NaN na server -> "Počáteční řádek rozsahu je příliš malý"
 //             OPRAVENO: rowIndex: r[16] -> rowIndex: r[17]
+// v2026-10-22 - NOVÉ: hledání v Zakázce/Práci/Místě bez ohledu na diakritiku, seznamy naplněny hned po načtení
 // v2026-10-12 - OPRAVA výběru času odchodu (q-time): po výběru HODINY se popup už
 //             nezavírá, přeskočí na minuty a zavře se až po výběru minuty (dřív se
 //             zavřel hned po hodině a minuty šly nastavit až napodruhé). Čas odchodu
@@ -122,13 +123,16 @@ window.app.component('nedokoncene-component', {
       this.doplnSaving = false;
     },
 
+    // v2026-10-22 hledání bez ohledu na diakritiku (karlo -> Karlovy Vary)
+    normSearch(t) { return String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); },
+
     filterContracts(val, update) {
       update(() => {
         if (val === '') {
           this.contractOptionsFiltered = this.contractOptions;
         } else {
-          const needle = val.toLowerCase();
-          this.contractOptionsFiltered = this.contractOptions.filter(o => o.label.toLowerCase().includes(needle));
+          const needle = this.normSearch(val);
+          this.contractOptionsFiltered = this.contractOptions.filter(o => this.normSearch(o.label).includes(needle));
         }
       });
     },
@@ -138,8 +142,8 @@ window.app.component('nedokoncene-component', {
         if (val === '') {
           this.jobOptionsFiltered = this.jobOptions;
         } else {
-          const needle = val.toLowerCase();
-          this.jobOptionsFiltered = this.jobOptions.filter(o => o.label.toLowerCase().includes(needle));
+          const needle = this.normSearch(val);
+          this.jobOptionsFiltered = this.jobOptions.filter(o => this.normSearch(o.label).includes(needle));
         }
       });
     },
@@ -149,14 +153,17 @@ window.app.component('nedokoncene-component', {
         if (val === '') {
           this.placeOptionsFiltered = this.placeOptions;
         } else {
-          const needle = val.toLowerCase();
-          this.placeOptionsFiltered = this.placeOptions.filter(o => o.label.toLowerCase().includes(needle));
+          const needle = this.normSearch(val);
+          this.placeOptionsFiltered = this.placeOptions.filter(o => this.normSearch(o.label).includes(needle));
         }
       });
     }
   },
 
   mounted() {
+    this.contractOptionsFiltered = this.contractOptions;
+    this.jobOptionsFiltered = this.jobOptions;
+    this.placeOptionsFiltered = this.placeOptions;
     this.loadNedokoncene();
   },
 
