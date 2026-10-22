@@ -1,4 +1,6 @@
 // ADMIN.JS
+// v2026-10-22 - NOVÉ: výběry Zakázka/Práce/Místo/Pracovník v dialozích oprav se dají psát a filtrují
+//             (bez ohledu na diakritiku: "karlo" najde "Karlovy Vary"), jako ve Statistikách
 // v2026-02-24 - Oprava: loadDayRecords vrácen na lokální filtrování z allRecords
 // v2026-02-25b - přidána záložka Nástroje s opravou sazeb v historii
 // v2026-02-27 - odstraněna záložka Statistiky (přesunuta do Nástroje v main)
@@ -49,6 +51,8 @@ window.app.component('admin-component', {
   
   data() {
     return {
+      // v2026-10-22 vyhledávání v selectech (use-input)
+      optSearch: { contract: '', job: '', place: '', worker: '' },
       adminTab: 'workers',
       toolsLoading: false,
       toolsResult: null,
@@ -103,6 +107,11 @@ window.app.component('admin-component', {
   },
   
   computed: {
+    // v2026-10-22 vyhledávání: filtrované seznamy (celý seznam, dokud se nic nepíše)
+    contractOptionsFiltered() { return this.filterList(this.contractOptions, this.optSearch.contract); },
+    jobOptionsFiltered() { return this.filterList(this.jobOptions, this.optSearch.job); },
+    placeOptionsFiltered() { return this.filterList(this.placeOptions, this.optSearch.place); },
+    workerOptionsFiltered() { return this.filterList(this.workerOptions, this.optSearch.worker); },
     activeSummary() { return this.localSummary !== null ? this.localSummary : this.allSummary; },
     sortedSummary() {
       const s = [...this.activeSummary];
@@ -175,6 +184,15 @@ window.app.component('admin-component', {
   },
   
   methods: {
+    // v2026-10-22 NOVÉ: vyhledávání v selectech Zakázka/Práce/Místo/Pracovník (bez ohledu na diakritiku)
+    filterList(all, val) { const n = this.normSearch(val); return n === '' ? all : all.filter(o => this.normSearch(o.label).includes(n)); },
+    normSearch(t) { return String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); },
+    filterBy(val, update, key) { update(() => { this.optSearch[key] = val || ''; }); },
+    filterContracts(val, update) { this.filterBy(val, update, 'contract'); },
+    filterJobs(val, update) { this.filterBy(val, update, 'job'); },
+    filterPlaces(val, update) { this.filterBy(val, update, 'place'); },
+    filterWorkers(val, update) { this.filterBy(val, update, 'worker'); },
+
     getTodayDate() {
       const d = new Date();
       return `${String(d.getDate()).padStart(2, '0')}. ${String(d.getMonth() + 1).padStart(2, '0')}. ${d.getFullYear()}`;
@@ -970,10 +988,10 @@ window.app.component('admin-component', {
 
               <div class="col-6">
                 <div class="text-caption text-grey-7 q-mb-xs">Nové:</div>
-                <q-select v-model="editForm.workerId" :options="workerOptions" label="Pracovník" emit-value map-options dense outlined class="q-mb-xs"/>
-                <q-select v-model="editForm.contractId" :options="contractOptions" label="Zakázka" emit-value map-options dense outlined class="q-mb-xs"/>
-                <q-select v-model="editForm.jobId" :options="jobOptions" label="Práce" emit-value map-options dense outlined class="q-mb-xs"/>
-                <q-select v-model="editForm.placeId" :options="placeOptions" label="Místo" emit-value map-options dense outlined class="q-mb-xs"/>
+                <q-select v-model="editForm.workerId" :options="workerOptionsFiltered" label="Pracovník" emit-value map-options dense outlined class="q-mb-xs" use-input hide-selected fill-input input-debounce="0" @filter="filterWorkers" @focus="filterWorkers('', u => u())"/>
+                <q-select v-model="editForm.contractId" :options="contractOptionsFiltered" label="Zakázka" emit-value map-options dense outlined class="q-mb-xs" use-input hide-selected fill-input input-debounce="0" @filter="filterContracts" @focus="filterContracts('', u => u())"/>
+                <q-select v-model="editForm.jobId" :options="jobOptionsFiltered" label="Práce" emit-value map-options dense outlined class="q-mb-xs" use-input hide-selected fill-input input-debounce="0" @filter="filterJobs" @focus="filterJobs('', u => u())"/>
+                <q-select v-model="editForm.placeId" :options="placeOptionsFiltered" label="Místo" emit-value map-options dense outlined class="q-mb-xs" use-input hide-selected fill-input input-debounce="0" @filter="filterPlaces" @focus="filterPlaces('', u => u())"/>
                 <q-input v-model="editForm.dateEdit" label="Datum" dense outlined readonly class="q-mb-xs">
                   <template v-slot:append><q-icon name="event" class="cursor-pointer"><q-popup-proxy cover ref="editDateProxy"><q-date v-model="editForm.dateEdit" mask="DD. MM. YYYY" locale="cs" @update:model-value="$refs.editDateProxy.hide()"/></q-popup-proxy></q-icon></template>
                 </q-input>
@@ -1016,10 +1034,10 @@ window.app.component('admin-component', {
         <q-card style="width:100%; max-width:400px">
           <q-card-section><div class="text-h6">Duplikovat</div></q-card-section>
           <q-card-section class="q-pt-none">
-            <q-select v-model="editForm.workerId" :options="workerOptions" label="Pracovník" emit-value map-options outlined dense class="q-mb-sm"/>
-            <q-select v-model="editForm.contractId" :options="contractOptions" label="Zakázka" emit-value map-options outlined dense class="q-mb-sm"/>
-            <q-select v-model="editForm.jobId" :options="jobOptions" label="Práce" emit-value map-options outlined dense class="q-mb-sm"/>
-            <q-select v-model="editForm.placeId" :options="placeOptions" label="Místo" emit-value map-options outlined dense class="q-mb-sm"/>
+            <q-select v-model="editForm.workerId" :options="workerOptionsFiltered" label="Pracovník" emit-value map-options outlined dense class="q-mb-sm" use-input hide-selected fill-input input-debounce="0" @filter="filterWorkers" @focus="filterWorkers('', u => u())"/>
+            <q-select v-model="editForm.contractId" :options="contractOptionsFiltered" label="Zakázka" emit-value map-options outlined dense class="q-mb-sm" use-input hide-selected fill-input input-debounce="0" @filter="filterContracts" @focus="filterContracts('', u => u())"/>
+            <q-select v-model="editForm.jobId" :options="jobOptionsFiltered" label="Práce" emit-value map-options outlined dense class="q-mb-sm" use-input hide-selected fill-input input-debounce="0" @filter="filterJobs" @focus="filterJobs('', u => u())"/>
+            <q-select v-model="editForm.placeId" :options="placeOptionsFiltered" label="Místo" emit-value map-options outlined dense class="q-mb-sm" use-input hide-selected fill-input input-debounce="0" @filter="filterPlaces" @focus="filterPlaces('', u => u())"/>
             <q-input v-model="editForm.dateEdit" label="Datum" outlined dense readonly class="q-mb-sm">
               <template v-slot:append><q-icon name="event" class="cursor-pointer"><q-popup-proxy cover ref="dupDateProxy"><q-date v-model="editForm.dateEdit" mask="DD. MM. YYYY" locale="cs" @update:model-value="$refs.dupDateProxy.hide()"/></q-popup-proxy></q-icon></template>
             </q-input>
