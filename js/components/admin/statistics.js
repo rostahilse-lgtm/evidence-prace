@@ -1,4 +1,7 @@
 // statistics.js
+// v2026-10-24 - OPRAVA: po výběru položky ve filtrech (Zakázky, Práce, Místa, Pracovníci) se smaže napsaný
+//             hledaný text (zůstávalo např. "ch" za vybranou "Jirka chata")
+// v2026-10-23 - OPRAVA: hledání v selectech bez ohledu na háčky a čárky ("ci" najde "Čížová")
 // v2026-10-11 - OPRAVA exportu do Excelu: Windows-1250 (háčky) + desetinná čárka
 //             u hodin (Excel bral "10.30" jako datum). Nic jiného se neměnilo.
 // v2026-03-04d - NOVÉ: vyhledávání v selectech Zakázky a Práce (use-input)
@@ -159,36 +162,39 @@ window.app.component('statistics-component', {
       this.dataLoading = false;
     },
 
+    // v2026-10-23 hledání bez ohledu na diakritiku (ci -> Čížová)
+    normSearch(t) { return String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); },
+
     filterContracts(val, update) {
       update(() => {
-        const needle = val.toLowerCase();
+        const needle = this.normSearch(val);
         this.contractOptionsFiltered = val === ''
           ? this.contractOptions
-          : this.contractOptions.filter(o => o.label.toLowerCase().includes(needle));
+          : this.contractOptions.filter(o => this.normSearch(o.label).includes(needle));
       });
     },
     filterJobs(val, update) {
       update(() => {
-        const needle = val.toLowerCase();
+        const needle = this.normSearch(val);
         this.jobOptionsFiltered = val === ''
           ? this.jobOptions
-          : this.jobOptions.filter(o => o.label.toLowerCase().includes(needle));
+          : this.jobOptions.filter(o => this.normSearch(o.label).includes(needle));
       });
     },
     filterPlaces(val, update) {
       update(() => {
-        const needle = val.toLowerCase();
+        const needle = this.normSearch(val);
         this.placeOptionsFiltered = val === ''
           ? this.placeOptions
-          : this.placeOptions.filter(o => o.label.toLowerCase().includes(needle));
+          : this.placeOptions.filter(o => this.normSearch(o.label).includes(needle));
       });
     },
     filterWorkers(val, update) {
       update(() => {
-        const needle = val.toLowerCase();
+        const needle = this.normSearch(val);
         this.workerOptionsFiltered = val === ''
           ? this.workerOptions
-          : this.workerOptions.filter(o => o.label.toLowerCase().includes(needle));
+          : this.workerOptions.filter(o => this.normSearch(o.label).includes(needle));
       });
     },
     async loadWorkers() {
@@ -427,25 +433,25 @@ window.app.component('statistics-component', {
           <div class="text-subtitle2 q-mb-sm">Filtry</div>
           
           <q-select
-            v-model="filters.contracts" :options="contractOptionsFiltered" label="Zakázky"
+            ref="selContracts" @update:model-value="$refs.selContracts.updateInputValue('')" v-model="filters.contracts" :options="contractOptionsFiltered" label="Zakázky"
             emit-value map-options multiple outlined dense class="q-mb-sm"
             use-input input-debounce="0"
             @filter="filterContracts" @focus="filterContracts('', v => contractOptionsFiltered = contractOptions)"/>
           
           <q-select
-            v-model="filters.jobs" :options="jobOptionsFiltered" label="Práce"
+            ref="selJobs" @update:model-value="$refs.selJobs.updateInputValue('')" v-model="filters.jobs" :options="jobOptionsFiltered" label="Práce"
             emit-value map-options multiple outlined dense class="q-mb-sm"
             use-input input-debounce="0"
             @filter="filterJobs" @focus="filterJobs('', v => jobOptionsFiltered = jobOptions)"/>
           
           <q-select
-            v-if="isAdmin" v-model="filters.places" :options="placeOptionsFiltered" label="Místa práce"
+            v-if="isAdmin" ref="selPlaces" @update:model-value="$refs.selPlaces.updateInputValue('')" v-model="filters.places" :options="placeOptionsFiltered" label="Místa práce"
             emit-value map-options multiple outlined dense class="q-mb-sm"
             use-input input-debounce="0"
             @filter="filterPlaces" @focus="filterPlaces('', v => placeOptionsFiltered = placeOptions)"/>
           
           <q-select
-            v-if="isAdmin" v-model="filters.workers" :options="workerOptionsFiltered" label="Pracovníci"
+            v-if="isAdmin" ref="selWorkers" @update:model-value="$refs.selWorkers.updateInputValue('')" v-model="filters.workers" :options="workerOptionsFiltered" label="Pracovníci"
             emit-value map-options multiple outlined dense class="q-mb-sm"
             use-input input-debounce="0"
             @filter="filterWorkers" @focus="filterWorkers('', v => workerOptionsFiltered = workerOptions)"/>
