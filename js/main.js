@@ -1,4 +1,6 @@
 // Evidence práce 2026 - main.js
+// v2026-10-23 - NOVÉ: automatické tiché obnovení dat při otevření Přehledů a Adminu
+//             (Admin ukazoval staré zálohy a šichty, protože se data načetla jen při přihlášení).
 // v2026-10-22 - NOVÉ: verze webu se bere z /version.json (commit + čas nasazení z Vercelu) → mění se
 //             automaticky při každém nasazení; bez něj zůstane appVersion.
 // v2026-10-15 - NOVÉ: v modrém pruhu vedle ADMIN se adminovi ukazuje verze (web = main.js,
@@ -32,8 +34,9 @@ window.app = Vue.createApp({
       // v2026-10-15 NOVÉ: verze zobrazená adminovi v modrém pruhu vedle ADMIN.
       // appVersion = verze tohoto souboru (main.js) - PŘI KAŽDÉ ÚPRAVĚ main.js PŘEPSAT na dnešní datum.
       // serverVersion = verze kod.gs, zjistí se z API (viz loadServerVersion).
-      appVersion: 'v2026-10-22',
+      appVersion: 'v2026-10-23',
       buildVersion: '',
+      lastRefresh: Date.now(),
       serverVersion: '',
       message: '',
       showMessageDialog: false,
@@ -156,6 +159,7 @@ window.app = Vue.createApp({
         this.lunches = a.data.filter(adv => adv[5] === 'oběd');
       }
       if (p.data) this.places = p.data;
+      this.lastRefresh = Date.now();
       if (!silent) this.loading = false;
     },
 
@@ -190,6 +194,15 @@ window.app = Vue.createApp({
     async loadServerVersion() {
       const res = await apiCall('version', {});
       this.serverVersion = (res && res.data && res.data.version) ? res.data.version : '?';
+    },
+
+    // v2026-10-23 NOVÉ: data se obnoví sama (dřív se načetla jen při přihlášení, takže Admin
+    // ukazoval staré šichty a zálohy). Obnoví se jen při otevření Přehledů a Adminu,
+    // ne častěji než jednou za 10 s.
+    softRefresh() {
+      if (!this.isLoggedIn || this.loading || this.refreshing) return;
+      if (Date.now() - this.lastRefresh < 10000) return;
+      this.reloadAllSilent();
     },
 
     async reloadAll() {
@@ -264,6 +277,11 @@ window.app = Vue.createApp({
       localStorage.removeItem('workerId');
       this.showMessage('Odhlášen');
     }
+  },
+
+  watch: {
+    // v2026-10-23: data se tiše obnoví jen při otevření Přehledů a Adminu
+    currentView(v) { if (v === 'summary' || v === 'admin') this.softRefresh(); }
   },
 
   async mounted() {
