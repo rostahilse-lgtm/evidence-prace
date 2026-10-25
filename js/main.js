@@ -1,4 +1,5 @@
 // Evidence práce 2026 - main.js
+// v2026-10-25b - NOVÉ: záložka Finance v Nástrojích (jen admin) - příjmy/výdaje, přehled zakázek, stroje a sazby
 // v2026-10-25 - NOVÉ: u verze v modrém pruhu je vidět větev (MAIN zeleně / DEV oranžově)
 // v2026-10-23 - NOVÉ: automatické tiché obnovení dat při otevření Přehledů a Adminu
 //             (Admin ukazoval staré zálohy a šichty, protože se data načetla jen při přihlášení).
@@ -35,7 +36,7 @@ window.app = Vue.createApp({
       // v2026-10-15 NOVÉ: verze zobrazená adminovi v modrém pruhu vedle ADMIN.
       // appVersion = verze tohoto souboru (main.js) - PŘI KAŽDÉ ÚPRAVĚ main.js PŘEPSAT na dnešní datum.
       // serverVersion = verze kod.gs, zjistí se z API (viz loadServerVersion).
-      appVersion: 'v2026-10-25',
+      appVersion: 'v2026-10-25b',
       buildVersion: '',
       buildBranch: '',
       lastRefresh: Date.now(),
@@ -379,7 +380,8 @@ window.app = Vue.createApp({
               <q-tab name="nedokoncene" icon="build" label="Rozpracované"/>
               <q-tab v-if="currentUser && currentUser.canStats" name="stats" icon="bar_chart" label="Statistiky"/>
               <q-tab v-if="currentUser && currentUser.canDenik" name="denik" icon="menu_book" label="Deník"/>
-              <q-tab v-if="isAdmin" name="kontrola" icon="compare_arrows" label="Kontrola dat"/>             
+              <q-tab v-if="isAdmin" name="kontrola" icon="compare_arrows" label="Kontrola dat"/>
+              <q-tab v-if="isAdmin" name="finance" icon="payments" label="Finance"/>             
             </q-tabs>
             <nedokoncene-component
               v-if="toolsView === 'nedokoncene'"
@@ -409,6 +411,13 @@ window.app = Vue.createApp({
             />
             <kontrola-component
               v-if="toolsView === 'kontrola' && isAdmin"
+              @message="showMessage"
+            />
+            <finance-component
+              v-if="toolsView === 'finance' && isAdmin"
+              :contracts="contracts"
+              :jobs="jobs"
+              :current-user="currentUser"
               @message="showMessage"
             />
           </div>
