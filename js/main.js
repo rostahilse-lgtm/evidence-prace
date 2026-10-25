@@ -1,4 +1,5 @@
 // Evidence práce 2026 - main.js
+// v2026-10-25 - NOVÉ: u verze v modrém pruhu je vidět větev (MAIN zeleně / DEV oranžově)
 // v2026-10-23 - NOVÉ: automatické tiché obnovení dat při otevření Přehledů a Adminu
 //             (Admin ukazoval staré zálohy a šichty, protože se data načetla jen při přihlášení).
 // v2026-10-22 - NOVÉ: verze webu se bere z /version.json (commit + čas nasazení z Vercelu) → mění se
@@ -34,8 +35,9 @@ window.app = Vue.createApp({
       // v2026-10-15 NOVÉ: verze zobrazená adminovi v modrém pruhu vedle ADMIN.
       // appVersion = verze tohoto souboru (main.js) - PŘI KAŽDÉ ÚPRAVĚ main.js PŘEPSAT na dnešní datum.
       // serverVersion = verze kod.gs, zjistí se z API (viz loadServerVersion).
-      appVersion: 'v2026-10-23',
+      appVersion: 'v2026-10-25',
       buildVersion: '',
+      buildBranch: '',
       lastRefresh: Date.now(),
       serverVersion: '',
       message: '',
@@ -188,6 +190,7 @@ window.app = Vue.createApp({
         const r = await fetch('/version.json?t=' + Date.now(), { cache: 'no-store' });
         const j = await r.json();
         if (j && j.commit) this.buildVersion = j.commit + ' ' + (j.date || '');
+        if (j && j.branch) this.buildBranch = j.branch;
       } catch (e) { /* bez version.json se ukáže appVersion */ }
     },
 
@@ -309,7 +312,7 @@ window.app = Vue.createApp({
             <span v-else class="text-caption q-ml-sm">{{ dataSourceLabel }}</span>
           </q-toolbar-title>
           <!-- v2026-10-15: verze appky (web) a serveru (kod.gs), jen pro admina -->
-          <span v-if="isAdmin" class="q-ml-sm" style="font-size:9px;line-height:1.25;opacity:0.85;text-align:right;white-space:nowrap">web {{ buildVersion || appVersion }}<br>server {{ serverVersion || '…' }}</span>
+          <span v-if="isAdmin" class="q-ml-sm" style="font-size:9px;line-height:1.25;opacity:0.85;text-align:right;white-space:nowrap"><b v-if="buildBranch" :style="{color: buildBranch === 'main' ? '#b9f6ca' : '#ffd180'}">{{ buildBranch === 'main' ? 'MAIN' : (buildBranch === 'dev' ? 'DEV' : buildBranch) }}</b> web {{ buildVersion || appVersion }}<br>server {{ serverVersion || '…' }}</span>
           <span v-if="isAdmin" class="admin-badge q-ml-sm">ADMIN</span>
         </q-toolbar>
       </q-header>
