@@ -1,4 +1,7 @@
 // statistics.js
+// v2026-10-25 - NOVÉ (jen admin): blok "Stroje a ruka" v souhrnu - hodiny bez strojů, hodiny a částka za
+//             každý stroj (Bagr, Tatra, Ruka... podle sazeb z Nástroje -> Finance -> Stroje a sazby),
+//             a stejné řádky v exportu do CSV. Nic stávajícího se nemění.
 // v2026-10-24 - OPRAVA: po výběru položky ve filtrech (Zakázky, Práce, Místa, Pracovníci) se smaže napsaný
 //             hledaný text (zůstávalo např. "ch" za vybranou "Jirka chata")
 // v2026-10-23 - OPRAVA: hledání v selectech bez ohledu na háčky a čárky ("ci" najde "Čížová")
@@ -37,6 +40,7 @@ window.app.component('statistics-component', {
       customCharge: null,
       showResults: false,
       // v2026-09-01: vlastní data, vždy source:'all'
+      machines: [],
       ownRecords: [],
       ownAdvances: [],
       dataLoading: false,
@@ -134,6 +138,25 @@ window.app.component('statistics-component', {
       }, 0));
     },
     
+    // v2026-10-25: souhrn strojů pro vyfiltrované záznamy (jen admin)
+    machineSummary() {
+      if (!this.isAdmin || !this.machines.length) return null;
+      const norm = (t) => String(t || '').trim().toLowerCase();
+      const rows = this.machines.map(m => {
+        const hours = this.filteredRecords.reduce((sum, r) => norm(r[3]) === norm(m[1]) ? sum + (parseFloat(r[7]) || 0) : sum, 0);
+        const rate = Number(m[2]) || 0;
+        return { name: m[1], hours: hours, rate: rate, amount: Math.round(hours * rate), active: m[3] === 'Y' };
+      }).filter(x => x.hours > 0 || x.active);
+      const machineHours = rows.reduce((sum, x) => sum + x.hours, 0);
+      const total = this.filteredRecords.reduce((sum, r) => sum + (parseFloat(r[7]) || 0), 0);
+      return {
+        rows: rows,
+        machineHours: machineHours,
+        laborHours: total - machineHours,
+        machineAmount: rows.reduce((sum, x) => sum + x.amount, 0)
+      };
+    },
+
     profit() {
       if (!this.customCharge) return 0;
       return this.customCharge - this.totalCost;
@@ -156,6 +179,10 @@ window.app.component('statistics-component', {
         ]);
         if (r.code === '000' && r.data) this.ownRecords = r.data;
         if (a.code === '000' && a.data) this.ownAdvances = a.data;
+        if (this.isAdmin) {
+          const m = await apiCall('get', { type: 'machines' });
+          if (m.code === '000' && Array.isArray(m.data)) this.machines = m.data;
+        }
       } catch (e) {
         this.$emit('message', 'Chyba při načítání dat pro statistiky');
       }
@@ -373,6 +400,16 @@ window.app.component('statistics-component', {
       csv += `Celkem km;${dec(this.totalKm)}\r\n`;
       csv += `Celkem náklady;${this.totalCost} Kč\r\n`;
       csv += `Celkem vyplaceno;${this.totalPaid} Kč\r\n`;
+      if (this.machineSummary) {
+        const ms = this.machineSummary;
+        csv += `Hodiny bez strojů;${dec(ms.laborHours.toFixed(2))}\r\n`;
+        ms.rows.forEach(x => {
+          csv += `Stroj ${x.name.trim()} - hodiny;${dec(x.hours.toFixed(2))}\r\n`;
+          csv += `Stroj ${x.name.trim()} - sazba;${x.rate} Kč\r\n`;
+          csv += `Stroj ${x.name.trim()} - částka;${x.amount} Kč\r\n`;
+        });
+        csv += `Stroje celkem;${ms.machineAmount} Kč\r\n`;
+      }
       if (this.customCharge) {
         csv += `Má se účtovat;${this.customCharge} Kč\r\n`;
         csv += `Rozdíl (zisk);${this.profit} Kč\r\n`;
@@ -569,6 +606,27 @@ window.app.component('statistics-component', {
               <div class="col stat-card bg-blue-1">
                 <div class="stat-label">Celkem vyplaceno</div>
                 <div class="stat-value text-blue">{{ totalPaid }} Kč</div>
+              </div>
+            </div>
+            
+            <!-- v2026-10-25: stroje a ruka (jen admin) -->
+            <div v-if="machineSummary" class="q-mb-md">
+              <div class="text-subtitle2 q-mb-sm">Stroje a ruka</div>
+              <div class="row q-gutter-sm q-mb-sm">
+                <div class="col stat-card bg-green-1">
+                  <div class="stat-label">Hodiny bez strojů</div>
+                  <div class="stat-value">{{ machineSummary.laborHours.toFixed(2) }}</div>
+                </div>
+                <div class="col stat-card bg-deep-orange-1">
+                  <div class="stat-label">Stroje celkem</div>
+                  <div class="stat-value text-deep-orange">{{ machineSummary.machineAmount }} Kč</div>
+                </div>
+              </div>
+              <div v-for="x in machineSummary.rows" :key="x.name" class="row items-center q-py-xs" style="border-bottom:1px solid #eee">
+                <div class="col text-bold">{{ x.name.trim() }}</div>
+                <div class="col-auto text-right">
+                  {{ x.hours.toFixed(2) }} h × {{ x.rate }} Kč = <b>{{ x.amount }} Kč</b>
+                </div>
               </div>
             </div>
             
