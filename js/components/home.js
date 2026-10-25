@@ -20,6 +20,16 @@
 //               vzniku dvou řádků při opakovaných pokusech ve stejný den
 //             - nic jiného se neměnilo
 
+// v2026-10-25 - NOVÉ: PŘEPÍNÁNÍ PRÁCE BĚHEM SMĚNY. Když je zaznamenaný příchod, v kartě Směna
+//             se objeví "Změna práce během směny": tlačítka strojů (Bagr, Tatra, Ruka... podle
+//             listu 'stroje' - nastavuje se v Nástroje -> Finance -> Stroje a sazby),
+//             tlačítko "Jiná práce / zakázka" a "Zpět na ..." po skončení stroje.
+//             Při přepnutí se aktuální část uloží jako samostatný záznam (stejným způsobem jako
+//             normální směna - completerecord / saverecord) a hned se otevře další část od
+//             stejného času. Na konci dne stačí ODCHOD a Uložit směnu jako dřív.
+//             Kilometry se započítají jen jednou (u první části). Nic stávajícího se nemění;
+//             když nepoužijete nové tlačítko, appka funguje přesně jako dřív.
+
 window.app.component('home-component', {
   props: ['currentUser', 'isAdmin', 'contracts', 'jobs', 'places', 'loading'],
   emits: ['message', 'reload', 'clear-shift'],
@@ -55,6 +65,14 @@ window.app.component('home-component', {
       contractOptionsFiltered: [],
       jobOptionsFiltered: [],
       placeOptionsFiltered: [],
+      // v2026-10-25: přepínání práce během směny
+      machines: [],
+      segments: [],
+      returnTo: null,
+      kmUsed: false,
+      switching: false,
+      switchDialog: false,
+      switchForm: { contractId: null, jobId: null, placeId: null },
       objednavkaJidlo: null,
       objednavkaPrices: null,
       objednavkaPricesLoading: false,
@@ -88,6 +106,16 @@ window.app.component('home-component', {
     },
     placeOptions() {
       return this.places ? this.places.map(p => ({ label: p[1], value: p[0] })) : [];
+    },
+    // v2026-10-25: stroje (Bagr, Tatra, Ruka...) - jen aktivní, jejich práce musí být v seznamu prací
+    activeMachines() {
+      return this.machines.filter(m => m[3] === 'Y').map(m => ({ jobId: String(m[0]), label: m[1] }));
+    },
+    currentJobIsMachine() {
+      return this.isMachineJob(this.shiftForm.jobId);
+    },
+    segmentsLabel() {
+      return this.segments.map(sg => this.formatSegmentTime(sg.from) + '–' + this.formatSegmentTime(sg.to) + ' ' + sg.label);
     },
     formattedStartTime() {
       return this.shiftForm.timeStart ? formatShortDateTime(this.shiftForm.timeStart) : '';
@@ -306,7 +334,7 @@ window.app.component('home-component', {
         time_to: this.shiftForm.timeEnd,
         note: this.shiftForm.note
       };
-      if (this.isAdmin && this.calculatedKm > 0) {
+      if (this.isAdmin && this.calculatedKm > 0 && !this.kmUsed) {
         payload.km_jednosmer = this.kmManual ? (this.kmManualValue || 0) : this.contractKm;
         payload.km_celkem = this.calculatedKm;
         payload.km_rucne = this.kmManual ? 'Y' : 'N';
@@ -404,6 +432,180 @@ window.app.component('home-component', {
       });
     },
 
+    // ===== v2026-10-25: přepínání práce během směny =====
+    async loadMachines() {
+      try {
+        const res = await apiCall('get', { type: 'machines' });
+        if (res.code === '000' && Array.isArray(res.data)) this.machines = res.data;
+      } catch (e) {}
+    },
+
+    isMachineJob(jobId) {
+      if (jobId === null || jobId === undefined || jobId === '') return false;
+      return this.machines.some(m => m[3] === 'Y' && String(m[0]) === String(jobId));
+    },
+
+    formatSegmentTime(ts) {
+      const d = new Date(Number(ts));
+      return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    },
+
+    optionLabel(options, value) {
+      const o = options.find(x => String(x.value) === String(value));
+      return o ? o.label : '';
+    },
+
+    currentLabel() {
+      const job = this.optionLabel(this.jobOptions, this.shiftForm.jobId);
+      const contract = this.optionLabel(this.contractOptions, this.shiftForm.contractId);
+      return job + (contract ? ' (' + contract.replace(/^\S+\s-\s/, '') + ')' : '');
+    },
+
+    openSwitchDialog() {
+      if (!this.shiftForm.contractId || !this.shiftForm.jobId) {
+        this.$emit('message', 'Nejdřív vyplňte Zakázku a Práci u aktuální části');
+        return;
+      }
+      this.switchForm = {
+        contractId: this.shiftForm.contractId,
+        jobId: null,
+        placeId: this.shiftForm.placeId
+      };
+      this.switchDialog = true;
+    },
+
+    confirmSwitchDialog() {
+      if (!this.switchForm.contractId || !this.switchForm.jobId) {
+        this.$emit('message', 'Vyberte zakázku i práci');
+        return;
+      }
+      this.switchDialog = false;
+      return this.switchWork({
+        contractId: this.switchForm.contractId,
+        jobId: this.switchForm.jobId,
+        placeId: this.switchForm.placeId || this.shiftForm.placeId,
+        isMachine: this.isMachineJob(this.switchForm.jobId)
+      });
+    },
+
+    switchToMachine(m) {
+      return this.switchWork({
+        contractId: this.shiftForm.contractId,
+        jobId: m.jobId,
+        placeId: this.shiftForm.placeId,
+        isMachine: true
+      });
+    },
+
+    switchBack() {
+      if (!this.returnTo) return;
+      const r = this.returnTo;
+      return this.switchWork({ contractId: r.contractId, jobId: r.jobId, placeId: r.placeId, isMachine: false });
+    },
+
+    // Uloží aktuální část jako samostatný záznam a otevře další od stejného času.
+    async switchWork(target) {
+      if (this.switching) return;
+      if (!this.shiftForm.timeStart || this.shiftForm.timeEnd) {
+        this.$emit('message', 'Nejdřív zaznamenejte příchod');
+        return;
+      }
+      if (!this.shiftForm.contractId || !this.shiftForm.jobId) {
+        this.$emit('message', 'Nejdřív vyplňte Zakázku a Práci u aktuální části');
+        return;
+      }
+      if (String(target.jobId) === String(this.shiftForm.jobId) &&
+          String(target.contractId) === String(this.shiftForm.contractId)) {
+        this.$emit('message', 'Tuto práci už právě děláte');
+        return;
+      }
+      const now = Date.now();
+      const oldLabel = this.currentLabel();
+      const wasMachine = this.currentJobIsMachine;
+      const oldPart = {
+        contractId: this.shiftForm.contractId,
+        jobId: this.shiftForm.jobId,
+        placeId: this.shiftForm.placeId,
+        label: oldLabel
+      };
+      const newLabel = this.optionLabel(this.jobOptions, target.jobId);
+
+      // Překlep: část kratší než minuta se neukládá, jen se přepne práce v rozpracované části
+      if (now - Number(this.shiftForm.timeStart) < 60000) {
+        this.shiftForm.contractId = target.contractId;
+        this.shiftForm.jobId = target.jobId;
+        if (target.placeId) this.shiftForm.placeId = target.placeId;
+        if (target.isMachine && !wasMachine && !this.returnTo) this.returnTo = oldPart;
+        if (!target.isMachine) this.returnTo = null;
+        this.saveShiftState();
+        this.$emit('message', '↪ Práce změněna na: ' + newLabel);
+        return;
+      }
+
+      this.switching = true;
+      try {
+        // 1) uložit právě skončenou část
+        const payload = {
+          id_contract: this.shiftForm.contractId,
+          id_worker: this.currentUser.id,
+          id_job: this.shiftForm.jobId,
+          id_place: this.shiftForm.placeId || '',
+          time_fr: this.shiftForm.timeStart,
+          time_to: now,
+          note: this.shiftForm.note || ''
+        };
+        if (this.isAdmin && this.calculatedKm > 0 && !this.kmUsed) {
+          payload.km_jednosmer = this.kmManual ? (this.kmManualValue || 0) : this.contractKm;
+          payload.km_celkem = this.calculatedKm;
+          payload.km_rucne = this.kmManual ? 'Y' : 'N';
+        }
+        let res;
+        if (this.cloudShiftEnabled && this.cloudRowIndex !== null) {
+          payload.row_index = this.cloudRowIndex;
+          res = await apiCall('completerecord', payload);
+        } else {
+          res = await apiCall('saverecord', payload);
+        }
+        if (res.code !== '000' && res.code !== '101') {
+          this.$emit('message', '❌ Přepnutí se nepodařilo uložit, zkuste to znovu (' + (res.error || 'chyba připojení') + ')');
+          this.switching = false;
+          return;
+        }
+        if (payload.km_celkem) this.kmUsed = true;
+
+        // 2) otevřít další část od stejného času
+        const fromTs = Number(this.shiftForm.timeStart);
+        let newRow = null;
+        if (this.cloudShiftEnabled) {
+          try {
+            const arr = await apiCall('savearrival', { id_worker: this.currentUser.id, time_fr: now });
+            if (arr.code === '000' && arr.data && arr.data.rowIndex !== undefined) newRow = arr.data.rowIndex;
+          } catch (e) {}
+        }
+        this.segments.push({ label: oldLabel, from: fromTs, to: now });
+        this.cloudRowIndex = newRow;
+        this.shiftForm.timeStart = now;
+        this.shiftForm.timeEnd = null;
+        this.shiftForm.contractId = target.contractId;
+        this.shiftForm.jobId = target.jobId;
+        if (target.placeId) this.shiftForm.placeId = target.placeId;
+        this.shiftForm.note = '';
+        if (target.isMachine) {
+          if (!wasMachine) this.returnTo = oldPart;
+        } else {
+          this.returnTo = null;
+        }
+        this.saveShiftState();
+        this.$emit('message', '✓ ' + this.formatSegmentTime(fromTs) + '–' + this.formatSegmentTime(now) + ' uloženo (' + oldLabel + '). Nyní: ' + newLabel);
+        if (this.cloudShiftEnabled && newRow === null) {
+          this.$emit('message', '⚠ Další část se zatím uložila jen v telefonu - uloží se při Uložit směnu');
+        }
+      } catch (e) {
+        this.$emit('message', '❌ Přepnutí se nepodařilo, zkuste to znovu');
+      }
+      this.switching = false;
+    },
+
     saveShiftState() {
       const state = {
         timeStart: this.shiftForm.timeStart,
@@ -413,6 +615,9 @@ window.app.component('home-component', {
         placeId: this.shiftForm.placeId,
         note: this.shiftForm.note,
         cloudRowIndex: this.cloudRowIndex,
+        segments: this.segments,
+        returnTo: this.returnTo,
+        kmUsed: this.kmUsed,
         date: getTodayDate()
       };
       localStorage.setItem('shiftState_' + this.currentUser.id, JSON.stringify(state));
@@ -429,7 +634,10 @@ window.app.component('home-component', {
           this.shiftForm.jobId = state.jobId;
           this.shiftForm.placeId = state.placeId;
           this.shiftForm.note = state.note;
-          this.cloudRowIndex = state.cloudRowIndex || null;
+          this.cloudRowIndex = (state.cloudRowIndex === 0 || state.cloudRowIndex) ? state.cloudRowIndex : null;
+          this.segments = state.segments || [];
+          this.returnTo = state.returnTo || null;
+          this.kmUsed = !!state.kmUsed;
           return true;
         } else {
           this.clearShiftState();
@@ -464,6 +672,9 @@ window.app.component('home-component', {
         timeEnd: null,
         note: ''
       };
+      this.segments = [];
+      this.returnTo = null;
+      this.kmUsed = false;
       this.contractKm = 0;
       this.kmManual = false;
       this.kmManualValue = null;
@@ -627,6 +838,7 @@ window.app.component('home-component', {
     if (!nactenoZLocalStorage || !this.shiftForm.timeStart) {
       await this.checkCloudShift();
     }
+    this.loadMachines();
     this.lunchDate = this.getTodayFormatted();
     this.loadLunchPrices(this.lunchDate);
     this.loadNedokoncene();
@@ -666,6 +878,31 @@ window.app.component('home-component', {
           <div v-if="arrivalError" class="text-caption text-red-8 q-mt-xs">❌ {{ arrivalError }}</div>
         </div>
         
+        <!-- v2026-10-25: změna práce během směny -->
+        <div v-if="shiftForm.timeStart && !shiftForm.timeEnd" class="q-mb-md q-pa-sm" style="background:#f3e5f5;border-radius:4px">
+          <div class="text-bold text-purple-8 q-mb-xs">🔄 Změna práce během směny</div>
+          <div v-if="shiftForm.contractId && shiftForm.jobId" class="text-caption q-mb-sm">
+            Právě: <b>{{ currentLabel() }}</b> od {{ formatSegmentTime(shiftForm.timeStart) }}
+          </div>
+          <div v-else class="text-caption text-grey-7 q-mb-sm">
+            Nejdřív níže vyplňte Zakázku a Práci, pak můžete přepínat.
+          </div>
+          <q-btn v-if="returnTo && currentJobIsMachine" @click="switchBack" color="green" icon="undo"
+            :label="'Zpět na: ' + returnTo.label" class="full-width q-mb-sm" :loading="switching" :disable="switching"/>
+          <div v-if="activeMachines.length" class="row q-col-gutter-xs q-mb-sm">
+            <div v-for="m in activeMachines" :key="m.jobId" class="col-4">
+              <q-btn @click="switchToMachine(m)" color="deep-orange" :outline="String(shiftForm.jobId) !== m.jobId"
+                :label="m.label" class="full-width" dense no-caps :disable="switching"/>
+            </div>
+          </div>
+          <q-btn @click="openSwitchDialog" color="purple" outline icon="swap_horiz" label="Jiná práce / zakázka"
+            class="full-width" no-caps :disable="switching"/>
+          <div v-if="segments.length" class="q-mt-sm text-caption text-grey-8">
+            <div class="text-bold">Dnes už uloženo:</div>
+            <div v-for="(t, i) in segmentsLabel" :key="i">• {{ t }}</div>
+          </div>
+        </div>
+
         <q-btn @click="setDeparture" color="orange" icon="logout" label="ODCHOD"
           class="full-width q-mb-md" :disabled="!shiftForm.timeStart || !!shiftForm.timeEnd || cloudSaving" :loading="cloudSaving && !!shiftForm.timeStart && !shiftForm.timeEnd"/>
         
@@ -832,6 +1069,34 @@ window.app.component('home-component', {
           </div>
         </div>
       </div>
+
+
+      <!-- v2026-10-25: dialog Jiná práce / zakázka -->
+      <q-dialog v-model="switchDialog">
+        <q-card style="width:100%; max-width:400px">
+          <q-card-section><div class="text-h6">Jiná práce / zakázka</div>
+            <div class="text-caption text-grey-7">Aktuální část se uloží a od teď poběží nová.</div>
+          </q-card-section>
+          <q-card-section class="q-pt-none">
+            <q-select v-model="switchForm.contractId" :options="contractOptionsFiltered"
+              label="Zakázka *" emit-value map-options outlined dense class="q-mb-sm"
+              use-input hide-selected fill-input input-debounce="0"
+              @filter="filterContracts" @focus="filterContracts('', v => contractOptionsFiltered = contractOptions)"/>
+            <q-select v-model="switchForm.jobId" :options="jobOptionsFiltered"
+              label="Práce *" emit-value map-options outlined dense class="q-mb-sm"
+              use-input hide-selected fill-input input-debounce="0"
+              @filter="filterJobs" @focus="filterJobs('', v => jobOptionsFiltered = jobOptions)"/>
+            <q-select v-model="switchForm.placeId" :options="placeOptionsFiltered"
+              label="Místo práce" emit-value map-options outlined dense class="q-mb-sm"
+              use-input hide-selected fill-input input-debounce="0"
+              @filter="filterPlaces" @focus="filterPlaces('', v => placeOptionsFiltered = placeOptions)"/>
+          </q-card-section>
+          <q-card-actions align="right">
+            <q-btn flat label="Zrušit" v-close-popup/>
+            <q-btn color="purple" label="Přepnout" @click="confirmSwitchDialog"/>
+          </q-card-actions>
+        </q-card>
+      </q-dialog>
 
     </div>
   `
